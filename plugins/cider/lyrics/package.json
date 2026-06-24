@@ -1,0 +1,42 @@
+{
+  "name": "kotonoha-cider-lyrics",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "test": "vitest run",
+    "receive": "node scripts/receive.mjs",
+    "preview": "vite preview",
+    "prepare-marketplace": "tsx ./scripts/market-pack.cts",
+    "update-pluginkit": "pnpm up @ciderapp/pluginkit"
+  },
+  "dependencies": {
+    "@paralleldrive/cuid2": "^2.2.2",
+    "lodash": "^4.17.21",
+    "vue": "^3.5.35"
+  },
+  "devDependencies": {
+    "@ciderapp/pluginkit": "github:ciderapp/pluginkit#cider-4",
+    "@tsconfig/node20": "^20.1.6",
+    "@types/lodash": "^4.17.6",
+    "@types/node": "^20.14.9",
+    "@types/musickit": "ciderapp/musickit-types",
+    "@vitejs/plugin-vue": "^6.0.7",
+    "@vue/tsconfig": "^0.8.1",
+    "@vitest/browser": "^4.0.16",
+    "adm-zip": "0.5.9",
+    "jsdom": "^27.3.0",
+    "pinia": "^3.0.4",
+    "sass": "^1.77.6",
+    "tsx": "^4.16.5",
+    "typescript": "^5.2.2",
+    "unplugin-auto-import": "^0.17.8",
+    "vite": "^8.0.16",
+    "vite-plugin-css-injected-by-js": "^3.5.2",
+    "vitest": "^4.0.16",
+    "vue-tsc": "^3.3.3",
+    "yaml": "^2.4.5"
+  },
+  "packageManager": "pnpm@9.10.0+sha512.73a29afa36a0d092ece5271de5177ecbf8318d454ecd701343131b8ebc0c1a91c487da46ab77c8e596d6acf1461e3594ced4becedf8921b074fbd8653ed7051c"
+}

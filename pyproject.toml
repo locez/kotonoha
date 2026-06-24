@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kotonoha"
+version = "0.1.0"
+description = "Linux desktop lyrics overlay bridge using PyQt6 and player-specific plugins."
+readme = "README.md"
+authors = [
+  { name = "Locez", email = "locez@locez.com" }
+]
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+  "PyQt6",
+  "qasync",
+  "aiohttp",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest",
+  "ruff",
+  "ty",
+]
+
+[project.scripts]
+kotonoha = "kotonoha.main:entry_point"
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+  "E",
+  "W",
+  "F",
+  "I",
+  "B",
+  "UP",
+]
+
+[tool.uv]
+package = true
