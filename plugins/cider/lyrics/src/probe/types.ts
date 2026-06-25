@@ -1,8 +1,16 @@
 export type ProbeConfig = {
+  /** Kotonoha WebSocket endpoint, e.g. ws://127.0.0.1:28745/kotonoha/cider/lyrics */
   endpoint: string;
-  intervalMs: number;
+  /** How often to sample Cider state for change detection. */
+  pollMs: number;
+  /** Floor interval for heartbeat frames (clock-drift correction) when nothing changes. */
+  heartbeatMs: number;
+  /** Interval for lightweight tick frames (currentTime + paused) that calibrate the clock. */
+  tickMs: number;
   consoleLog: boolean;
 };
+
+export type FrameReason = "open" | "change" | "heartbeat" | "manual";
 
 export type TimedLyricWord = {
   start: number | null;

@@ -1,6 +1,16 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-build-scripts"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/kotonoha/libkoto-layer.so" = "kotonoha/libkoto-layer.so"
+
+[tool.hatch.build.hooks.build-scripts]
+[[tool.hatch.build.hooks.build-scripts.scripts]]
+commands = [
+  "bash src/kotonoha/build_bridge.sh",
+]
+artifacts = ["src/kotonoha/libkoto-layer.so"]
 
 [project]
 name = "kotonoha"
@@ -21,6 +31,7 @@ dependencies = [
 [project.optional-dependencies]
 test = [
   "pytest",
+  "pytest-asyncio",
   "ruff",
   "ty",
 ]
@@ -40,6 +51,9 @@ select = [
   "B",
   "UP",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
 
 [tool.uv]
 package = true

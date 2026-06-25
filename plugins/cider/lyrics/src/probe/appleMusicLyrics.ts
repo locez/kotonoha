@@ -17,6 +17,19 @@ type LyricsCacheEntry = {
 
 let currentLyrics: LyricsCacheEntry | null = null;
 
+// Which translation language to extract from the TTML. Kotonoha pushes this
+// over the WebSocket (derived from the system locale or the user's setting);
+// changing it invalidates the cache so the next probe re-parses.
+let preferredTranslationLanguage = "zh-Hans";
+
+export function setPreferredTranslationLanguage(language: string): void {
+  if (!language || language === preferredTranslationLanguage) {
+    return;
+  }
+  preferredTranslationLanguage = language;
+  currentLyrics = null; // force re-parse with the new language
+}
+
 function numberOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -101,6 +114,7 @@ async function fetchLyrics(globals: CiderGlobals, songId: string): Promise<Lyric
 
   const parsed = parseAppleMusicTtml(ttml, {
     durationSeconds: currentDurationSeconds(globals),
+    preferredTranslationLanguage,
   });
 
   return {
