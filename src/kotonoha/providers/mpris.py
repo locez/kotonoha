@@ -271,6 +271,10 @@ class MprisProvider:
         self._song_key = key
         self._lines = []
         self._last_index = -2
+        # Ignore WS-pushed lyrics while switching, so a stale push from the
+        # previous song can't overwrite the new one during the async fetch.
+        if self._gate is not None:
+            self._gate.set_accept_ws(False)
         # Show the title immediately while lyrics are fetched.
         self._state.update(
             build_snapshot(
@@ -280,12 +284,29 @@ class MprisProvider:
         )
 
         lines, accept_ws = await self._resolve_lyrics(info, player_name)
+        if self._song_key != key:
+            return  # switched again during the fetch; this result is stale, drop it
         self._lines = lines
         if self._gate is not None:
             self._gate.set_accept_ws(accept_ws)
         logger.info(
             "MPRIS %r / %r -> %d lines (accept_ws=%s)", info.title, info.artist, len(lines), accept_ws
         )
+
+    async def _is_cider(self, name: str) -> bool:
+        """Cider is an Electron app whose bus name is often 'chromium…' — so check
+        the MPRIS Identity property, not just the bus name."""
+        if "cider" in name.lower():
+            return True
+        try:
+            obj = self._bus.get_proxy_object(name, MPRIS_PATH, MPRIS_INTROSPECTION)
+            props = obj.get_interface("org.freedesktop.DBus.Properties")
+            variant = await props.call_get("org.mpris.MediaPlayer2", "Identity")
+            identity = str(getattr(variant, "value", variant))
+        except Exception as exc:  # noqa: BLE001 - identity is best-effort
+            logger.debug("identity read failed for %s: %s", name, exc)
+            return False
+        return "cider" in identity.lower()
 
     async def _resolve_lyrics(self, info: TrackInfo, player_name: str) -> tuple[list[LyricLine], bool]:
         """Walk the priority order; first source with lyrics wins (hit-and-stop).
@@ -296,7 +317,7 @@ class MprisProvider:
         """
         if self._session is None or not info.title:
             return [], False
-        is_cider = "cider" in player_name.lower()
+        is_cider = await self._is_cider(player_name)
         for source in self._lyrics_sources:
             if source == "cider":
                 if is_cider:

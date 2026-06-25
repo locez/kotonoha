@@ -16,6 +16,8 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import QMenu, QSystemTrayIcon, QWidget
 
+from .strings import t
+
 
 def _fallback_icon() -> QIcon:
     """A pink rounded square with a music note, used when no asset is present."""
@@ -58,11 +60,11 @@ class KotonohaTray(QSystemTrayIcon):
         super().__init__(parent)
         self._on_toggle_passthrough = on_toggle_passthrough
         self.setIcon(load_icon())
-        self.setToolTip("Kotonoha — lyrics overlay")
+        self.setToolTip(t("tray.tooltip"))
 
         menu = QMenu()
 
-        self._lock_action = QAction("锁定 / 鼠标穿透", menu)
+        self._lock_action = QAction(t("tray.lock"), menu)
         self._lock_action.setCheckable(True)
         self._lock_action.setChecked(passthrough)
         self._lock_action.toggled.connect(on_toggle_passthrough)
@@ -70,11 +72,11 @@ class KotonohaTray(QSystemTrayIcon):
 
         menu.addSeparator()
 
-        settings_action = QAction("设置…", menu)
+        settings_action = QAction(t("tray.settings"), menu)
         settings_action.triggered.connect(lambda: on_open_settings())
         menu.addAction(settings_action)
 
-        quit_action = QAction("退出", menu)
+        quit_action = QAction(t("tray.quit"), menu)
         quit_action.triggered.connect(lambda: on_quit())
         menu.addAction(quit_action)
 

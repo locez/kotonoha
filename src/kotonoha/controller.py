@@ -18,6 +18,7 @@ from .providers.mpris import MprisProvider
 from .receiver import LyricsReceiver
 from .settings_dialog import SettingsDialog
 from .state import LyricsState
+from .strings import set_language
 from .tray import KotonohaTray
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,7 @@ class AppController:
             config = config.clamped()
             config.port = cli_port
         self._config = config
+        set_language(config.ui_language)  # before any UI strings are created
 
         self._state = LyricsState()
         self._overlay = LyricsOverlay(self._state, config)
@@ -116,6 +118,7 @@ class AppController:
         self._overlay.activate_layer_shell()
         self._tray.set_passthrough_checked(config.passthrough)
         self._mpris.set_lyrics_sources(config.lyrics_sources)
+        set_language(config.ui_language)  # affects newly-opened dialogs; UI restart for the rest
 
         new_language = resolve_translation_language(config.translation_language)
         if new_language != previous_language:

@@ -32,10 +32,12 @@ from .karaoke_label import KaraokeLabel
 from .model import EMPTY_SNAPSHOT, LyricLine, LyricsSnapshot
 from .native import LayerShellController, default_package_dir
 from .state import LyricsState
+from .strings import t
 
 logger = logging.getLogger(__name__)
 
 RENDER_INTERVAL_MS = 16  # ~60fps
+CONTROL_ICON_COLOR = "#9AA0A6"  # soft grey so the lock/gear don't glare against the panel
 
 
 CONTROL_BUTTON_STYLE = """
@@ -157,10 +159,10 @@ class LyricsOverlay(QWidget):
         self._settings_btn = QToolButton(self._container)
         self._settings_btn.setFixedSize(22, 22)
         self._settings_btn.setIconSize(QSize(15, 15))
-        self._settings_btn.setIcon(settings_icon())
+        self._settings_btn.setIcon(settings_icon(CONTROL_ICON_COLOR))
         self._settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._settings_btn.setStyleSheet(CONTROL_BUTTON_STYLE)
-        self._settings_btn.setToolTip("设置")
+        self._settings_btn.setToolTip(t("overlay.settings"))
         self._settings_btn.clicked.connect(self.settings_requested.emit)
         bar.addWidget(self._settings_btn)
 
@@ -168,11 +170,8 @@ class LyricsOverlay(QWidget):
         return self._control_bar
 
     def _update_lock_icon(self) -> None:
-        self._lock_btn.setIcon(lock_icon(closed=self._passthrough))
-        if self._passthrough:
-            self._lock_btn.setToolTip("已锁定（鼠标穿透）— 点击解锁可拖动")
-        else:
-            self._lock_btn.setToolTip("已解锁（可拖动）— 点击锁定并穿透")
+        self._lock_btn.setIcon(lock_icon(self._passthrough, CONTROL_ICON_COLOR))
+        self._lock_btn.setToolTip(t("overlay.locked") if self._passthrough else t("overlay.unlocked"))
 
     def _update_chrome(self) -> None:
         """Locked = immersive (text only): hide controls and the pill background.
