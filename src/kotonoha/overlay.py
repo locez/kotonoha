@@ -10,6 +10,7 @@ smooth between probe heartbeats.
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 
 from PyQt6 import sip
 from PyQt6.QtCore import QPoint, QSize, Qt, QTimer, pyqtSignal
@@ -28,7 +29,7 @@ from .clock import MediaClock
 from .config import Config
 from .icons import lock_icon, settings_icon
 from .karaoke_label import KaraokeLabel
-from .model import EMPTY_SNAPSHOT, LyricsSnapshot
+from .model import EMPTY_SNAPSHOT, LyricLine, LyricsSnapshot
 from .native import LayerShellController, default_package_dir
 from .state import LyricsState
 
@@ -109,15 +110,17 @@ class LyricsOverlay(QWidget):
 
         self._prev_label = self._make_context_label()
         self._current = KaraokeLabel(self._container)
-        self._translation_label = self._make_context_label()
+        # Translation is a KaraokeLabel too: no per-word timing -> it sweeps the
+        # whole line following the current line's progress (the user's choice).
+        self._translation = KaraokeLabel(self._container)
         self._next_label = self._make_context_label()
 
-        for w in (self._prev_label, self._current, self._translation_label, self._next_label):
+        for w in (self._prev_label, self._current, self._translation, self._next_label):
             layout.addWidget(w, alignment=Qt.AlignmentFlag.AlignHCenter)
         # Cheap readability shadows on the context labels (they repaint only on
         # snapshot changes, so a blur effect here costs nothing per frame; the
-        # 60fps karaoke label draws its own offset shadow instead).
-        for label in (self._prev_label, self._translation_label, self._next_label):
+        # karaoke labels draw their own offset shadow instead).
+        for label in (self._prev_label, self._next_label):
             label.setGraphicsEffect(self._make_text_shadow())
 
         # Fixed-size, draggable window (positioned via layer-shell margins); the
@@ -203,11 +206,13 @@ class LyricsOverlay(QWidget):
                 f"color: rgba(255,255,255,120); font-size: {context_size}px; "
                 f"font-family: {config.font_family};"
             )
-        self._translation_label.setStyleSheet(
-            f"color: rgba(255,255,255,170); font-size: {max(10, int(config.font_size * 0.55))}px; "
-            f"font-family: {config.font_family}; font-style: italic;"
-        )
-        self._translation_label.setVisible(config.show_translation)
+
+        trans_font = QFont()
+        trans_font.setFamily(config.font_family.split(",")[0].strip().strip("'\""))
+        trans_font.setPixelSize(max(10, int(config.font_size * 0.55)))
+        trans_font.setItalic(True)
+        self._translation.set_style(trans_font, config.accent_start, config.accent_end, config.accent_sweep)
+        self._translation.setVisible(config.show_translation)
 
         self.setWindowOpacity(config.opacity)
         self._update_chrome()
@@ -283,9 +288,16 @@ class LyricsOverlay(QWidget):
         self._next_label.setText(snapshot.next.text if snapshot.next else "")
         self._current.set_line(snapshot.current, snapshot.word_karaoke)
 
-        translation = snapshot.current.translation if self._config.show_translation else ""
-        self._translation_label.setText(translation)
-        self._translation_label.setVisible(self._config.show_translation and bool(translation))
+        if self._config.show_translation and snapshot.current.translation:
+            # Reuse the current line's time range so the translation sweeps in sync.
+            trans_line = replace(
+                snapshot.current, text=snapshot.current.translation, translation="", words=()
+            )
+            self._translation.set_line(trans_line, False)
+            self._translation.setVisible(True)
+        else:
+            self._translation.set_line(None, False)
+            self._translation.setVisible(False)
 
     def _show_empty(self, snapshot: LyricsSnapshot) -> None:
         self._current.set_line(None, False)
@@ -293,17 +305,22 @@ class LyricsOverlay(QWidget):
         self._next_label.setText("")
         if snapshot.title:
             artist = f" — {snapshot.artist}" if snapshot.artist else ""
-            self._translation_label.setText(f"♪ {snapshot.title}{artist}")
-            self._translation_label.setVisible(True)
+            # end far in the future so it stays un-swept (plain) while idle.
+            title_line = LyricLine(
+                index=0, id="title", start=0.0, end=1e9, text=f"♪ {snapshot.title}{artist}", translation="", words=()
+            )
+            self._translation.set_line(title_line, False)
+            self._translation.setVisible(True)
         else:
-            self._translation_label.setText("")
-            self._translation_label.setVisible(False)
+            self._translation.set_line(None, False)
+            self._translation.setVisible(False)
 
     def _render_tick(self) -> None:
         t = self._clock.now()
         if t is not None:
             t += self._config.lead_ms / 1000.0  # advance the sweep to compensate latency
         self._current.set_media_time(t)
+        self._translation.set_media_time(t)
 
     # --- layer shell / placement ---
 

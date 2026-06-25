@@ -13,6 +13,8 @@ from PyQt6.QtWidgets import QApplication
 from .config import Config, save_config
 from .i18n import resolve_translation_language
 from .overlay import LyricsOverlay
+from .providers.gate import SourceGate
+from .providers.mpris import MprisProvider
 from .receiver import LyricsReceiver
 from .settings_dialog import SettingsDialog
 from .state import LyricsState
@@ -32,11 +34,14 @@ class AppController:
 
         self._state = LyricsState()
         self._overlay = LyricsOverlay(self._state, config)
+        self._gate = SourceGate()
         self._receiver = LyricsReceiver(
             self._state,
             port=config.port,
             translation_language=resolve_translation_language(config.translation_language),
+            gate=self._gate,
         )
+        self._mpris = MprisProvider(self._state, lyrics_sources=config.lyrics_sources, gate=self._gate)
         self._settings_dialog: SettingsDialog | None = None
 
         self._tray = KotonohaTray(
@@ -57,9 +62,15 @@ class AppController:
         self._overlay.show()
         self._tray.show()
         await self._receiver.start()
+        # MPRIS is best-effort: a missing session bus / dbus must not stop the app.
+        try:
+            await self._mpris.start()
+        except Exception as exc:  # noqa: BLE001 - dbus may be unavailable
+            logger.warning("MPRIS provider unavailable: %s", exc)
         logger.info("Kotonoha started on port %d", self._config.port)
 
     async def stop(self) -> None:
+        await self._mpris.stop()
         await self._receiver.stop()
 
     # --- passthrough / lock ---
@@ -104,6 +115,7 @@ class AppController:
         # Push new anchor/margins/passthrough through the layer-shell bridge.
         self._overlay.activate_layer_shell()
         self._tray.set_passthrough_checked(config.passthrough)
+        self._mpris.set_lyrics_sources(config.lyrics_sources)
 
         new_language = resolve_translation_language(config.translation_language)
         if new_language != previous_language:

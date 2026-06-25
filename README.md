@@ -1,38 +1,27 @@
 # Kotonoha
 
-Kotonoha is a Linux desktop lyrics overlay experiment using the same core stack as BiliHUD: Python, PyQt6, qasync, and local player bridge plugins.
+Kotonoha is a Linux desktop **lyrics overlay**: a translucent, click-through, top-most window that floats above fullscreen apps on Wayland and shows word-by-word synced lyrics for whatever you're playing.
 
-The first plugin target is Cider. Its probe plugin lives at:
+It works with **any MPRIS player** (browser YouTube Music, Spotify, VLC, mpv, Cider, …): it reads the now-playing track + progress over D-Bus, then fetches timed lyrics from **Netease** (word-timed + Chinese translation, no login) → **lrclib** → optionally the **Cider** plugin's Apple Music lyrics — first source that has the song wins, and you can reorder them.
 
-```text
-plugins/cider/lyrics
-```
-
-That plugin fetches Apple Music TTML lyrics through Cider's `CiderApp.mkfetch` and streams the current lyric context to Kotonoha over a local WebSocket. It does not scrape or mount Cider lyric views.
+Built on the same core stack as BiliHUD: Python, PyQt6, qasync, and a `layer-shell-qt` bridge.
 
 ## Features
 
-- Frameless, translucent, top-most lyrics overlay.
-- Floats above fullscreen apps on Wayland via `wlr-layer-shell` (layer-shell-qt bridge).
-- Per-word karaoke sweep (Apple Music word timing) with a pink accent and an optional translation line.
-- Click-through by default — the overlay never blocks your clicks; toggle it off from the tray to reposition.
-- Event-driven WebSocket transport: line changes show near-instantly; a local 60fps clock keeps the sweep smooth between updates.
+- **Any MPRIS player** via D-Bus — no per-player plugin required.
+- **Word-by-word karaoke sweep** with a synced translation line and a pink accent.
+- **Multi-source timed lyrics**, user-ordered priority (Settings → 来源): Netease (word-level YRC) / lrclib / Cider (Apple Music).
+- Floats above fullscreen on Wayland via `wlr-layer-shell`; translucent, **click-through** by default, **lock-to-immersive** (text only), draggable.
+- Smooth: a local 60fps clock interpolates between ~100ms progress samples; adjustable lead offset.
+- Tabbed settings panel + system tray.
 
-See [`docs/SPEC.md`](docs/SPEC.md) for the full design.
-
-## Layout
-
-```text
-src/kotonoha/                 Python overlay application
-  layer_shell_bridge.cpp      Wayland layer-shell bridge (compiled to libkoto-layer.so)
-  receiver.py                 aiohttp WebSocket server (ingests probe frames)
-  overlay.py / karaoke_label  Translucent overlay window + word-sweep renderer
-plugins/cider/lyrics/         Cider TTML lyrics probe (WebSocket client)
-```
+Design docs: [`docs/SPEC.md`](docs/SPEC.md) (overlay) and [`docs/SPEC-mpris-lyrics.md`](docs/SPEC-mpris-lyrics.md) (MPRIS + lyrics).
 
 ## System dependencies
 
-The overlay needs Qt6 + layer-shell-qt to build the Wayland bridge:
+`uv sync` **compiles a small C++ Wayland bridge** (`libkoto-layer.so`) automatically via a
+hatch build hook (`build_bridge.sh`) — there's nothing to build by hand. But it needs Qt6 +
+layer-shell-qt installed first, otherwise the sync fails and prints exactly what to install:
 
 ```bash
 # Arch
@@ -45,32 +34,55 @@ sudo apt install qt6-base-dev qt6-base-private-dev libwayland-dev liblayershellq
 sudo emerge -a kde-plasma/layer-shell-qt dev-qt/qtwayland
 ```
 
-> Wayland overlay-above-fullscreen requires a compositor that implements `wlr-layer-shell`
-> (KDE Plasma/KWin, wlroots-based). GNOME/Mutter does not — Kotonoha falls back to a normal
-> top-most window there.
+> Floating above fullscreen needs a compositor that implements `wlr-layer-shell`
+> (KDE Plasma/KWin, wlroots-based). GNOME/Mutter does not — Kotonoha falls back to a
+> normal top-most window there.
+>
+> Browser players (YouTube Music) reach MPRIS via the **Plasma Browser Integration**
+> extension and/or `playerctld`.
 
-## Python App
+## Run
 
 ```bash
-uv sync
-uv run kotonoha
+uv sync                  # also compiles the layer-shell bridge (needs the deps above)
+uv run kotonoha          # add -v for verbose logs
 ```
 
-The overlay starts a WebSocket receiver on `ws://127.0.0.1:28745/kotonoha/cider/lyrics` and shows
-a tray icon. Run the Cider probe (below) and start playing a song with synced lyrics.
+> The bridge is built automatically by `uv sync`. If you edit the C++
+> (`src/kotonoha/layer_shell_bridge.cpp`), rebuild it directly with
+> `bash src/kotonoha/build_bridge.sh`.
 
-## Cider Probe
+Then just play something in any MPRIS player. Kotonoha shows a tray icon; left-click it to lock/unlock the overlay, right-click for Settings.
+
+**Lyric source priority** is in Settings → **来源**: drag to reorder, uncheck to disable. Default order is `netease → lrclib → cider`. (`cider` only applies when the player that's playing *is* Cider.)
+
+## Cider probe (optional)
+
+Most players don't need this — MPRIS + Netease already covers them. The Cider plugin is only for getting Apple Music's own TTML lyrics into the priority list. Built with Vite + pnpm:
 
 ```bash
 cd plugins/cider/lyrics
-npm install
-npm run build
-npm run receive
+pnpm install
+pnpm build
 ```
 
-Copy the built plugin directory into Cider's plugin directory:
+Copy the built plugin into Cider's plugin directory:
 
 ```bash
 rm -rf ~/.config/sh.cider.genten/plugins/dev.locez.kotonoha.cider.lyrics
 cp -r dist/dev.locez.kotonoha.cider.lyrics ~/.config/sh.cider.genten/plugins/
+```
+
+The plugin connects to Kotonoha over WebSocket (`ws://127.0.0.1:28745/kotonoha/cider/lyrics`) and pushes Apple Music lyrics + playback ticks. `pnpm receive` runs a standalone debug receiver; `pnpm test` runs the unit tests.
+
+## Layout
+
+```text
+src/kotonoha/                 Python overlay application
+  providers/mpris.py          MPRIS provider (dbus-fast): track + progress
+  lyrics/                     Netease / lrclib sources, LRC+YRC parsers, matching
+  layer_shell_bridge.cpp      Wayland layer-shell bridge (-> libkoto-layer.so)
+  overlay.py / karaoke_label  Translucent overlay + word-sweep renderer
+  receiver.py                 aiohttp WebSocket server (Cider probe frames)
+plugins/cider/lyrics/         Optional Cider Apple Music probe (WebSocket client)
 ```

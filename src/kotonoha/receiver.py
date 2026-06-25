@@ -23,6 +23,7 @@ import logging
 from aiohttp import WSMsgType, web
 
 from .model import parse_payload
+from .providers.gate import SourceGate
 from .state import LyricsState
 
 logger = logging.getLogger(__name__)
@@ -52,11 +53,13 @@ class LyricsReceiver:
         host: str = DEFAULT_HOST,
         port: int = DEFAULT_PORT,
         translation_language: str = "en",
+        gate: SourceGate | None = None,
     ) -> None:
         self._state = state
         self._host = host
         self._port = port
         self._translation_language = translation_language
+        self._gate = gate
         self._clients: set[web.WebSocketResponse] = set()
         self._runner: web.AppRunner | None = None
 
@@ -102,6 +105,10 @@ class LyricsReceiver:
         # rebuild lyric content.
         if isinstance(payload, dict) and payload.get("reason") == "tick":
             self._state.tick(_coerce_float(payload.get("currentTime")), _coerce_bool(payload.get("isPlaying")))
+            return True
+        # Lyric frame is gated: when an external source (Netease/lrclib) has this
+        # song, ignore the Cider WS lyrics. Progress ticks above are never gated.
+        if self._gate is not None and not self._gate.accept_ws:
             return True
         self._state.update(parse_payload(payload))
         return True

@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +18,11 @@ logger = logging.getLogger(__name__)
 
 APP_DIR_NAME = "kotonoha"
 CONFIG_FILE_NAME = "config.json"
+
+# Lyric sources in priority order; first one with lyrics for the song wins.
+# "cider" = the Apple Music lyrics the Cider probe pushes over WebSocket.
+VALID_LYRICS_SOURCES = ("netease", "lrclib", "cider")
+DEFAULT_LYRICS_SOURCES = ["netease", "lrclib", "cider"]
 
 # Accent presets: (label, start, end, sweep). The first is the default pink.
 ACCENT_PRESETS: tuple[tuple[str, str, str, str], ...] = (
@@ -48,6 +53,7 @@ class Config:
     lead_ms: int = 120               # advance the sweep by this many ms (compensate pipeline latency)
     show_translation: bool = True    # bilingual
     translation_language: str = "auto"  # "auto" -> from system locale, else an Apple tag (zh-Hans/en/ja/...)
+    lyrics_sources: list[str] = field(default_factory=lambda: list(DEFAULT_LYRICS_SOURCES))
     # Pink accent (sung text gradient + sweep highlight)
     accent_start: str = "#FF4FA3"
     accent_end: str = "#FF8FCB"
@@ -72,6 +78,7 @@ class Config:
             accent_start=str(self.accent_start),
             accent_end=str(self.accent_end),
             accent_sweep=str(self.accent_sweep),
+            lyrics_sources=_clean_sources(self.lyrics_sources),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -127,6 +134,17 @@ def _clamp_int(value: Any, low: int, high: int, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return max(low, min(high, n))
+
+
+def _clean_sources(value: Any) -> list[str]:
+    """Keep only known sources, de-duplicated, order preserved; never empty."""
+    if not isinstance(value, list):
+        return list(DEFAULT_LYRICS_SOURCES)
+    cleaned: list[str] = []
+    for source in value:
+        if source in VALID_LYRICS_SOURCES and source not in cleaned:
+            cleaned.append(source)
+    return cleaned or list(DEFAULT_LYRICS_SOURCES)
 
 
 def _clamp_float(value: Any, low: float, high: float, default: float) -> float:

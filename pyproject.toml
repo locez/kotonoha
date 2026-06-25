@@ -26,6 +26,7 @@ dependencies = [
   "PyQt6",
   "qasync",
   "aiohttp",
+  "dbus-fast",
 ]
 
 [project.optional-dependencies]

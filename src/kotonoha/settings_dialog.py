@@ -9,22 +9,30 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QSpinBox,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from .config import ACCENT_PRESETS, Config
-from .i18n import AUTO, SUPPORTED_LANGUAGES
+from .config import ACCENT_PRESETS, VALID_LYRICS_SOURCES, Config
+
+_SOURCE_LABELS = {
+    "netease": "网易云（逐字 + 翻译）",
+    "lrclib": "lrclib（逐行）",
+    "cider": "Cider 自带（Apple Music 推送）",
+}
 
 
 class SettingsDialog(QDialog):
@@ -40,6 +48,7 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._appearance_tab(), "外观")
         tabs.addTab(self._lyrics_tab(), "歌词")
         tabs.addTab(self._position_tab(), "位置")
+        tabs.addTab(self._sources_tab(), "来源")
         tabs.addTab(self._connection_tab(), "连接")
 
         buttons = QDialogButtonBox(
@@ -104,17 +113,9 @@ class SettingsDialog(QDialog):
         self._lead.setToolTip("正值让染色提前（补偿延迟），负值让染色滞后")
         form.addRow("歌词提前", self._lead)
 
-        self._translation = QCheckBox("显示翻译（双语）")
+        self._translation = QCheckBox("显示翻译（网易云译文）")
         self._translation.setChecked(c.show_translation)
         form.addRow(self._translation)
-
-        self._language = QComboBox()
-        self._language.addItem("自动（跟随系统）", AUTO)
-        for tag, label in SUPPORTED_LANGUAGES:
-            self._language.addItem(label, tag)
-        lang_idx = self._language.findData(c.translation_language)
-        self._language.setCurrentIndex(lang_idx if lang_idx >= 0 else 0)
-        form.addRow("翻译语言", self._language)
         return page
 
     def _position_tab(self) -> QWidget:
@@ -137,7 +138,44 @@ class SettingsDialog(QDialog):
         self._passthrough = QCheckBox("默认鼠标穿透（锁定）")
         self._passthrough.setChecked(c.passthrough)
         form.addRow(self._passthrough)
+
+        hint = QLabel(
+            "说明：浮窗是一个固定大小的透明框（约屏宽 90%），歌词在框内居中，"
+            "并非贴合文字的自适应窗口——这是为了在 Wayland layer-shell 下稳定显示"
+            "（自适应会让 surface 变得极小甚至不可见）。解锁后整个透明框都可拖动。"
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: gray;")
+        form.addRow(hint)
         return page
+
+    def _sources_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        note = QLabel("歌词来源优先级：从上到下，第一个有歌词的就用它。拖动排序，取消勾选即禁用。")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+        self._sources_list = QListWidget()
+        self._sources_list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        enabled = self._config.lyrics_sources
+        ordered = enabled + [s for s in VALID_LYRICS_SOURCES if s not in enabled]
+        for source in ordered:
+            item = QListWidgetItem(_SOURCE_LABELS.get(source, source))
+            item.setData(Qt.ItemDataRole.UserRole, source)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Checked if source in enabled else Qt.CheckState.Unchecked)
+            self._sources_list.addItem(item)
+        layout.addWidget(self._sources_list)
+        return page
+
+    def _selected_sources(self) -> list[str]:
+        sources: list[str] = []
+        for i in range(self._sources_list.count()):
+            item = self._sources_list.item(i)
+            if item is not None and item.checkState() == Qt.CheckState.Checked:
+                sources.append(str(item.data(Qt.ItemDataRole.UserRole)))
+        return sources
 
     def _connection_tab(self) -> QWidget:
         c = self._config
@@ -176,12 +214,12 @@ class SettingsDialog(QDialog):
             karaoke=self._karaoke.isChecked(),
             lead_ms=self._lead.value(),
             show_translation=self._translation.isChecked(),
-            translation_language=str(self._language.currentData()),
             anchor_top=bool(self._anchor.currentData()),
             margin_edge=self._margin_edge.value(),
             margin_x=self._margin_x.value(),
             passthrough=self._passthrough.isChecked(),
             port=self._port.value(),
+            lyrics_sources=self._selected_sources(),
         ).clamped()
 
     def _emit(self) -> None:
