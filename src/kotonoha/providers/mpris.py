@@ -164,6 +164,9 @@ class MprisProvider:
         self._song_key: str | None = None
         self._last_index: int = -2
         self._current_name: str | None = None  # sticky active player
+        self._props_iface: Any = None
+        self._subscribed_name: str | None = None
+        self._load_lock = asyncio.Lock()
 
     def set_lyrics_sources(self, sources: list[str]) -> None:
         self._lyrics_sources = list(sources)
@@ -184,6 +187,11 @@ class MprisProvider:
         if self._session is not None:
             await self._session.close()
             self._session = None
+        if self._props_iface is not None:
+            with contextlib.suppress(Exception):
+                self._props_iface.off_properties_changed(self._on_props_changed)
+            self._props_iface = None
+            self._subscribed_name = None
         if self._bus is not None:
             self._bus.disconnect()
             self._bus = None
@@ -246,20 +254,61 @@ class MprisProvider:
         self._current_name = None
         return None
 
+    async def _ensure_subscribed(self, name: str) -> None:
+        """Subscribe to the active player's PropertiesChanged so metadata/track
+        changes arrive immediately, even when Get(Metadata) lags (Spotify, browser
+        integrations). Polling stays as a fallback."""
+        if name == self._subscribed_name and self._props_iface is not None:
+            return
+        if self._props_iface is not None:
+            with contextlib.suppress(Exception):
+                self._props_iface.off_properties_changed(self._on_props_changed)
+            self._props_iface = None
+        try:
+            obj = self._bus.get_proxy_object(name, MPRIS_PATH, MPRIS_INTROSPECTION)
+            props = obj.get_interface("org.freedesktop.DBus.Properties")
+            props.on_properties_changed(self._on_props_changed)
+            self._props_iface = props
+            self._subscribed_name = name
+        except Exception as exc:  # noqa: BLE001 - signals are best-effort; polling still works
+            logger.debug("subscribe failed for %s: %s", name, exc)
+            self._props_iface = None
+            self._subscribed_name = None
+
+    def _on_props_changed(self, interface: str, changed: dict[str, Any], _invalidated: list[str]) -> None:
+        if interface != PLAYER_IFACE or "Metadata" not in changed:
+            return
+        try:
+            info = parse_metadata(_unwrap(changed["Metadata"].value))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("signal metadata parse failed: %s", exc)
+            return
+        name = self._subscribed_name
+        if not name:
+            return
+        key = f"{info.track_id}|{info.title}|{info.artist}"
+        if key != self._song_key:
+            self._song_key = key  # claim synchronously to dedupe against the poll loop
+            asyncio.ensure_future(self._load_song(info, key, name))
+
     async def _poll_once(self) -> None:
         active = await self._active_player()
         if active is None:
             if self._song_key is not None:
                 self._reset()
             return
-        player, _name = active
+        player, name = active
+        await self._ensure_subscribed(name)
         playing = await self._safe_status(player) == "Playing"
         info = parse_metadata(_unwrap(await player.get_metadata()))
         position = (await player.get_position()) / 1_000_000.0
 
-        key = info.track_id or f"{info.title}|{info.artist}"
+        # Fallback to the PropertiesChanged signal: keyed on trackid+title+artist
+        # so any change counts. Most switches come via the signal, not here.
+        key = f"{info.track_id}|{info.title}|{info.artist}"
         if key != self._song_key:
-            await self._load_song(info, key, _name)
+            self._song_key = key
+            await self._load_song(info, key, name)
 
         self._state.tick(position, playing)
         index = find_current_index(self._lines, position)
@@ -268,30 +317,33 @@ class MprisProvider:
             self._emit(info, position, playing)
 
     async def _load_song(self, info: TrackInfo, key: str, player_name: str) -> None:
-        self._song_key = key
-        self._lines = []
-        self._last_index = -2
-        # Ignore WS-pushed lyrics while switching, so a stale push from the
-        # previous song can't overwrite the new one during the async fetch.
-        if self._gate is not None:
-            self._gate.set_accept_ws(False)
-        # Show the title immediately while lyrics are fetched.
-        self._state.update(
-            build_snapshot(
-                [], 0.0, provider="MPRIS", song_id=None,
-                title=info.title, artist=info.artist, is_playing=True,
+        # song_key is claimed by the caller (poll loop or signal handler). The lock
+        # serialises concurrent loads (signal vs poll); the stale check drops a
+        # result if a newer switch claimed song_key while we were fetching.
+        async with self._load_lock:
+            self._lines = []
+            self._last_index = -2
+            # Ignore WS-pushed lyrics while switching, so a stale push from the
+            # previous song can't overwrite the new one during the async fetch.
+            if self._gate is not None:
+                self._gate.set_accept_ws(False)
+            # Show the title immediately while lyrics are fetched.
+            self._state.update(
+                build_snapshot(
+                    [], 0.0, provider="MPRIS", song_id=None,
+                    title=info.title, artist=info.artist, is_playing=True,
+                )
             )
-        )
 
-        lines, accept_ws = await self._resolve_lyrics(info, player_name)
-        if self._song_key != key:
-            return  # switched again during the fetch; this result is stale, drop it
-        self._lines = lines
-        if self._gate is not None:
-            self._gate.set_accept_ws(accept_ws)
-        logger.info(
-            "MPRIS %r / %r -> %d lines (accept_ws=%s)", info.title, info.artist, len(lines), accept_ws
-        )
+            lines, accept_ws = await self._resolve_lyrics(info, player_name)
+            if self._song_key != key:
+                return  # a newer switch claimed the song; this result is stale
+            self._lines = lines
+            if self._gate is not None:
+                self._gate.set_accept_ws(accept_ws)
+            logger.info(
+                "MPRIS %r / %r -> %d lines (accept_ws=%s)", info.title, info.artist, len(lines), accept_ws
+            )
 
     async def _is_cider(self, name: str) -> bool:
         """Cider is an Electron app whose bus name is often 'chromium…' — so check
