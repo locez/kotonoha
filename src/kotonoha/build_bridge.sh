@@ -20,9 +20,9 @@ print_help_and_exit() {
     log_error "$1"
     echo ""
     echo -e "${YELLOW}Missing dependencies? Please install them:${NC}"
-    echo "  - Debian/Ubuntu: sudo apt install qt6-base-dev qt6-base-private-dev libwayland-dev liblayershellqt-dev"
-    echo "  - Arch Linux: sudo pacman -S qt6-base layer-shell-qt"
-    echo "  - Fedora: sudo dnf install qt6-qtbase-devel layer-shell-qt-devel"
+    echo "  - Debian/Ubuntu: sudo apt install qt6-base-dev qt6-base-private-dev libwayland-dev liblayershellqt-dev build-essential"
+    echo "  - Arch Linux: sudo pacman -S qt6-base qt6-wayland layer-shell-qt"
+    echo "  - Fedora: sudo dnf install qt6-qtbase-devel layer-shell-qt-devel wayland-devel gcc-c++"
     echo "  - Gentoo: sudo emerge -a kde-plasma/layer-shell-qt dev-qt/qtwayland"
     echo ""
     exit 1

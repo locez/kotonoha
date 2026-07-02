@@ -61,6 +61,7 @@ class KaraokeLabel(QWidget):
         self._word_widths: list[float] = []
         self._space_w = 0.0
         self._total_w = 0.0
+        self._max_width = 0  # 0 = unlimited; else cap the width and scroll long lines
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
@@ -99,6 +100,14 @@ class KaraokeLabel(QWidget):
         self._media_time = media_time
         self.update()
 
+    def set_max_width(self, width: int) -> None:
+        """Cap the label width; longer lines scroll horizontally. 0 = unlimited."""
+        width = max(0, width)
+        if width != self._max_width:
+            self._max_width = width
+            self.updateGeometry()
+            self.update()
+
     # --- reveal animation ---
 
     def _get_reveal(self) -> float:
@@ -130,6 +139,8 @@ class KaraokeLabel(QWidget):
 
     def sizeHint(self) -> QSize:
         width = int(self._total_w) + 8
+        if self._max_width:
+            width = min(width, self._max_width)
         return QSize(max(1, width), self._fm.height() + 6)
 
     def minimumSizeHint(self) -> QSize:
@@ -186,12 +197,25 @@ class KaraokeLabel(QWidget):
         a = self._reveal
 
         total_width = self._total_w
-        text_left = (self.width() - total_width) / 2.0
-        align = Qt.AlignmentFlag.AlignCenter
-        rect = self.rect()
+        avail = float(self.width())
+        height = float(self.height())
 
-        # 0) Cheap drop shadow (a single offset dark pass) for readability without
-        #    a per-frame Gaussian blur effect.
+        # Sweep position relative to the text start (measure with text_left = 0).
+        sweep_rel, active_rel = self._compute_sweep(0.0, total_width)
+
+        if total_width <= avail:
+            text_left = (avail - total_width) / 2.0  # fits -> centered
+        else:
+            # Overflow: scroll so the currently-sung position stays near the centre.
+            offset = max(0.0, min(sweep_rel - avail / 2.0, total_width - avail))
+            text_left = -offset
+            painter.setClipRect(QRectF(0.0, 0.0, avail, height))
+
+        sweep_x = sweep_rel + text_left
+        rect = QRectF(text_left, 0.0, total_width, height)
+        align = int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
+        # 0) Cheap drop shadow (single offset dark pass) for readability.
         painter.save()
         painter.translate(SHADOW_OFFSET, SHADOW_OFFSET)
         painter.setPen(QPen(_scale_alpha(SHADOW_COLOR, a)))
@@ -202,12 +226,10 @@ class KaraokeLabel(QWidget):
         painter.setPen(QPen(_scale_alpha(UNSUNG_COLOR, a)))
         painter.drawText(rect, align, self.text)
 
-        sweep_x, active_range = self._compute_sweep(text_left, total_width)
-
         # 2) Sung text, clipped to the sweep boundary, filled with the accent gradient.
         if sweep_x > text_left:
             painter.save()
-            painter.setClipRect(QRectF(0.0, 0.0, sweep_x, float(self.height())))
+            painter.setClipRect(QRectF(text_left, 0.0, sweep_x - text_left, height), Qt.ClipOperation.IntersectClip)
             gradient = QLinearGradient(text_left, 0.0, text_left + total_width, 0.0)
             gradient.setColorAt(0.0, _scale_alpha(self._accent_start, a))
             gradient.setColorAt(1.0, _scale_alpha(self._accent_end, a))
@@ -216,11 +238,12 @@ class KaraokeLabel(QWidget):
             painter.restore()
 
         # 3) Currently-sung word: brighten its sung sub-range with the sweep colour.
-        if active_range is not None:
-            x0, x1 = active_range
+        if active_rel is not None:
+            x0 = active_rel[0] + text_left
+            x1 = active_rel[1] + text_left
             if x1 > x0:
                 painter.save()
-                painter.setClipRect(QRectF(x0, 0.0, x1 - x0, float(self.height())))
+                painter.setClipRect(QRectF(x0, 0.0, x1 - x0, height), Qt.ClipOperation.IntersectClip)
                 painter.setPen(QPen(_scale_alpha(self._accent_sweep, a)))
                 painter.drawText(rect, align, self.text)
                 painter.restore()

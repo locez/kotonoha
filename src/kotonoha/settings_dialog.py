@@ -1,9 +1,9 @@
 """Tabbed settings panel.
 
-Edits a working copy of :class:`~kotonoha.config.Config` across grouped tabs and
-emits ``applied`` with the new config when the user applies/accepts. Persistence
-and live re-styling are the caller's responsibility (see controller.py). UI
-strings come from :mod:`kotonoha.strings`.
+Frameless, translucent, dark "glass" styling to match the overlay. Edits a
+working copy of :class:`~kotonoha.config.Config` across grouped tabs and emits
+``applied`` with the new config when the user applies/accepts. UI strings come
+from :mod:`kotonoha.strings`.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QMouseEvent, QPainter, QPaintEvent, QPen
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -18,9 +19,11 @@ from PyQt6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QPushButton,
     QSpinBox,
     QTabWidget,
     QVBoxLayout,
@@ -30,6 +33,78 @@ from PyQt6.QtWidgets import (
 from .config import ACCENT_PRESETS, VALID_LYRICS_SOURCES, Config
 from .strings import UI_LANGUAGES, t
 
+_STYLE = """
+QWidget {
+    color: #E6E6E8;
+    font-family: 'Inter', 'Segoe UI', 'Microsoft YaHei', sans-serif;
+    font-size: 13px;
+}
+QTabWidget::pane {
+    border: 1px solid rgba(255,255,255,25);
+    border-radius: 10px;
+    background: rgba(255,255,255,10);
+    top: -1px;
+}
+QTabBar::tab {
+    background: transparent;
+    color: rgba(255,255,255,140);
+    padding: 6px 16px;
+    margin-right: 2px;
+    border: none;
+}
+QTabBar::tab:selected { color: #FFFFFF; border-bottom: 2px solid %ACCENT%; }
+QTabBar::tab:hover { color: #FFFFFF; }
+QLabel { background: transparent; }
+QCheckBox { background: transparent; spacing: 8px; }
+QCheckBox::indicator {
+    width: 16px; height: 16px;
+    border: 1px solid rgba(255,255,255,60);
+    border-radius: 4px;
+    background: rgba(255,255,255,15);
+}
+QCheckBox::indicator:checked { background: %ACCENT%; border-color: %ACCENT%; }
+QSpinBox, QComboBox {
+    background: rgba(255,255,255,18);
+    border: 1px solid rgba(255,255,255,30);
+    border-radius: 6px;
+    padding: 4px 8px;
+    color: #FFFFFF;
+    min-height: 20px;
+}
+QSpinBox:hover, QComboBox:hover { border-color: rgba(255,255,255,70); }
+QComboBox::drop-down { border: none; width: 18px; }
+QComboBox QAbstractItemView {
+    background: #1a1c22;
+    color: #E6E6E8;
+    border: 1px solid rgba(255,255,255,30);
+    selection-background-color: %ACCENT%;
+    outline: none;
+}
+QListWidget {
+    background: rgba(255,255,255,12);
+    border: 1px solid rgba(255,255,255,25);
+    border-radius: 8px;
+    outline: none;
+    padding: 4px;
+}
+QListWidget::item { padding: 7px 8px; border-radius: 5px; }
+QListWidget::item:selected { background: rgba(255,255,255,28); color: #FFFFFF; }
+QPushButton {
+    background: rgba(255,255,255,22);
+    border: 1px solid rgba(255,255,255,40);
+    border-radius: 6px;
+    padding: 5px 16px;
+    color: #FFFFFF;
+}
+QPushButton:hover { background: rgba(255,255,255,42); }
+QPushButton:pressed { background: rgba(255,255,255,60); }
+"""
+
+_CLOSE_STYLE = (
+    "QPushButton{background:transparent;border:none;color:rgba(255,255,255,140);"
+    "font-size:16px;padding:0;} QPushButton:hover{color:#FFFFFF;}"
+)
+
 
 class SettingsDialog(QDialog):
     applied = pyqtSignal(object)  # emits Config
@@ -37,8 +112,10 @@ class SettingsDialog(QDialog):
     def __init__(self, config: Config, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._config = config
-        self.setWindowTitle(t("settings.title"))
-        self.setMinimumWidth(420)
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setStyleSheet(_STYLE.replace("%ACCENT%", config.accent_start))
+        self.setMinimumWidth(440)
 
         tabs = QTabWidget()
         tabs.addTab(self._general_tab(), t("tab.general"))
@@ -55,13 +132,57 @@ class SettingsDialog(QDialog):
         )
         buttons.accepted.connect(self._accept)
         buttons.rejected.connect(self.reject)
+        for std, key in (
+            (QDialogButtonBox.StandardButton.Ok, "btn.ok"),
+            (QDialogButtonBox.StandardButton.Cancel, "btn.cancel"),
+            (QDialogButtonBox.StandardButton.Apply, "btn.apply"),
+        ):
+            btn = buttons.button(std)
+            if btn is not None:
+                btn.setText(t(key))
         apply_button = buttons.button(QDialogButtonBox.StandardButton.Apply)
         if apply_button is not None:
             apply_button.clicked.connect(self._emit)
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 14, 18, 16)
+        layout.setSpacing(12)
+        layout.addLayout(self._title_bar())
         layout.addWidget(tabs)
         layout.addWidget(buttons)
+
+    # --- chrome ---
+
+    def _title_bar(self) -> QHBoxLayout:
+        bar = QHBoxLayout()
+        title = QLabel(t("settings.title"))
+        title.setStyleSheet("font-size: 15px; font-weight: 600; color: #FFFFFF;")
+        close_btn = QPushButton("✕")
+        close_btn.setFixedSize(24, 24)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet(_CLOSE_STYLE)
+        close_btn.clicked.connect(self.reject)
+        bar.addWidget(title)
+        bar.addStretch(1)
+        bar.addWidget(close_btn)
+        return bar
+
+    def paintEvent(self, a0: QPaintEvent | None) -> None:  # noqa: ARG002
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setBrush(QColor(18, 20, 26, 236))
+        painter.setPen(QPen(QColor(255, 255, 255, 28)))
+        rect = self.rect().adjusted(0, 0, -1, -1)
+        painter.drawRoundedRect(rect, 14.0, 14.0)
+
+    def mousePressEvent(self, a0: QMouseEvent | None) -> None:
+        # Wayland forbids client-side move(); use the compositor's system move.
+        if a0 is not None and a0.button() == Qt.MouseButton.LeftButton:
+            handle = self.windowHandle()
+            if handle is not None and handle.startSystemMove():
+                a0.accept()
+                return
+        super().mousePressEvent(a0)
 
     # --- tabs ---
 
@@ -96,8 +217,8 @@ class SettingsDialog(QDialog):
 
         self._accent = QComboBox()
         matched = False
-        for label, start, end, sweep in ACCENT_PRESETS:
-            self._accent.addItem(label, (start, end, sweep))
+        for key, start, end, sweep in ACCENT_PRESETS:
+            self._accent.addItem(t(f"accent.{key}"), (start, end, sweep))
             if start.lower() == c.accent_start.lower():
                 self._accent.setCurrentIndex(self._accent.count() - 1)
                 matched = True
@@ -191,7 +312,7 @@ class SettingsDialog(QDialog):
     def _hint(self, text: str) -> QLabel:
         label = QLabel(text)
         label.setWordWrap(True)
-        label.setStyleSheet("color: gray;")
+        label.setStyleSheet("color: rgba(255,255,255,120);")
         return label
 
     def _spin(self, low: int, high: int, value: int, suffix: str) -> QSpinBox:

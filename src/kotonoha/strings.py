@@ -59,6 +59,11 @@ STRINGS: dict[str, dict[str, str]] = {
     "set.panel.text": {"en": "Text only", "zh-Hans": "纯文字", "zh-Hant": "純文字", "ja": "テキストのみ"},
     "set.accent": {"en": "Accent color", "zh-Hans": "强调色", "zh-Hant": "強調色", "ja": "アクセント色"},
     "set.accent.custom": {"en": "Custom", "zh-Hans": "自定义", "zh-Hant": "自訂", "ja": "カスタム"},
+    "accent.pink": {"en": "Pink", "zh-Hans": "粉", "zh-Hant": "粉紅", "ja": "ピンク"},
+    "accent.cyan": {"en": "Cyan", "zh-Hans": "青蓝", "zh-Hant": "青藍", "ja": "シアン"},
+    "accent.purple": {"en": "Purple", "zh-Hans": "紫", "zh-Hant": "紫", "ja": "パープル"},
+    "accent.green": {"en": "Green", "zh-Hans": "绿", "zh-Hant": "綠", "ja": "グリーン"},
+    "accent.orange": {"en": "Orange", "zh-Hans": "橙", "zh-Hant": "橙", "ja": "オレンジ"},
     "set.karaoke": {"en": "Word-by-word highlight", "zh-Hans": "逐字高亮",
                     "zh-Hant": "逐字高亮", "ja": "文字単位ハイライト"},
     "set.lead": {"en": "Lyric lead", "zh-Hans": "歌词提前", "zh-Hant": "歌詞提前", "ja": "歌詞の先行"},
@@ -109,6 +114,9 @@ STRINGS: dict[str, dict[str, str]] = {
     "set.language": {"en": "Language", "zh-Hans": "语言", "zh-Hant": "語言", "ja": "言語"},
     "set.language_hint": {"en": "Takes effect after restart.", "zh-Hans": "重启后生效。",
                           "zh-Hant": "重啟後生效。", "ja": "再起動後に反映されます。"},
+    "btn.ok": {"en": "OK", "zh-Hans": "确定", "zh-Hant": "確定", "ja": "OK"},
+    "btn.cancel": {"en": "Cancel", "zh-Hans": "取消", "zh-Hant": "取消", "ja": "キャンセル"},
+    "btn.apply": {"en": "Apply", "zh-Hans": "应用", "zh-Hant": "套用", "ja": "適用"},
 }
 
 

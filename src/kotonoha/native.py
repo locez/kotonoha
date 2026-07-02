@@ -48,6 +48,7 @@ class LayerShellController:
         lib = ctypes.CDLL(lib_path)
         lib.make_overlay.argtypes = [ctypes.c_void_p]
         lib.set_passthrough.argtypes = [ctypes.c_void_p, ctypes.c_bool]
+        lib.set_input_rect.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int]
         lib.set_anchor_position.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
         lib.set_keyboard_interactivity.argtypes = [ctypes.c_void_p, ctypes.c_bool]
         return lib
@@ -74,6 +75,10 @@ class LayerShellController:
     def set_passthrough(self, window_ptr: int, enabled: bool) -> None:
         if self._lib:
             self._lib.set_passthrough(ctypes.c_void_p(window_ptr), enabled)
+
+    def set_input_rect(self, window_ptr: int, x: int, y: int, w: int, h: int) -> None:
+        if self._lib:
+            self._lib.set_input_rect(ctypes.c_void_p(window_ptr), x, y, w, h)
 
     def set_anchor_position(self, window_ptr: int, x: int, y: int) -> None:
         if self._lib:

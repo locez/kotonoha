@@ -13,7 +13,7 @@ import logging
 from dataclasses import replace
 
 from PyQt6 import sip
-from PyQt6.QtCore import QPoint, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QEvent, QObject, QPoint, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QGuiApplication, QMouseEvent, QPainter, QPaintEvent, QShowEvent
 from PyQt6.QtWidgets import (
     QApplication,
@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 
 RENDER_INTERVAL_MS = 16  # ~60fps
 CONTROL_ICON_COLOR = "#9AA0A6"  # soft grey so the lock/gear don't glare against the panel
+PILL_RADIUS = 16  # corner radius shared by the pill paint and the input region
 
 
 CONTROL_BUTTON_STYLE = """
@@ -104,6 +105,7 @@ class LyricsOverlay(QWidget):
 
     def _build_ui(self) -> None:
         self._container = QWidget(self)
+        self._container.installEventFilter(self)  # track its size for the input region
         layout = QVBoxLayout(self._container)
         layout.setContentsMargins(22, 10, 22, 14)
         layout.setSpacing(4)
@@ -192,12 +194,15 @@ class LyricsOverlay(QWidget):
         self._config = config
         self._passthrough = config.passthrough
         self._update_lock_icon()
+        # Long lines scroll instead of overflowing: cap the labels to the panel width.
+        avail = max(200, self._window_size()[0] - 56)
 
         current_font = QFont()
         current_font.setFamily(config.font_family.split(",")[0].strip().strip("'\""))
         current_font.setPixelSize(config.font_size)
         current_font.setWeight(QFont.Weight.ExtraBold)
         self._current.set_style(current_font, config.accent_start, config.accent_end, config.accent_sweep)
+        self._current.set_max_width(avail)
 
         context_size = max(10, int(config.font_size * 0.6))
         for label in (self._prev_label, self._next_label):
@@ -205,12 +210,14 @@ class LyricsOverlay(QWidget):
                 f"color: rgba(255,255,255,120); font-size: {context_size}px; "
                 f"font-family: {config.font_family};"
             )
+            label.setMaximumWidth(avail)
 
         trans_font = QFont()
         trans_font.setFamily(config.font_family.split(",")[0].strip().strip("'\""))
         trans_font.setPixelSize(max(10, int(config.font_size * 0.55)))
         trans_font.setItalic(True)
         self._translation.set_style(trans_font, config.accent_start, config.accent_end, config.accent_sweep)
+        self._translation.set_max_width(avail)
         self._translation.setVisible(config.show_translation)
 
         self.setWindowOpacity(config.opacity)
@@ -280,6 +287,7 @@ class LyricsOverlay(QWidget):
 
         if not snapshot.found or snapshot.current is None:
             self._show_empty(snapshot)
+            self._refresh_input_region()
             return
 
         self._container.setVisible(True)
@@ -297,6 +305,7 @@ class LyricsOverlay(QWidget):
         else:
             self._translation.set_line(None, False)
             self._translation.setVisible(False)
+        self._refresh_input_region()
 
     def _show_empty(self, snapshot: LyricsSnapshot) -> None:
         self._current.set_line(None, False)
@@ -344,7 +353,7 @@ class LyricsOverlay(QWidget):
         if self._controller.available:
             self._controller.make_overlay(ptr)
             self._controller.set_anchor_position(ptr, self._layer_pos.x(), self._layer_pos.y())
-            self._controller.set_passthrough(ptr, self._passthrough)
+            self._apply_input_region()
         else:
             self._fallback_position()
 
@@ -360,21 +369,48 @@ class LyricsOverlay(QWidget):
         self._passthrough = enabled
         self._update_lock_icon()
         self._update_chrome()
+        # Chrome visibility just changed the pill size; lay out, then set the region.
+        QTimer.singleShot(0, self._apply_input_region)
+
+    def _apply_input_region(self) -> None:
+        """Locked -> full click-through. Unlocked -> only the visible pill catches
+        clicks, so the big transparent band around it stays click-through."""
         ptr = self._window_ptr()
-        if ptr is not None and self._controller.available:
-            self._controller.set_passthrough(ptr, enabled)
+        if ptr is None or not self._controller.available:
+            return
+        if self._passthrough:
+            self._controller.set_passthrough(ptr, True)
+        else:
+            rect = self._container.geometry()
+            self._controller.set_input_rect(ptr, rect.x(), rect.y(), rect.width(), rect.height())
+
+    def _refresh_input_region(self) -> None:
+        if not self._passthrough:
+            QTimer.singleShot(0, self._apply_input_region)
+
+    def eventFilter(self, a0: QObject | None, a1: QEvent | None) -> bool:
+        # The container resizes as the pill/lyric changes size; keep the input
+        # region matched to it. This fixes the initially oversized region before
+        # the first snapshot shrinks the pill to its real size.
+        if a0 is self._container and a1 is not None and a1.type() == QEvent.Type.Resize:
+            self._refresh_input_region()
+        return super().eventFilter(a0, a1)
 
     # --- drag to reposition (only while unlocked) ---
     #
-    # Wayland forbids client-side self.move(); a layer surface is moved by
-    # updating its margins. We track the grab point in *local* (window) coords so
-    # that as the window follows the cursor the delta naturally settles to zero
-    # each frame (1:1 feel), mirroring BiliHUD.
+    # Wayland forbids client-side self.move(); a layer surface is moved by updating
+    # its margins. Use BiliHUD's incremental *local* delta — it is accurate ("cursor
+    # stops where you release") because the cursor's local position re-settles as the
+    # surface follows. (globalPosition() is unreliable for a layer surface on Wayland
+    # — it can be off by half a screen — which is why BiliHUD avoids it.) To fix the
+    # big-font flicker we commit via the bridge and skip the Qt repaint, so the heavy
+    # lyric text isn't re-rendered every frame.
 
     def mousePressEvent(self, a0: QMouseEvent | None) -> None:
         if a0 is not None and not self._passthrough and a0.button() == Qt.MouseButton.LeftButton:
             self._dragging = True
             self._drag_local = a0.position().toPoint()
+            self._render_timer.stop()  # pause the sweep so it isn't repainted mid-drag
             a0.accept()
         else:
             super().mousePressEvent(a0)
@@ -387,7 +423,9 @@ class LyricsOverlay(QWidget):
                 ptr = self._window_ptr()
                 if ptr is not None:
                     self._controller.set_anchor_position(ptr, self._layer_pos.x(), self._layer_pos.y())
-                    self.update()  # triggers wl_surface.commit so the move applies
+                    # No repaint: the bridge commits the surface, and the compositor
+                    # just re-positions the cached buffer — so the heavy lyric text
+                    # isn't re-rendered every frame, which is what killed tracking.
             else:
                 screen = self._target_screen()
                 if screen is not None:
@@ -400,6 +438,7 @@ class LyricsOverlay(QWidget):
     def mouseReleaseEvent(self, a0: QMouseEvent | None) -> None:
         if self._dragging:
             self._dragging = False
+            self._render_timer.start()  # resume the sweep
             self._commit_drag_position()
             if a0 is not None:
                 a0.accept()
@@ -449,7 +488,7 @@ class LyricsOverlay(QWidget):
         painter.setBrush(QColor(15, 17, 22, 150))
         painter.setPen(Qt.PenStyle.NoPen)
         rect = self._container.geometry()
-        painter.drawRoundedRect(rect, 16, 16)
+        painter.drawRoundedRect(rect, PILL_RADIUS, PILL_RADIUS)
 
     def reset(self) -> None:
         self._clock.reset()

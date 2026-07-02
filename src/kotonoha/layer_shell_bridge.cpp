@@ -58,6 +58,15 @@ extern "C" {
             margins.setBottom(0);
             ls_window->setMargins(margins);
         }
+        // Commit the surface right away so the move lands without waiting for the
+        // next Qt repaint (reduces the dragging lag / "repainting in place" feel).
+        QPlatformNativeInterface* native = QGuiApplication::platformNativeInterface();
+        if (native) {
+            struct wl_surface* surface = (struct wl_surface*)native->nativeResourceForWindow("surface", window);
+            if (surface) {
+                wl_surface_commit(surface);
+            }
+        }
     }
 
     void set_passthrough(void* window_ptr, bool enabled) {
@@ -85,6 +94,33 @@ extern "C" {
                 // NULL input region -> infinite region (surface accepts all input).
                 wl_surface_set_input_region(surface, nullptr);
             }
+            wl_surface_commit(surface);
+        }
+    }
+
+    // Restrict input to a single rectangle (surface coords). Used while unlocked
+    // so only the visible pill catches clicks — the transparent area around it
+    // stays click-through instead of the whole big band grabbing every click.
+    void set_input_rect(void* window_ptr, int x, int y, int w, int h) {
+        if (!window_ptr) return;
+        QWindow* window = static_cast<QWindow*>(window_ptr);
+
+        QPlatformNativeInterface* native = QGuiApplication::platformNativeInterface();
+        if (!native) return;
+
+        struct wl_surface* surface = (struct wl_surface*)native->nativeResourceForWindow("surface", window);
+        if (!surface) return;
+
+        struct wl_compositor* compositor = (struct wl_compositor*)native->nativeResourceForIntegration("compositor");
+        if (!compositor) {
+            compositor = (struct wl_compositor*)native->nativeResourceForIntegration("wl_compositor");
+        }
+
+        if (surface && compositor) {
+            struct wl_region* region = wl_compositor_create_region(compositor);
+            wl_region_add(region, x, y, w, h);
+            wl_surface_set_input_region(surface, region);
+            wl_region_destroy(region);
             wl_surface_commit(surface);
         }
     }

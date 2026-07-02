@@ -24,13 +24,14 @@ CONFIG_FILE_NAME = "config.json"
 VALID_LYRICS_SOURCES = ("netease", "lrclib", "cider")
 DEFAULT_LYRICS_SOURCES = ["netease", "lrclib", "cider"]
 
-# Accent presets: (label, start, end, sweep). The first is the default pink.
+# Accent presets: (key, start, end, sweep). The key is translated in the UI
+# (see strings.py "accent.*"); the first entry is the default pink.
 ACCENT_PRESETS: tuple[tuple[str, str, str, str], ...] = (
-    ("粉", "#FF4FA3", "#FF8FCB", "#FF6EC7"),
-    ("青蓝", "#4FACFE", "#00F2FE", "#38E1FF"),
-    ("紫", "#B14FFF", "#E29BFF", "#C97BFF"),
-    ("绿", "#34E89E", "#A7F3D0", "#5BF0B0"),
-    ("橙", "#FF8A4F", "#FFC58F", "#FFA56E"),
+    ("pink", "#FF4FA3", "#FF8FCB", "#FF6EC7"),
+    ("cyan", "#4FACFE", "#00F2FE", "#38E1FF"),
+    ("purple", "#B14FFF", "#E29BFF", "#C97BFF"),
+    ("green", "#34E89E", "#A7F3D0", "#5BF0B0"),
+    ("orange", "#FF8A4F", "#FFC58F", "#FFA56E"),
 )
 
 
