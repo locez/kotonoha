@@ -392,8 +392,14 @@ class LyricsOverlay(QWidget):
         # The container resizes as the pill/lyric changes size; keep the input
         # region matched to it. This fixes the initially oversized region before
         # the first snapshot shrinks the pill to its real size.
-        if a0 is self._container and a1 is not None and a1.type() == QEvent.Type.Resize:
-            self._refresh_input_region()
+        if a0 is self._container and a1 is not None:
+            if a1.type() in {QEvent.Type.Move, QEvent.Type.Resize}:
+                # The rounded panel antialiases one pixel beyond the container's
+                # geometry. Repaint the full translucent surface so an old edge
+                # cannot survive a layout-driven move or resize.
+                self.update()
+            if a1.type() == QEvent.Type.Resize:
+                self._refresh_input_region()
         return super().eventFilter(a0, a1)
 
     # --- drag to reposition (only while unlocked) ---
