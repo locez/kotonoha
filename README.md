@@ -104,8 +104,17 @@ During an MPRIS track transition, empty or partially updated metadata is held br
 
 Pushing a `vX.Y.Z` tag runs the complete Python and Cider test suites, builds the release packages, and
 publishes a GitHub Release containing a DEB, an RPM, a Linux x86_64 wheel,
-`kotonoha-cider-lyrics-X.Y.Z.zip`, and `SHA256SUMS`. The DEB and RPM install a multilingual desktop
-entry and the default application icon.
+`kotonoha-cider-lyrics-X.Y.Z.zip`, and `SHA256SUMS`. The DEB is built and tested against Ubuntu 26.04
+and is intended for compatible Debian/Ubuntu systems. The RPM is built and tested against Fedora 43
+and is intended for compatible Fedora systems; neither is a universal Linux package. Both install a
+multilingual desktop entry and the default application icon.
+
+Install a downloaded native package with its dependency-resolving package manager:
+
+```bash
+sudo apt install ./kotonoha_*.deb
+sudo dnf install ./kotonoha-*.rpm
+```
 
 The wheel is a non-pure Linux x86_64 package containing Kotonoha's native LayerShellQt bridge. It
 requires compatible system Qt 6, Wayland, and LayerShellQt libraries; it is not a Windows, macOS, or
