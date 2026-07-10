@@ -406,7 +406,10 @@ def test_debian_metadata_installs_required_runtime_parts():
     install = Path("packaging/debian/install").read_text(encoding="utf-8")
     for dependency in ("python3-pyqt6", "python3-aiohttp", "python3-qasync", "python3-dbus-fast"):
         assert dependency in control
-    assert "USE_SYSTEM_LIBS=1" in rules
+    assert "dh-sequence-python3" in control
+    assert "dh $@ --buildsystem=pybuild" in rules
+    assert "USE_SYSTEM_LIBS=1 bash src/kotonoha/build_bridge.sh" in rules
+    assert "hatch-build-scripts" in rules
     assert "src/kotonoha/assets/icon.png" in rules
     assert "packaging/kotonoha.desktop" in install
 
@@ -415,7 +418,9 @@ def test_fedora_spec_installs_required_runtime_parts():
     spec = Path("packaging/fedora/kotonoha.spec").read_text(encoding="utf-8")
     for dependency in ("python3-qt6", "python3-aiohttp", "python3-qasync", "python3-dbus-fast"):
         assert dependency in spec
-    assert "USE_SYSTEM_LIBS=1" in spec
+    assert "USE_SYSTEM_LIBS=1 bash src/kotonoha/build_bridge.sh" in spec
+    assert "hatch-build-scripts" in spec
+    assert "PYTHON" + "PATH" not in spec
     assert "desktop-file-validate" in spec
     assert "%{_datadir}/applications/kotonoha.desktop" in spec
     assert "%{_datadir}/pixmaps/kotonoha.png" in spec
@@ -434,7 +439,7 @@ Source: kotonoha
 Section: sound
 Priority: optional
 Maintainer: Locez <locez@locez.com>
-Build-Depends: debhelper-compat (= 13), dh-python, pybuild-plugin-pyproject, python3-all, python3-hatchling, python3-aiohttp, python3-dbus-fast, python3-pyqt6, python3-qasync, liblayershellqtinterface-dev, qt6-base-dev, qt6-base-private-dev, libwayland-dev, pkg-config, g++, desktop-file-utils
+Build-Depends: debhelper-compat (= 13), dh-python, dh-sequence-python3, pybuild-plugin-pyproject, python3-all, python3-hatchling, python3-aiohttp, python3-dbus-fast, python3-pyqt6, python3-qasync, liblayershellqtinterface-dev, qt6-base-dev, qt6-base-private-dev, libwayland-dev, pkg-config, g++, desktop-file-utils
 Standards-Version: 4.7.0
 Rules-Requires-Root: no
 Homepage: https://github.com/locez/kotonoha
@@ -455,7 +460,13 @@ export PYBUILD_NAME=kotonoha
 export USE_SYSTEM_LIBS=1
 
 %:
-	dh $@ --with python3 --buildsystem=pybuild
+	dh $@ --buildsystem=pybuild
+
+override_dh_auto_configure:
+	sed -i 's/^requires = \["hatchling", "hatch-build-scripts"\]$$/requires = ["hatchling"]/' pyproject.toml
+	sed -i '/^\[tool\.hatch\.build\.hooks\.build-scripts\]$$/,/^artifacts = \["src\/kotonoha\/libkoto-layer\.so"\]$$/d' pyproject.toml
+	USE_SYSTEM_LIBS=1 bash src/kotonoha/build_bridge.sh
+	dh_auto_configure --buildsystem=pybuild
 
 override_dh_auto_test:
 	@echo "Skipping package-build tests; the reusable GitHub test workflow runs them first."
@@ -516,11 +527,11 @@ applications using MPRIS metadata and multiple external lyric providers.
 
 %prep
 %autosetup
+sed -i 's/^requires = \["hatchling", "hatch-build-scripts"\]$/requires = ["hatchling"]/' pyproject.toml
+sed -i '/^\[tool\.hatch\.build\.hooks\.build-scripts\]$/,/^artifacts = \["src\/kotonoha\/libkoto-layer\.so"\]$/d' pyproject.toml
 
 %build
-export PY_VER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-export PYTHONPATH=$PYTHONPATH:/usr/local/lib/python${PY_VER}/site-packages:/usr/local/lib64/python${PY_VER}/site-packages
-export USE_SYSTEM_LIBS=1
+USE_SYSTEM_LIBS=1 bash src/kotonoha/build_bridge.sh
 %pyproject_wheel
 
 %install
@@ -712,8 +723,8 @@ jobs:
       - name: Install Debian build dependencies
         run: |
           apt-get update
-          apt-get install -y devscripts debhelper dh-python pybuild-plugin-pyproject python3-all python3-hatchling python3-aiohttp python3-dbus-fast python3-pyqt6 python3-qasync liblayershellqtinterface-dev qt6-base-dev qt6-base-private-dev libwayland-dev pkg-config build-essential python3-pip desktop-file-utils
-          python3 -m pip install uv hatch-build-scripts --break-system-packages
+          apt-get install -y devscripts debhelper dh-python dh-sequence-python3 pybuild-plugin-pyproject python3-all python3-hatchling python3-aiohttp python3-dbus-fast python3-pyqt6 python3-qasync liblayershellqtinterface-dev qt6-base-dev qt6-base-private-dev libwayland-dev pkg-config build-essential python3-pip desktop-file-utils
+          python3 -m pip install uv --break-system-packages
       - name: Prepare Debian source
         run: |
           uv version "$VERSION" --frozen --no-sync
@@ -723,7 +734,7 @@ jobs:
           export DEBFULLNAME="GitHub Actions"
           dch -v "${VERSION}-1" -D unstable --force-distribution "Automated release build"
       - name: Build Debian package
-        run: USE_SYSTEM_LIBS=1 debuild -us -uc -b
+        run: debuild -us -uc -b
       - name: Install and verify Debian package
         run: |
           mv ../kotonoha_*.deb .
@@ -753,7 +764,7 @@ jobs:
       - name: Install Fedora build dependencies
         run: |
           dnf install -y rpm-build python3-devel python3-hatchling python3-pyproject-rpm-macros python3-qt6 python3-aiohttp python3-qasync python3-dbus-fast gcc-c++ libstdc++-static qt6-qtbase-devel qt6-qtbase-private-devel layer-shell-qt-devel wayland-devel desktop-file-utils git tar python3-pip
-          python3 -m pip install uv hatch-build-scripts
+          python3 -m pip install uv
       - name: Prepare RPM source
         run: |
           uv version "$VERSION" --frozen --no-sync

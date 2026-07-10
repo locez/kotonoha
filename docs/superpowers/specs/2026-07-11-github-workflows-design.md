@@ -111,9 +111,9 @@ The DEB build runs in an Ubuntu 26.04 container and adds:
 - `packaging/debian/install` for the desktop entry and icon;
 - `packaging/debian/changelog` as the checked-in base changelog.
 
-The workflow copies `packaging/debian` to the repository-root `debian` directory, updates the changelog to the resolved version, and builds an unsigned binary package with `debuild`.
+The workflow installs `uv` only to update the release version, copies `packaging/debian` to the repository-root `debian` directory, updates the changelog to the resolved version, and builds an unsigned binary package with `debuild`.
 
-Qt 6, PyQt6, Wayland, LayerShellQt, aiohttp, qasync, and dbus-fast are represented as system build/runtime dependencies rather than bundled Qt libraries. The native bridge is compiled with `USE_SYSTEM_LIBS=1` so it links against the target distribution's Qt and LayerShellQt ABI.
+Qt 6, PyQt6, Wayland, LayerShellQt, aiohttp, qasync, and dbus-fast are represented as system build/runtime dependencies rather than bundled Qt libraries. `dh-sequence-python3` activates `dh_python3` so `${python3:Depends}` is populated. Before pybuild configures the PEP 517 backend, `debian/rules` removes the optional Hatch build-script hook from the package build tree, compiles the native bridge explicitly with `USE_SYSTEM_LIBS=1`, and then resumes the normal pybuild configure/build sequence. This keeps the package build self-contained and links the bridge against the target distribution's Qt and LayerShellQt ABI.
 
 After building, the container installs the generated DEB and verifies:
 
@@ -129,7 +129,7 @@ Only a DEB that passes these installation checks is uploaded.
 
 The RPM build runs in a Fedora 43 container and adds `packaging/fedora/kotonoha.spec`.
 
-The workflow creates a source archive named for the resolved version, updates the spec version for the build, and invokes `rpmbuild`. The spec uses Fedora's Python RPM macros, installs the command, desktop entry, and pixmap, and builds the native bridge with `USE_SYSTEM_LIBS=1`.
+The workflow installs `uv` only to update the release version, creates a source archive named for the resolved version, updates the spec version for the build, and invokes `rpmbuild`. During `%prep`, the spec removes the optional Hatch build-script hook from the package build tree. During `%build`, it compiles the native bridge explicitly with `USE_SYSTEM_LIBS=1` before invoking Fedora's Python wheel macro. The existing wheel force-include packages the manually built library without relying on files installed outside the declared RPM build requirements.
 
 Qt 6, PyQt6, Wayland, LayerShellQt, aiohttp, qasync, and dbus-fast are declared as system build/runtime requirements. After building, the container installs the generated RPM and performs the same import, executable, native library, desktop file, icon, and desktop validation checks as the DEB job.
 

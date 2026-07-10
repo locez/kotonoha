@@ -30,10 +30,11 @@ Wayland layer-shell overlay.
 
 %prep
 %autosetup
+sed -i 's/^requires = \["hatchling", "hatch-build-scripts"\]$/requires = ["hatchling"]/' pyproject.toml
+sed -i '/^\[tool\.hatch\.build\.hooks\.build-scripts\]$/,/^artifacts = \["src\/kotonoha\/libkoto-layer\.so"\]$/d' pyproject.toml
 
 %build
-export PYTHONPATH="/usr/local/lib/python%{python3_version}/site-packages${PYTHONPATH:+:${PYTHONPATH}}"
-export USE_SYSTEM_LIBS=1
+USE_SYSTEM_LIBS=1 bash src/kotonoha/build_bridge.sh
 %pyproject_wheel
 
 %install

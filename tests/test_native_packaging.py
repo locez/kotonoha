@@ -1,11 +1,25 @@
 from __future__ import annotations
 
 import os
+import re
+import subprocess
 from pathlib import Path
+
+import pytest
+
+try:
+    import tomllib  # ty: ignore[unresolved-import]
+except ModuleNotFoundError:  # pragma: no cover - exercised by the Python 3.10 CI job
+    import tomli as tomllib  # ty: ignore[unresolved-import]
 
 PROJECT_ROOT = Path(__file__).parents[1]
 DEBIAN_DIR = PROJECT_ROOT / "packaging" / "debian"
 FEDORA_SPEC = PROJECT_ROOT / "packaging" / "fedora" / "kotonoha.spec"
+NATIVE_PACKAGING_DOCS = (
+    PROJECT_ROOT / "docs" / "superpowers" / "specs" / "2026-07-11-github-workflows-design.md",
+    PROJECT_ROOT / "docs" / "superpowers" / "plans" / "2026-07-11-github-workflows.md",
+)
+SED_EXPRESSION_PATTERN = re.compile(r"^\s*sed -i '([^']+)' pyproject\.toml$", re.MULTILINE)
 
 
 def read_packaging_file(path: Path) -> str:
@@ -29,6 +43,7 @@ def test_debian_control_declares_package_metadata_and_dependencies() -> None:
             "Homepage: https://github.com/locez/kotonoha",
             "debhelper-compat (= 13)",
             "dh-python",
+            "dh-sequence-python3",
             "pybuild-plugin-pyproject",
             "python3-all",
             "python3-hatchling",
@@ -61,6 +76,9 @@ def test_debian_rules_builds_with_system_libraries_and_installs_icon() -> None:
             "export PYBUILD_NAME=kotonoha",
             "export USE_SYSTEM_LIBS=1",
             "dh $@ --buildsystem=pybuild",
+            "override_dh_auto_configure:",
+            "USE_SYSTEM_LIBS=1 bash src/kotonoha/build_bridge.sh",
+            "dh_auto_configure --buildsystem=pybuild",
             "override_dh_auto_test:",
             "Tests run separately; skipping duplicate package-build tests.",
             "override_dh_install:",
@@ -121,13 +139,14 @@ def test_fedora_spec_declares_metadata_and_dependencies() -> None:
 def test_fedora_spec_builds_and_installs_native_desktop_assets() -> None:
     spec = read_packaging_file(FEDORA_SPEC)
 
+    assert "PYTHONPATH" not in spec
     assert_contains(
         spec,
         (
+            "%prep",
+            "%autosetup",
             "%build",
-            "/usr/local/lib/python",
-            "site-packages",
-            "USE_SYSTEM_LIBS=1",
+            "USE_SYSTEM_LIBS=1 bash src/kotonoha/build_bridge.sh",
             "%pyproject_wheel",
             "%install",
             "%pyproject_install",
@@ -151,3 +170,46 @@ def test_fedora_spec_only_packages_existing_documentation() -> None:
 
     for documentation_path in documentation_paths:
         assert (PROJECT_ROOT / documentation_path).is_file()
+
+
+def apply_packaging_sed_expressions(tmp_path: Path, packaging_path: Path, *, makefile: bool) -> tuple[str, dict]:
+    packaging = read_packaging_file(packaging_path)
+    expressions = SED_EXPRESSION_PATTERN.findall(packaging)
+    assert len(expressions) == 2
+
+    pyproject_path = tmp_path / "pyproject.toml"
+    pyproject_path.write_bytes((PROJECT_ROOT / "pyproject.toml").read_bytes())
+    for expression in expressions:
+        if makefile:
+            expression = expression.replace("$$", "$")
+        subprocess.run(("sed", "-i", expression, str(pyproject_path)), check=True)
+
+    transformed = pyproject_path.read_text(encoding="utf-8")
+    return transformed, tomllib.loads(transformed)
+
+
+@pytest.mark.parametrize(
+    ("packaging_path", "makefile"),
+    ((DEBIAN_DIR / "rules", True), (FEDORA_SPEC, False)),
+)
+def test_native_packaging_sed_expressions_remove_only_the_build_hook(
+    tmp_path: Path,
+    packaging_path: Path,
+    makefile: bool,
+) -> None:
+    transformed, pyproject = apply_packaging_sed_expressions(tmp_path, packaging_path, makefile=makefile)
+
+    assert pyproject["build-system"]["requires"] == ["hatchling"]
+    assert "hatch-build-scripts" not in transformed
+    hatch_build = pyproject["tool"]["hatch"]["build"]
+    assert "hooks" not in hatch_build
+    assert hatch_build["targets"]["wheel"]["force-include"] == {
+        "src/kotonoha/libkoto-layer.so": "kotonoha/libkoto-layer.so"
+    }
+
+
+def test_native_packaging_docs_do_not_require_the_removed_build_hook() -> None:
+    for documentation_path in NATIVE_PACKAGING_DOCS:
+        documentation = read_packaging_file(documentation_path)
+        assert re.search(r"pip install[^\n]*hatch-build-scripts", documentation) is None
+        assert "PYTHONPATH" not in documentation
