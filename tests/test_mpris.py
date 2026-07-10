@@ -59,6 +59,20 @@ def test_parse_int64_max_length_sentinel_rejected():
     assert parse_metadata({"mpris:length": (1 << 63) - 1}).length_s is None
 
 
+def test_parse_non_finite_lengths_rejected():
+    for value in (float("inf"), float("-inf"), float("nan")):
+        assert parse_metadata({"mpris:length": value}).length_s is None
+
+
+def test_parse_non_positive_lengths_rejected():
+    assert parse_metadata({"mpris:length": 0}).length_s is None
+    assert parse_metadata({"mpris:length": -1}).length_s is None
+
+
+def test_parse_lengths_above_24_hours_rejected():
+    assert parse_metadata({"mpris:length": 86_400_000_001}).length_s is None
+
+
 def test_unwrap_variants():
     class FakeVariant:
         def __init__(self, value):

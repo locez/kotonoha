@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any
 
 from ..lyrics.match import TrackMetadata
 
-_UNKNOWN_LENGTH_US = (1 << 63) - 1
+_MAX_TRACK_LENGTH_S = 24 * 60 * 60
 
 
 def _as_text(value: Any) -> str:
@@ -16,6 +17,18 @@ def _as_text(value: Any) -> str:
     if isinstance(value, (list, tuple)):
         return " / ".join(str(item) for item in value if isinstance(item, str))
     return ""
+
+
+def _length_seconds(value: Any) -> float | None:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return None
+    length_us = float(value)
+    if not math.isfinite(length_us):
+        return None
+    length_s = length_us / 1_000_000.0
+    if length_s <= 0.0 or length_s > _MAX_TRACK_LENGTH_S:
+        return None
+    return length_s
 
 
 @dataclass(frozen=True)
@@ -35,14 +48,7 @@ class TrackInfo:
 
 
 def parse_metadata(raw: dict[str, Any]) -> TrackInfo:
-    length_us = raw.get("mpris:length")
-    length_s = (
-        float(length_us) / 1_000_000.0
-        if isinstance(length_us, (int, float))
-        and not isinstance(length_us, bool)
-        and length_us != _UNKNOWN_LENGTH_US
-        else None
-    )
+    length_s = _length_seconds(raw.get("mpris:length"))
     return TrackInfo(
         title=_as_text(raw.get("xesam:title")),
         artist=_as_text(raw.get("xesam:artist")),
