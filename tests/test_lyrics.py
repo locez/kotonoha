@@ -110,6 +110,24 @@ def test_artist_order_does_not_change_identity():
     assert evaluate_match(candidate, track).confidence is MatchConfidence.HIGH
 
 
+def test_exact_title_artist_and_album_survive_unreliable_player_duration():
+    track = TrackMetadata("Song", "Artist", "Serving You", 358.039136)
+    candidate = Candidate("1", "Song", "Artist", 229.28, album="Serving You")
+    assert evaluate_match(candidate, track).confidence is MatchConfidence.MEDIUM
+
+
+def test_duration_conflict_without_album_identity_is_rejected():
+    track = TrackMetadata("Song", "Artist", duration_s=358.039136)
+    candidate = Candidate("1", "Song", "Artist", 229.28)
+    assert evaluate_match(candidate, track).confidence is MatchConfidence.NONE
+
+
+def test_duration_conflict_with_partial_artist_overlap_is_rejected():
+    track = TrackMetadata("Song", "Artist / Guest", "Album", 358.039136)
+    candidate = Candidate("1", "Song", "Artist", 229.28, album="Album")
+    assert evaluate_match(candidate, track).confidence is MatchConfidence.NONE
+
+
 def test_missing_artist_and_duration_is_not_persistent_confidence():
     track = TrackMetadata("Song", "")
     candidate = Candidate("1", "Song", "Other Artist", None)

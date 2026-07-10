@@ -7,6 +7,8 @@ from typing import Any
 
 from ..lyrics.match import TrackMetadata
 
+_UNKNOWN_LENGTH_US = (1 << 63) - 1
+
 
 def _as_text(value: Any) -> str:
     if isinstance(value, str):
@@ -32,7 +34,9 @@ def parse_metadata(raw: dict[str, Any]) -> TrackInfo:
     length_us = raw.get("mpris:length")
     length_s = (
         float(length_us) / 1_000_000.0
-        if isinstance(length_us, (int, float)) and not isinstance(length_us, bool)
+        if isinstance(length_us, (int, float))
+        and not isinstance(length_us, bool)
+        and length_us != _UNKNOWN_LENGTH_US
         else None
     )
     return TrackInfo(

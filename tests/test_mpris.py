@@ -55,6 +55,10 @@ def test_parse_length_bool_rejected():
     assert parse_metadata({"mpris:length": True}).length_s is None
 
 
+def test_parse_int64_max_length_sentinel_rejected():
+    assert parse_metadata({"mpris:length": (1 << 63) - 1}).length_s is None
+
+
 def test_unwrap_variants():
     class FakeVariant:
         def __init__(self, value):

@@ -132,6 +132,7 @@ def evaluate_match(candidate: Candidate, track: TrackMetadata) -> MatchEvidence:
     shared_artists = track_artists & candidate_artists
     artist_overlap = not track_artists or not candidate_artists or bool(shared_artists)
     artist_evidence = bool(track_artists and candidate_artists and shared_artists)
+    artist_identity = bool(track_artists and track_artists == candidate_artists)
     album_match = bool(track.album and candidate.album and normalize(track.album) == normalize(candidate.album))
     duration_delta = (
         abs(track.duration_s - candidate.duration_s)
@@ -139,6 +140,7 @@ def evaluate_match(candidate: Candidate, track: TrackMetadata) -> MatchEvidence:
         else None
     )
     version_conflict = bool(track_tags or candidate_tags) and track_tags != candidate_tags
+    catalog_identity = title_exact and artist_identity and album_match
 
     confidence = MatchConfidence.NONE
     if not version_conflict and artist_overlap:
@@ -147,6 +149,8 @@ def evaluate_match(candidate: Candidate, track: TrackMetadata) -> MatchEvidence:
         )
         if title_strong and supporting_identity and (duration_delta is None or duration_delta <= 3.0):
             confidence = MatchConfidence.HIGH
+        elif catalog_identity:
+            confidence = MatchConfidence.MEDIUM
         elif title_strong and (duration_delta is None or duration_delta <= 8.0):
             confidence = MatchConfidence.MEDIUM
         elif (
