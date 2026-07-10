@@ -67,9 +67,11 @@ With the local cache enabled, that default order is resolved exactly as:
 
 Reordering a provider moves its cache and network stages together. Cider is attempted at its configured position; it is not automatically preferred just because the active MPRIS player is Cider. Cache entries are stored by the provider's stable song ID and matched against the current playback metadata at lookup time.
 
-## Cider probe (optional)
+## Cider probe (experimental, optional)
 
-Most players don't need this — MPRIS + Netease already covers them. The Cider plugin is only for getting Apple Music's own TTML lyrics into the priority list. Built with Vite + pnpm:
+> **Experimental:** The Cider probe depends on Cider's internal plugin APIs and Apple Music's TTML response. It may break after Cider updates or produce missing, incomplete, or delayed snapshots. Use it cautiously and keep external lyric providers enabled.
+
+The Cider plugin adds Apple Music's own TTML lyrics to the configured priority list. It is not required for MPRIS playback or external providers. Built with Vite + pnpm:
 
 ```bash
 cd plugins/cider/lyrics
