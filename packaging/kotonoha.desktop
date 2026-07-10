@@ -1,0 +1,22 @@
+[Desktop Entry]
+Type=Application
+Name=Kotonoha
+Name[zh_CN]=Kotonoha 歌词 HUD
+Name[zh_TW]=Kotonoha 歌詞 HUD
+Name[ja]=Kotonoha 歌詞 HUD
+GenericName=Lyrics Overlay
+GenericName[zh_CN]=桌面歌词悬浮窗
+GenericName[zh_TW]=桌面歌詞懸浮視窗
+GenericName[ja]=デスクトップ歌詞オーバーレイ
+Comment=Show synchronized lyrics for the current track
+Comment[zh_CN]=显示当前歌曲的同步歌词
+Comment[zh_TW]=顯示目前歌曲的同步歌詞
+Comment[ja]=再生中の曲の同期歌詞を表示
+Exec=kotonoha
+Icon=kotonoha
+Terminal=false
+Categories=AudioVideo;Audio;Utility;
+Keywords=lyrics;music;overlay;karaoke;
+Keywords[zh_CN]=歌词;音乐;悬浮窗;卡拉OK;
+Keywords[zh_TW]=歌詞;音樂;懸浮視窗;卡拉OK;
+Keywords[ja]=歌詞;音楽;オーバーレイ;カラオケ;
