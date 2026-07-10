@@ -31,6 +31,11 @@ def assert_contains(content: str, expected_values: tuple[str, ...]) -> None:
         assert expected in content
 
 
+def write_executable(path: Path, content: str) -> None:
+    path.write_text(content, encoding="utf-8")
+    path.chmod(0o755)
+
+
 def test_debian_control_declares_package_metadata_and_dependencies() -> None:
     control = read_packaging_file(DEBIAN_DIR / "control")
 
@@ -213,3 +218,55 @@ def test_native_packaging_docs_do_not_require_the_removed_build_hook() -> None:
         documentation = read_packaging_file(documentation_path)
         assert re.search(r"pip install[^\n]*hatch-build-scripts", documentation) is None
         assert "PYTHONPATH" not in documentation
+
+
+def test_debian_rules_restore_the_source_tree_after_repeated_configure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_tree = tmp_path / "source"
+    debian_dir = source_tree / "debian"
+    package_dir = source_tree / "src" / "kotonoha"
+    fake_bin = tmp_path / "bin"
+    debian_dir.mkdir(parents=True)
+    package_dir.mkdir(parents=True)
+    fake_bin.mkdir()
+
+    original_pyproject = (PROJECT_ROOT / "pyproject.toml").read_bytes()
+    pyproject_path = source_tree / "pyproject.toml"
+    pyproject_path.write_bytes(original_pyproject)
+    rules_path = debian_dir / "rules"
+    rules_path.write_bytes((DEBIAN_DIR / "rules").read_bytes())
+    rules_path.chmod(0o755)
+    write_executable(package_dir / "build_bridge.sh", "#!/bin/bash\n: > src/kotonoha/libkoto-layer.so\n")
+    write_executable(fake_bin / "dh_auto_configure", "#!/bin/sh\nprintf 'configure\\n' >> debhelper.log\n")
+    write_executable(fake_bin / "dh_clean", "#!/bin/sh\nprintf 'clean\\n' >> debhelper.log\n")
+    monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ['PATH']}")
+
+    backup_path = debian_dir / ".kotonoha-pyproject.toml.orig"
+    configure_command = ("make", "-f", "debian/rules", "override_dh_auto_configure")
+    subprocess.run(configure_command, cwd=source_tree, check=True)
+    assert backup_path.is_file()
+    assert backup_path.read_bytes() == original_pyproject
+    assert pyproject_path.read_bytes() != original_pyproject
+    assert "hatch-build-scripts" not in pyproject_path.read_text(encoding="utf-8")
+
+    subprocess.run(configure_command, cwd=source_tree, check=True)
+    assert backup_path.read_bytes() == original_pyproject
+    assert pyproject_path.read_bytes() != original_pyproject
+    assert (package_dir / "libkoto-layer.so").is_file()
+
+    clean_command = ("make", "-f", "debian/rules", "override_dh_clean")
+    subprocess.run(clean_command, cwd=source_tree, check=True)
+    assert pyproject_path.read_bytes() == original_pyproject
+    assert not backup_path.exists()
+    assert not (package_dir / "libkoto-layer.so").exists()
+
+    subprocess.run(clean_command, cwd=source_tree, check=True)
+    assert pyproject_path.read_bytes() == original_pyproject
+    assert (source_tree / "debhelper.log").read_text(encoding="utf-8").splitlines() == [
+        "configure",
+        "configure",
+        "clean",
+        "clean",
+    ]

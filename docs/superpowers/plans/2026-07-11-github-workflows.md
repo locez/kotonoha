@@ -458,11 +458,13 @@ Create executable `packaging/debian/rules`:
 #!/usr/bin/make -f
 export PYBUILD_NAME=kotonoha
 export USE_SYSTEM_LIBS=1
+PYPROJECT_BACKUP := debian/.kotonoha-pyproject.toml.orig
 
 %:
 	dh $@ --buildsystem=pybuild
 
 override_dh_auto_configure:
+	test -e $(PYPROJECT_BACKUP) || cp -p pyproject.toml $(PYPROJECT_BACKUP)
 	sed -i 's/^requires = \["hatchling", "hatch-build-scripts"\]$$/requires = ["hatchling"]/' pyproject.toml
 	sed -i '/^\[tool\.hatch\.build\.hooks\.build-scripts\]$$/,/^artifacts = \["src\/kotonoha\/libkoto-layer\.so"\]$$/d' pyproject.toml
 	USE_SYSTEM_LIBS=1 bash src/kotonoha/build_bridge.sh
@@ -470,6 +472,11 @@ override_dh_auto_configure:
 
 override_dh_auto_test:
 	@echo "Skipping package-build tests; the reusable GitHub test workflow runs them first."
+
+override_dh_clean:
+	rm -f src/kotonoha/libkoto-layer.so
+	if [ -e $(PYPROJECT_BACKUP) ]; then mv -f $(PYPROJECT_BACKUP) pyproject.toml; fi
+	dh_clean
 
 override_dh_install:
 	dh_install
