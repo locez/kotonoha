@@ -29,10 +29,11 @@ Two workflows keep continuous integration separate from release orchestration.
 
 `.github/workflows/test.yml` supports `push`, `pull_request`, and `workflow_call`.
 
-The Python job uses an Ubuntu runner and a Python 3.10, 3.11, 3.12, 3.13, and 3.14 matrix. It installs the Qt 6, Wayland, LayerShellQt, compiler, and virtual display dependencies needed to compile and load Kotonoha's native bridge. Each matrix member installs the project with its test extras and runs:
+The Python job uses an Ubuntu 26.04 container on an Ubuntu runner and a Python 3.10, 3.11, 3.12, 3.13, and 3.14 matrix. An initial root package step installs Git and CA certificates before checkout. The job then installs the Qt 6, Wayland, LayerShellQt, compiler, and virtual display dependencies needed to compile and load Kotonoha's native bridge. Each matrix member installs the project from the locked dependency graph with its test extras, inspects the generated `libkoto-layer.so` with `ldd`, requires Qt6Core, Qt6Gui, and LayerShellQt linkage, rejects Qt 5 linkage, and loads the library through `ctypes.CDLL` without calling GUI functions. The essential command sequence is:
 
 ```text
-xvfb-run uv run pytest
+uv sync --locked --extra test
+xvfb-run -a uv run pytest
 uv run ruff check .
 uv run ty check
 ```
@@ -47,13 +48,15 @@ pnpm build
 
 The job then verifies that the build produced both `plugin.js` and `plugin.yml`. Python and Cider remain separate jobs so a failure clearly identifies the affected subsystem.
 
-The workflow receives read-only repository permissions. Branch and pull-request runs use a ref-based concurrency group with cancellation enabled so an obsolete run does not consume runner time.
+The workflow receives read-only repository permissions. Its `workflow_call` interface exposes a `release_validation` boolean that defaults to false. Ordinary branch, pull-request, and reusable runs use a workflow-and-ref concurrency group with cancellation enabled so obsolete CI does not consume runner time. Release callers pass `release_validation: true`, which places the run in a workflow-and-run-ID group and disables cancellation so release validation cannot collide with or be canceled by ordinary CI.
+
+Every external action is pinned to the immutable commit behind its requested release tag, with the human-readable tag retained as an inline comment. `setup-uv` additionally installs exactly uv 0.11.19, and the Cider job continues to install exactly pnpm 9.10.0.
 
 ### Package Workflow
 
 `.github/workflows/package.yml` supports `v*` tag pushes and `workflow_dispatch`.
 
-Its first job invokes `test.yml` through `workflow_call`. DEB, RPM, wheel, and Cider package jobs depend on that reusable test workflow, so a tag cannot publish artifacts without passing the same checks used for pull requests.
+Its first job invokes `test.yml` through `workflow_call` with `release_validation: true`. DEB, RPM, wheel, and Cider package jobs depend on that reusable test workflow, so a tag cannot publish artifacts without passing the same checks used for pull requests.
 
 The four package jobs run in parallel after validation. Each uploads a separately named Actions artifact. A final assembly job downloads all artifacts, verifies the expected files, generates `SHA256SUMS`, and uploads the combined release bundle.
 

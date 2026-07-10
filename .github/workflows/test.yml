@@ -8,18 +8,25 @@ on:
     branches:
       - main
   workflow_call:
+    inputs:
+      release_validation:
+        description: Preserve this reusable validation run from ordinary CI cancellation
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: test-${{ github.event_name == 'workflow_call' && github.run_id || github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_call' }}
+  group: test-${{ github.workflow }}-${{ inputs.release_validation && github.run_id || github.ref }}
+  cancel-in-progress: ${{ ! inputs.release_validation }}
 
 jobs:
   python:
     name: Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
+    container: ubuntu:26.04
     strategy:
       fail-fast: false
       matrix:
@@ -30,18 +37,23 @@ jobs:
           - "3.13"
           - "3.14"
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - name: Install checkout prerequisites
+        run: |
+          apt-get update
+          apt-get install -y ca-certificates git
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: ${{ matrix.python-version }}
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
+          version: 0.11.19
           enable-cache: true
           cache-dependency-glob: uv.lock
       - name: Install system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          apt-get update
+          apt-get install -y \
             build-essential \
             desktop-file-utils \
             libdbus-1-3 \
@@ -61,7 +73,20 @@ jobs:
             qt6-base-private-dev \
             xvfb
       - name: Install Python dependencies
-        run: uv sync --extra test
+        run: uv sync --locked --extra test
+      - name: Verify native bridge linkage
+        run: |
+          bridge=src/kotonoha/libkoto-layer.so
+          test -f "$bridge"
+          ldd "$bridge" | tee /tmp/libkoto-layer.ldd
+          grep -F "libQt6Core.so" /tmp/libkoto-layer.ldd
+          grep -F "libQt6Gui.so" /tmp/libkoto-layer.ldd
+          grep -F "LayerShellQt" /tmp/libkoto-layer.ldd
+          if grep -E "libQt5[^ ]*\\.so" /tmp/libkoto-layer.ldd; then
+            echo "Qt 5 dependency detected in $bridge" >&2
+            exit 1
+          fi
+          uv run python -c "import ctypes; ctypes.CDLL('$bridge')"
       - name: Test
         run: xvfb-run -a uv run pytest
       - name: Lint
@@ -78,11 +103,12 @@ jobs:
       run:
         working-directory: plugins/cider/lyrics
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: 9.10.0
-      - uses: actions/setup-node@v6
+          run_install: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 20
           cache: pnpm

@@ -584,36 +584,61 @@ on:
   pull_request:
     branches: [main]
   workflow_call:
+    inputs:
+      release_validation:
+        description: Preserve this reusable validation run from ordinary CI cancellation
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: test-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_call' }}
+  group: test-${{ github.workflow }}-${{ inputs.release_validation && github.run_id || github.ref }}
+  cancel-in-progress: ${{ ! inputs.release_validation }}
 
 jobs:
   python:
     runs-on: ubuntu-latest
+    container: ubuntu:26.04
     strategy:
       fail-fast: false
       matrix:
         python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - name: Install checkout prerequisites
+        run: |
+          apt-get update
+          apt-get install -y ca-certificates git
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: ${{ matrix.python-version }}
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
+          version: 0.11.19
           enable-cache: true
           cache-dependency-glob: uv.lock
       - name: Install Qt and Wayland dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb libegl1 libdbus-1-3 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0 qt6-base-dev qt6-base-private-dev libwayland-dev liblayershellqtinterface-dev pkg-config build-essential desktop-file-utils
+          apt-get update
+          apt-get install -y xvfb libegl1 libdbus-1-3 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0 qt6-base-dev qt6-base-private-dev libwayland-dev liblayershellqtinterface-dev pkg-config build-essential desktop-file-utils
       - name: Install Python dependencies
-        run: uv sync --extra test
+        run: uv sync --locked --extra test
+      - name: Verify native bridge linkage
+        run: |
+          bridge=src/kotonoha/libkoto-layer.so
+          test -f "$bridge"
+          ldd "$bridge" | tee /tmp/libkoto-layer.ldd
+          grep -F "libQt6Core.so" /tmp/libkoto-layer.ldd
+          grep -F "libQt6Gui.so" /tmp/libkoto-layer.ldd
+          grep -F "LayerShellQt" /tmp/libkoto-layer.ldd
+          if grep -E "libQt5[^ ]*\\.so" /tmp/libkoto-layer.ldd; then
+            echo "Qt 5 dependency detected in $bridge" >&2
+            exit 1
+          fi
+          uv run python -c "import ctypes; ctypes.CDLL('$bridge')"
       - name: Test Python application
         run: xvfb-run -a uv run pytest
       - name: Lint Python
@@ -629,12 +654,12 @@ jobs:
       run:
         working-directory: plugins/cider/lyrics
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: 9.10.0
           run_install: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: '20'
           cache: pnpm
@@ -664,6 +689,9 @@ Expected: no diagnostics.
 - [ ] **Step 3: Run the workflow commands locally**
 
 ```bash
+uv sync --locked --extra test
+ldd src/kotonoha/libkoto-layer.so
+uv run python -c "import ctypes; ctypes.CDLL('src/kotonoha/libkoto-layer.so')"
 uv run pytest
 uv run ruff check .
 uv run ty check
@@ -672,7 +700,7 @@ pnpm test
 pnpm build
 ```
 
-Expected: all checks pass and both plugin output files exist.
+Expected: the bridge links to Qt6Core, Qt6Gui, and LayerShellQt without Qt 5, loads through `ctypes`, all checks pass, and both plugin output files exist.
 
 - [ ] **Step 4: Commit the test workflow**
 
@@ -703,6 +731,8 @@ permissions:
 jobs:
   validate:
     uses: ./.github/workflows/test.yml
+    with:
+      release_validation: true
 
   version:
     runs-on: ubuntu-latest
@@ -710,7 +740,7 @@ jobs:
       version: ${{ steps.release.outputs.version }}
       is_tag: ${{ steps.release.outputs.is_tag }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - id: release
         name: Resolve release version
         run: python3 scripts/release_version.py --github-output "$GITHUB_OUTPUT"
@@ -726,7 +756,7 @@ jobs:
         run: |
           apt-get update
           apt-get install -y git ca-certificates
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: Install Debian build dependencies
         run: |
           apt-get update
@@ -752,7 +782,7 @@ jobs:
           test -f /usr/share/applications/kotonoha.desktop
           test -f /usr/share/pixmaps/kotonoha.png
           desktop-file-validate /usr/share/applications/kotonoha.desktop
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: kotonoha-deb
           path: kotonoha_*.deb
@@ -767,7 +797,7 @@ jobs:
     steps:
       - name: Install checkout prerequisites
         run: dnf install -y git
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: Install Fedora build dependencies
         run: |
           dnf install -y rpm-build python3-devel python3-hatchling python3-pyproject-rpm-macros python3-qt6 python3-aiohttp python3-qasync python3-dbus-fast gcc-c++ libstdc++-static qt6-qtbase-devel qt6-qtbase-private-devel layer-shell-qt-devel wayland-devel desktop-file-utils git tar python3-pip
@@ -789,7 +819,7 @@ jobs:
           test -f /usr/share/applications/kotonoha.desktop
           test -f /usr/share/pixmaps/kotonoha.png
           desktop-file-validate /usr/share/applications/kotonoha.desktop
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: kotonoha-rpm
           path: /github/home/rpmbuild/RPMS/**/*.rpm
@@ -801,8 +831,10 @@ jobs:
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: 0.11.19
       - name: Install native build dependencies
         run: |
           sudo apt-get update
@@ -819,7 +851,7 @@ jobs:
           uv venv /tmp/kotonoha-wheel-test
           uv pip install --python /tmp/kotonoha-wheel-test/bin/python dist/*-linux_x86_64.whl
           /tmp/kotonoha-wheel-test/bin/python -c "import kotonoha.main; from kotonoha.lyrics_loader import find_layer_shell_library; assert find_layer_shell_library()"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: kotonoha-wheel
           path: dist/*-linux_x86_64.whl
@@ -834,12 +866,12 @@ jobs:
       run:
         working-directory: plugins/cider/lyrics
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: 9.10.0
           run_install: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: '20'
           cache: pnpm
@@ -859,7 +891,7 @@ jobs:
       - name: Create Cider ZIP
         working-directory: plugins/cider/lyrics/staging
         run: python3 -m zipfile -c "$GITHUB_WORKSPACE/kotonoha-cider-lyrics-${VERSION}.zip" dev.locez.kotonoha.cider.lyrics
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: kotonoha-cider-plugin
           path: kotonoha-cider-lyrics-*.zip
@@ -869,13 +901,13 @@ jobs:
     needs: [version, deb, rpm, wheel, cider]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v8
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: artifacts
       - name: Assemble and checksum release files
         run: python3 scripts/assemble_release.py artifacts release
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: kotonoha-release-${{ needs.version.outputs.version }}
           path: release/*
@@ -888,12 +920,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: kotonoha-release-${{ needs.version.outputs.version }}
           path: release
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3
         with:
           files: release/*
           fail_on_unmatched_files: true
