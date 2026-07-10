@@ -7,10 +7,10 @@ from kotonoha.providers.mpris import (
 )
 
 
-def observation(track_id, title, artist, *, at):
+def observation(track_id, title, artist, *, at, duration=180.0):
     return TrackObservation(
         player_name="org.mpris.MediaPlayer2.test",
-        info=TrackInfo(title, artist, "", 180.0, track_id),
+        info=TrackInfo(title, artist, "", duration, track_id),
         playback_status="Playing",
         position_s=0.0,
         observed_at=at,
@@ -102,3 +102,12 @@ def test_missing_artist_commits_after_longer_window():
     assert stabilizer.observe(observation("/1", "Instrumental", "", at=0.0)) is None
     assert stabilizer.observe(observation("/1", "Instrumental", "", at=0.5)) is None
     assert stabilizer.observe(observation("/1", "Instrumental", "", at=0.9)) is not None
+
+
+def test_duration_drift_does_not_create_a_new_track_transition():
+    stabilizer = TrackStabilizer()
+    assert stabilizer.observe(observation("/1", "Song", "Artist", at=0.0, duration=180.0)) is None
+    assert stabilizer.observe(observation("/1", "Song", "Artist", at=0.4, duration=181.0)) is not None
+
+    assert stabilizer.observe(observation("/1", "Song", "Artist", at=1.0, duration=190.0)) is None
+    assert stabilizer.transitioning is False

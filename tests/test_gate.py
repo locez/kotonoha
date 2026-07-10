@@ -55,6 +55,29 @@ def test_cider_match_rejects_different_track():
     assert gate.current_match(TrackMetadata("Song", "Artist")) is None
 
 
+def test_matching_cider_tick_is_available_without_selecting_cider_lyrics():
+    gate = SourceGate()
+    gate.observe_snapshot(10, LyricsSnapshot(found=False, title="Song", artist="Artist"))
+    gate.observe_tick(10, 12.5, True)
+    gate.select_external()
+
+    timing = gate.current_timing(TrackMetadata("Song", "Artist"))
+
+    assert timing is not None
+    assert timing.client_id == 10
+    assert timing.current_time == 12.5
+    assert timing.is_playing is True
+    assert gate.accepts(10) is False
+
+
+def test_cider_tick_rejects_a_different_track():
+    gate = SourceGate()
+    gate.observe_snapshot(10, LyricsSnapshot(found=False, title="Other", artist="Artist"))
+    gate.observe_tick(10, 12.5, True)
+
+    assert gate.current_timing(TrackMetadata("Song", "Artist")) is None
+
+
 def test_cider_exact_title_can_cover_transient_missing_mpris_artist():
     gate = SourceGate()
     gate.observe_snapshot(10, LyricsSnapshot(found=True, title="Song", artist="Artist"))

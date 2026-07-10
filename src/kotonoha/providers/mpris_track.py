@@ -29,6 +29,10 @@ class TrackInfo:
     def metadata(self) -> TrackMetadata:
         return TrackMetadata(self.title, self.artist, self.album, self.length_s)
 
+    @property
+    def identity_key(self) -> tuple[str, str, str, str]:
+        return self.track_id, self.title, self.artist, self.album
+
 
 def parse_metadata(raw: dict[str, Any]) -> TrackInfo:
     length_us = raw.get("mpris:length")
@@ -91,14 +95,7 @@ class TrackStabilizer:
             self._candidate = None
             return None
 
-        key = (
-            observation.player_name,
-            info.track_id,
-            info.title,
-            info.artist,
-            info.album,
-            info.length_s,
-        )
+        key = (observation.player_name, *info.identity_key)
         if key != self._candidate_key:
             self._candidate_key = key
             self._candidate = observation

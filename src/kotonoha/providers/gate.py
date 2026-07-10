@@ -15,12 +15,21 @@ class CiderMatch:
     snapshot: LyricsSnapshot
 
 
+@dataclass(frozen=True)
+class CiderTiming:
+    client_id: int
+    current_time: float | None
+    is_playing: bool | None
+
+
 class SourceGate:
     def __init__(self) -> None:
         self._mode: Literal["standalone", "external", "cider"] = "standalone"
         self._bound_client_id: int | None = None
         self._snapshots: dict[int, tuple[int, LyricsSnapshot]] = {}
         self._sequence = 0
+        self._ticks: dict[int, tuple[int, int | None, CiderTiming]] = {}
+        self._tick_sequence = 0
 
     @property
     def accept_ws(self) -> bool:
@@ -51,22 +60,46 @@ class SourceGate:
         self._sequence += 1
         self._snapshots[client_id] = self._sequence, snapshot
 
+    def observe_tick(self, client_id: int, current_time: float | None, is_playing: bool | None) -> None:
+        self._tick_sequence += 1
+        retained = self._snapshots.get(client_id)
+        snapshot_sequence = retained[0] if retained is not None else None
+        self._ticks[client_id] = (
+            self._tick_sequence,
+            snapshot_sequence,
+            CiderTiming(client_id, current_time, is_playing),
+        )
+
+    @staticmethod
+    def _snapshot_matches(snapshot: LyricsSnapshot, track: TrackMetadata, *, require_lyrics: bool) -> bool:
+        if (require_lyrics and not snapshot.found) or not snapshot.title:
+            return False
+        candidate = Candidate(
+            song_id=snapshot.song_id or "cider",
+            title=snapshot.title,
+            artist=snapshot.artist or "",
+            duration_s=None,
+        )
+        evidence = evaluate_match(candidate, track)
+        return evidence.confidence is MatchConfidence.HIGH or (
+            evidence.confidence is MatchConfidence.MEDIUM and evidence.title_exact
+        )
+
     def current_match(self, track: TrackMetadata) -> CiderMatch | None:
         ordered = sorted(self._snapshots.items(), key=lambda item: item[1][0], reverse=True)
         for client_id, (_sequence, snapshot) in ordered:
-            if not snapshot.found or not snapshot.title:
-                continue
-            candidate = Candidate(
-                song_id=snapshot.song_id or f"cider:{client_id}",
-                title=snapshot.title,
-                artist=snapshot.artist or "",
-                duration_s=None,
-            )
-            evidence = evaluate_match(candidate, track)
-            if evidence.confidence is MatchConfidence.HIGH or (
-                evidence.confidence is MatchConfidence.MEDIUM and evidence.title_exact
-            ):
+            if self._snapshot_matches(snapshot, track, require_lyrics=True):
                 return CiderMatch(client_id, snapshot)
+        return None
+
+    def current_timing(self, track: TrackMetadata) -> CiderTiming | None:
+        ordered = sorted(self._ticks.items(), key=lambda item: item[1][0], reverse=True)
+        for client_id, (_tick_sequence, snapshot_sequence, timing) in ordered:
+            retained = self._snapshots.get(client_id)
+            if retained is None or retained[0] != snapshot_sequence:
+                continue
+            if self._snapshot_matches(retained[1], track, require_lyrics=False):
+                return timing
         return None
 
     def accepts(self, client_id: int) -> bool:
@@ -77,6 +110,7 @@ class SourceGate:
         return client_id == self._bound_client_id
 
     def drop_client(self, client_id: int) -> None:
+        self._ticks.pop(client_id, None)
         if self._snapshots.pop(client_id, None) is not None:
             self._sequence += 1
         if self._bound_client_id == client_id:

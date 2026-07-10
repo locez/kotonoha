@@ -104,8 +104,13 @@ class LyricsReceiver:
         # Lightweight high-frequency tick: only calibrate the clock, do not
         # rebuild lyric content.
         if isinstance(payload, dict) and payload.get("reason") == "tick":
-            if self._gate is None or self._gate.accepts(client_id):
-                self._state.tick(_coerce_float(payload.get("currentTime")), _coerce_bool(payload.get("isPlaying")))
+            current_time = _coerce_float(payload.get("currentTime"))
+            is_playing = _coerce_bool(payload.get("isPlaying"))
+            if self._gate is not None:
+                self._gate.observe_tick(client_id, current_time, is_playing)
+                if not self._gate.accepts(client_id):
+                    return True
+            self._state.tick(current_time, is_playing)
             return True
         snapshot = parse_payload(payload)
         if self._gate is not None:

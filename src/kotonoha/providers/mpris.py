@@ -335,7 +335,7 @@ class MprisProvider:
         except Exception as exc:  # noqa: BLE001 - D-Bus boundary
             logger.debug("metadata verification failed: %s", exc)
             return
-        if first_info != second_info:
+        if first_info.identity_key != second_info.identity_key:
             self._stabilizer.observe(
                 TrackObservation(
                     player_name=name,
@@ -361,13 +361,20 @@ class MprisProvider:
             self._schedule_load(commit)
         if not self._stabilizer.transitioning:
             self._ensure_content_owner()
-        if self._stabilizer.transitioning or self._content_owner != "external" or position is None:
+        if self._stabilizer.transitioning or self._content_owner != "external":
             return
 
         current = self._current_commit
         if current is None:
             return
         playing = status == "Playing"
+        cider_timing = self._gate.current_timing(current.info.metadata())
+        if cider_timing is not None and cider_timing.current_time is not None:
+            position = cider_timing.current_time
+            if cider_timing.is_playing is not None:
+                playing = cider_timing.is_playing
+        if position is None:
+            return
         self._state.tick(position, playing)
         index = find_current_index(self._lines, position)
         if index != self._last_index:

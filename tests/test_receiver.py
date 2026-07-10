@@ -124,7 +124,7 @@ def test_build_app_registers_route():
     assert any(getattr(r.resource, "canonical", "") == WS_PATH for r in app.router.routes())
 
 
-def test_closed_gate_rejects_tick_but_retains_full_frame():
+def test_closed_gate_retains_tick_without_publishing_cider_content():
     state = LyricsState()
     ticks = []
     state.time_ticked.connect(lambda current, playing: ticks.append((current, playing)))
@@ -140,3 +140,6 @@ def test_closed_gate_rejects_tick_but_retains_full_frame():
     assert state.snapshot.found is False
     assert ticks == []
     assert gate.current_match(TrackMetadata("Song", "X")) is not None
+    timing = gate.current_timing(TrackMetadata("Song", "X"))
+    assert timing is not None
+    assert timing.current_time == 3.0

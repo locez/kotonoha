@@ -1,7 +1,7 @@
 import asyncio
 
 from kotonoha.lyrics.resolver import ResolvedLyrics
-from kotonoha.model import LyricsSnapshot
+from kotonoha.model import LyricLine, LyricsSnapshot
 from kotonoha.providers.gate import SourceGate
 from kotonoha.providers.mpris import PLAYER_IFACE, MprisProvider, TrackCommit, TrackInfo
 from kotonoha.state import LyricsState
@@ -16,8 +16,9 @@ VALID_METADATA = {
 
 
 class FakePlayer:
-    def __init__(self, metadata, *, position_error=None):
+    def __init__(self, metadata, *, position=0, position_error=None):
         self.metadata = metadata
+        self.position = position
         self.position_error = position_error
 
     async def get_playback_status(self):
@@ -29,7 +30,7 @@ class FakePlayer:
     async def get_position(self):
         if self.position_error is not None:
             raise self.position_error
-        return 0
+        return self.position
 
 
 class SequencedMetadataPlayer(FakePlayer):
@@ -149,6 +150,24 @@ async def test_metadata_changed_during_sample_is_discarded():
     assert resolver.tracks == []
 
 
+async def test_duration_drift_during_metadata_sample_does_not_block_resolution():
+    samples = [
+        dict(VALID_METADATA, **{"mpris:length": duration})
+        for duration in (180_000_000, 181_000_000, 182_000_000, 183_000_000)
+    ]
+    player = SequencedMetadataPlayer(samples)
+    resolver = RecordingResolver()
+    provider = MprisProvider(LyricsState(), resolver=resolver)
+    prepare_poll(provider, player)
+
+    await provider._poll_once(now=0.0)
+    await provider._poll_once(now=0.5)
+    assert provider._load_task is not None
+    await provider._load_task
+
+    assert len(resolver.tracks) == 1
+
+
 def test_metadata_signal_only_wakes_sampler():
     provider = MprisProvider(LyricsState(), resolver=RecordingResolver())
     provider._subscribed_name = "org.mpris.MediaPlayer2.test"
@@ -243,3 +262,27 @@ async def test_external_result_uses_actual_provider_label():
 
     provider._emit(track_commit(1, "Song", "Artist").info, 0.0, True)
     assert state.snapshot.provider == "MPRIS:lrclib"
+
+
+async def test_matching_cider_tick_drives_external_line_selection():
+    lines = (
+        LyricLine(0, "L0", 0.0, 5.0, "first", ""),
+        LyricLine(1, "L1", 5.0, 10.0, "second", ""),
+    )
+    state = LyricsState()
+    gate = SourceGate()
+    gate.observe_snapshot(10, LyricsSnapshot(found=False, title="Song", artist="Artist"))
+    gate.observe_tick(10, 7.5, True)
+    resolver = RecordingResolver(ResolvedLyrics(source="netease", lines=lines))
+    provider = MprisProvider(state, resolver=resolver, gate=gate)
+    prepare_poll(provider, FakePlayer(metadata=VALID_METADATA, position=999_000_000))
+
+    await provider._poll_once(now=0.0)
+    await provider._poll_once(now=0.5)
+    assert provider._load_task is not None
+    await provider._load_task
+    await provider._poll_once(now=1.0)
+
+    assert state.snapshot.current is not None
+    assert state.snapshot.current.text == "second"
+    assert state.snapshot.current_time == 7.5
