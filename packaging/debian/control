@@ -1,0 +1,39 @@
+Source: kotonoha
+Section: sound
+Priority: optional
+Maintainer: Locez <locez@locez.com>
+Build-Depends:
+ debhelper-compat (= 13),
+ dh-python,
+ pybuild-plugin-pyproject,
+ python3-all,
+ python3-hatchling,
+ python3-aiohttp,
+ python3-dbus-fast,
+ python3-pyqt6,
+ python3-qasync,
+ qt6-base-dev,
+ qt6-base-private-dev,
+ qt6-wayland-dev,
+ liblayershellqtinterface-dev,
+ libwayland-dev,
+ pkg-config,
+ g++,
+ desktop-file-utils
+Standards-Version: 4.7.2
+Homepage: https://github.com/locez/kotonoha
+Rules-Requires-Root: no
+
+Package: kotonoha
+Architecture: any
+Depends:
+ ${python3:Depends},
+ ${shlibs:Depends},
+ ${misc:Depends},
+ python3-aiohttp,
+ python3-dbus-fast,
+ python3-pyqt6,
+ python3-qasync
+Description: desktop lyrics overlay for Linux
+ Kotonoha displays synchronized lyrics for the currently playing track in a
+ Wayland layer-shell overlay.

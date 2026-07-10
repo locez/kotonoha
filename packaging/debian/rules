@@ -1,0 +1,14 @@
+#!/usr/bin/make -f
+
+export PYBUILD_NAME=kotonoha
+export USE_SYSTEM_LIBS=1
+
+%:
+	dh $@ --buildsystem=pybuild
+
+override_dh_auto_test:
+	@echo "Tests run separately; skipping duplicate package-build tests."
+
+override_dh_install:
+	dh_install
+	install -Dm644 src/kotonoha/assets/icon.png debian/kotonoha/usr/share/pixmaps/kotonoha.png
