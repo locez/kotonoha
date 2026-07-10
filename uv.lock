@@ -415,6 +415,7 @@ test = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
+    { name = "tomli", marker = "python_full_version < '3.11'" },
     { name = "ty" },
 ]
 
@@ -427,6 +428,7 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'test'" },
     { name = "qasync" },
     { name = "ruff", marker = "extra == 'test'" },
+    { name = "tomli", marker = "python_full_version < '3.11' and extra == 'test'", specifier = ">=2" },
     { name = "ty", marker = "extra == 'test'" },
 ]
 provides-extras = ["test"]
