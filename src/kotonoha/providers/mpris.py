@@ -135,6 +135,7 @@ class MprisProvider:
         self._content_owner = "none"
         self._provider_name = ""
         self._cache_enabled = True
+        self._gate_revision = self._gate.revision
 
     def set_lyrics_sources(self, sources: list[str]) -> None:
         updated = list(sources)
@@ -427,14 +428,19 @@ class MprisProvider:
             return
         if result is None:
             self._content_owner = "none"
+            self._select_late_cider()
             return
         if result.source == "cider" and result.live_snapshot is not None:
             self._content_owner = "cider"
             self._provider_name = "cider"
+            self._gate_revision = self._gate.revision
             self._state.update(result.live_snapshot)
+            return
+        if self._select_late_cider(before_source=result.source):
             return
         self._content_owner = "external"
         self._provider_name = result.source
+        self._gate_revision = self._gate.revision
         self._lines = list(result.lines)
         logger.info(
             "MPRIS %r / %r -> %d %s lines",
@@ -453,6 +459,34 @@ class MprisProvider:
     def _ensure_content_owner(self) -> None:
         if self._content_owner == "cider" and not self._gate.cider_active:
             self._force_reload()
+            return
+        if self._content_owner != "none" or self._current_commit is None:
+            return
+        self._select_late_cider()
+
+    def _select_late_cider(self, *, before_source: str | None = None) -> bool:
+        if self._current_commit is None:
+            return False
+        revision = self._gate.revision
+        if revision == self._gate_revision:
+            return False
+        self._gate_revision = revision
+        if "cider" not in self._lyrics_sources:
+            return False
+        if before_source is not None:
+            try:
+                if self._lyrics_sources.index("cider") >= self._lyrics_sources.index(before_source):
+                    return False
+            except ValueError:
+                return False
+        match = self._gate.current_match(self._current_commit.info.metadata())
+        if match is None:
+            return False
+        self._gate.select_cider(match.client_id)
+        self._content_owner = "cider"
+        self._provider_name = "cider"
+        self._state.update(match.snapshot)
+        return True
 
     def _emit(self, info: TrackInfo, position: float, playing: bool) -> None:
         provider = f"MPRIS:{self._provider_name}" if self._provider_name else "MPRIS"
@@ -479,6 +513,7 @@ class MprisProvider:
         self._provider_name = ""
         self._empty_since = None
         self._gate.select_standalone()
+        self._gate_revision = self._gate.revision
         self._state.clear()
 
 

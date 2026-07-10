@@ -94,6 +94,7 @@ async def _artifact_for_match(
     payload = await fetch_payload(session, match.candidate.song_id)
     lines = parse_payload(payload)
     if not lines:
+        logger.debug("Netease song %s matched but had no timed lyrics", match.candidate.song_id)
         return None
     candidate = match.candidate
     return LyricsArtifact(

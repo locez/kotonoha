@@ -151,7 +151,7 @@ class LyricsResolver:
             try:
                 artifact = await provider.fetch(session, track)
             except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
-                logger.warning("%s lyrics fetch failed: %s", source, exc)
+                logger.warning("%s lyrics fetch failed: %s: %s", source, type(exc).__name__, exc)
                 continue
             if artifact is None or not artifact.lines:
                 self._negative_until[negative_key] = time.monotonic() + self._negative_ttl

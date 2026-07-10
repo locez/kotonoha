@@ -86,23 +86,48 @@ async def fetch_artifact(
     session: aiohttp.ClientSession,
     track: TrackMetadata,
 ) -> LyricsArtifact | None:
-    exact: Record | None = None
-    try:
+    async def exact_records() -> list[Record]:
         exact = await get_exact(session, track)
-    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
-        logger.debug("LRCLIB exact lookup failed, trying search: %s", exc)
+        return [exact] if exact is not None else []
 
-    records = [exact] if exact is not None else []
-    exact_match = best_match(
-        [Candidate(exact.song_id, exact.title, exact.artist, exact.duration_s, album=exact.album)] if exact else [],
-        track,
-    )
-    if exact_match is None or exact_match.confidence.value != "high":
-        records.extend(await search_records(session, track))
+    pending: dict[asyncio.Task[list[Record]], str] = {
+        asyncio.create_task(exact_records()): "exact",
+        asyncio.create_task(search_records(session, track)): "search",
+    }
+    records: list[Record] = []
+    errors: list[Exception] = []
+    successful_requests = 0
+    try:
+        while pending:
+            done, _remaining = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                stage = pending.pop(task)
+                try:
+                    records.extend(task.result())
+                    successful_requests += 1
+                except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
+                    errors.append(exc)
+                    logger.debug("LRCLIB %s lookup failed: %s: %s", stage, type(exc).__name__, exc)
 
-    records_by_id = {record.song_id: record for record in records}
-    records = list(records_by_id.values())
+            artifact = _artifact_from_records(records, track)
+            if artifact is not None and artifact.confidence.value == "high":
+                return artifact
 
+        artifact = _artifact_from_records(records, track)
+        if artifact is not None:
+            return artifact
+        if successful_requests == 0 and errors:
+            raise errors[0]
+        return None
+    finally:
+        remaining = tuple(pending)
+        for task in remaining:
+            task.cancel()
+        if remaining:
+            await asyncio.gather(*remaining, return_exceptions=True)
+
+
+def _artifact_from_records(records: list[Record], track: TrackMetadata) -> LyricsArtifact | None:
     candidates = [
         Candidate(record.song_id, record.title, record.artist, record.duration_s, album=record.album)
         for record in records
@@ -110,7 +135,11 @@ async def fetch_artifact(
     match = best_match(candidates, track)
     if match is None:
         return None
-    record = records_by_id[match.candidate.song_id]
+    record = next(
+        item
+        for item in records
+        if Candidate(item.song_id, item.title, item.artist, item.duration_s, album=item.album) == match.candidate
+    )
     payload = {"syncedLyrics": record.synced_lyrics}
     lines = parse_payload(payload)
     if not lines:

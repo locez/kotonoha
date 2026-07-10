@@ -78,6 +78,19 @@ class BlockingResolver(RecordingResolver):
             raise
 
 
+class DeferredResolver(RecordingResolver):
+    def __init__(self, result=None):
+        super().__init__(result)
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def resolve(self, _session, track, _sources):
+        self.tracks.append(track)
+        self.started.set()
+        await self.release.wait()
+        return self.result
+
+
 def track_commit(generation, title, artist):
     return TrackCommit(
         generation=generation,
@@ -176,6 +189,48 @@ async def test_cider_disconnect_forces_ordered_resolution_again():
     await provider._load_task
 
     assert len(resolver.tracks) == 1
+
+
+async def test_late_cider_snapshot_takes_over_after_ordered_miss():
+    resolver = DeferredResolver()
+    gate = SourceGate()
+    state = LyricsState()
+    provider = MprisProvider(state, resolver=resolver, gate=gate)
+    provider._schedule_load(track_commit(1, "Song", "Artist"))
+    await resolver.started.wait()
+
+    snapshot = LyricsSnapshot(found=True, title="Song", artist="Artist")
+    gate.observe_snapshot(10, snapshot)
+    resolver.release.set()
+    assert provider._load_task is not None
+    await provider._load_task
+
+    assert provider._content_owner == "cider"
+    assert gate.accepts(10) is True
+    assert state.snapshot is snapshot
+
+
+async def test_late_higher_priority_cider_beats_lower_external_result():
+    resolver = DeferredResolver(ResolvedLyrics(source="netease", lines=()))
+    gate = SourceGate()
+    state = LyricsState()
+    provider = MprisProvider(
+        state,
+        resolver=resolver,
+        gate=gate,
+        lyrics_sources=["cider", "netease"],
+    )
+    provider._schedule_load(track_commit(1, "Song", "Artist"))
+    await resolver.started.wait()
+
+    snapshot = LyricsSnapshot(found=True, title="Song", artist="Artist")
+    gate.observe_snapshot(10, snapshot)
+    resolver.release.set()
+    assert provider._load_task is not None
+    await provider._load_task
+
+    assert provider._content_owner == "cider"
+    assert state.snapshot is snapshot
 
 
 async def test_external_result_uses_actual_provider_label():

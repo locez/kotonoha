@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import sqlite3
 from typing import cast
 
@@ -197,3 +198,19 @@ async def test_concurrent_identical_requests_share_network_work():
 
     assert first_result == second_result
     assert calls == ["network:netease"]
+
+
+async def test_network_timeout_log_includes_exception_type(caplog):
+    async def timeout(_session, _track):
+        raise TimeoutError
+
+    resolver = LyricsResolver(
+        cache=FakeCache([]),
+        gate=FakeGate([]),
+        providers={"netease": NetworkProvider("netease", timeout, lambda _payload: ())},
+        cache_enabled=False,
+    )
+    caplog.set_level(logging.WARNING)
+
+    assert await resolver.resolve(SESSION, TRACK, ["netease"]) is None
+    assert "TimeoutError" in caplog.text

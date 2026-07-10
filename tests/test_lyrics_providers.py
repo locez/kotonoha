@@ -1,3 +1,4 @@
+import asyncio
 from typing import cast
 
 import aiohttp
@@ -134,3 +135,30 @@ async def test_lrclib_duplicate_id_uses_the_better_search_record(monkeypatch):
     assert result.artist == "Artist"
     assert result.confidence is MatchConfidence.HIGH
     assert [line.text for line in result.lines] == ["high"]
+
+
+async def test_lrclib_slow_exact_does_not_block_high_search(monkeypatch):
+    exact_cancelled = asyncio.Event()
+
+    async def slow_exact(_session, _track):
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            exact_cancelled.set()
+            raise
+
+    monkeypatch.setattr(lrclib, "get_exact", slow_exact)
+    monkeypatch.setattr(
+        lrclib,
+        "search_records",
+        async_return([lrclib.Record("right", "Song", "Artist", "Album", 180.0, "[00:01]right")]),
+    )
+
+    result = await asyncio.wait_for(
+        lrclib.fetch_artifact(SESSION, TrackMetadata("Song", "Artist", "Album", 180.0)),
+        timeout=0.1,
+    )
+
+    assert result is not None
+    assert result.provider_song_id == "right"
+    assert exact_cancelled.is_set()

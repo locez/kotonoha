@@ -31,6 +31,10 @@ class SourceGate:
         retained = self._snapshots.get(self._bound_client_id) if self._bound_client_id is not None else None
         return self._mode == "cider" and retained is not None and retained[1].found
 
+    @property
+    def revision(self) -> int:
+        return self._sequence
+
     def select_external(self) -> None:
         self._mode = "external"
         self._bound_client_id = None
@@ -73,7 +77,8 @@ class SourceGate:
         return client_id == self._bound_client_id
 
     def drop_client(self, client_id: int) -> None:
-        self._snapshots.pop(client_id, None)
+        if self._snapshots.pop(client_id, None) is not None:
+            self._sequence += 1
         if self._bound_client_id == client_id:
             self.select_external()
 
