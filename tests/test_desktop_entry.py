@@ -23,7 +23,7 @@ def test_desktop_entry_has_required_commands_and_localizations() -> None:
     assert desktop_entry["Exec"] == "kotonoha"
     assert desktop_entry["Icon"] == "kotonoha"
     assert desktop_entry["Terminal"] == "false"
-    assert desktop_entry["Categories"] == "AudioVideo;Audio;Utility;"
+    assert desktop_entry["Categories"] == "AudioVideo;Audio;"
 
     expected_localized_values = {
         "Name": "Kotonoha",
