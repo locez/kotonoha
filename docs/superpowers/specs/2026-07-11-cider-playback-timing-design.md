@@ -61,6 +61,8 @@ Duration parsing remains owned by `mpris_track.parse_metadata`. It accepts finit
 
 Unknown duration is intentionally preserved as absence of evidence. Provider matching continues to rely on title, artist, and album rather than comparing candidates against a fabricated duration.
 
+Some Chromium media sessions expose a finite but incorrect HLS/audio timeline duration instead of the song duration. When a current Cider snapshot matches the MPRIS title and artist, its positive MusicKit duration replaces the MPRIS duration only for external lyric resolution. MPRIS continues to own player selection and position, and unmatched Cider metadata is ignored.
+
 ## Testing
 
 TypeScript tests will reproduce the current Cider layout and verify both full snapshots and lightweight ticks. Existing PluginKit and legacy-store tests must continue to pass.

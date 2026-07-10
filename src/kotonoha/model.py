@@ -12,6 +12,7 @@ never takes down the overlay.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -52,6 +53,8 @@ class LyricsSnapshot:
     around: tuple[LyricLine, ...] = ()
     title: str | None = None
     artist: str | None = None
+    album: str | None = None
+    duration_s: float | None = None
     is_playing: bool = False
     error: str | None = None
 
@@ -70,6 +73,11 @@ def _as_float(value: Any) -> float | None:
     if isinstance(value, (int, float)):
         return float(value)
     return None
+
+
+def _as_positive_float(value: Any) -> float | None:
+    parsed = _as_float(value)
+    return parsed if parsed is not None and math.isfinite(parsed) and parsed > 0.0 else None
 
 
 def _as_str(value: Any, default: str = "") -> str:
@@ -120,15 +128,16 @@ def _parse_lines(raw: Any) -> tuple[LyricLine, ...]:
     return tuple(line for line in (_parse_line(item) for item in raw) if line is not None)
 
 
-def _now_playing(playback: dict[str, Any]) -> tuple[str | None, str | None]:
-    """Pull title/artist from playback.nowPlayingItem (attributes or flat)."""
+def _now_playing(playback: dict[str, Any]) -> tuple[str | None, str | None, str | None]:
+    """Pull track identity from playback.nowPlayingItem (attributes or flat)."""
     item = playback.get("nowPlayingItem")
     if not isinstance(item, dict):
-        return None, None
+        return None, None, None
     attrs = item.get("attributes") if isinstance(item.get("attributes"), dict) else {}
     title = _as_str(attrs.get("name")) or _as_str(item.get("title")) or None
     artist = _as_str(attrs.get("artistName")) or _as_str(item.get("artistName")) or None
-    return title, artist
+    album = _as_str(attrs.get("albumName")) or _as_str(item.get("albumName")) or None
+    return title, artist, album
 
 
 def parse_payload(payload: Any) -> LyricsSnapshot:
@@ -142,7 +151,7 @@ def parse_payload(payload: Any) -> LyricsSnapshot:
     lyrics = payload.get("lyrics") if isinstance(payload.get("lyrics"), dict) else {}
     playback = payload.get("playback") if isinstance(payload.get("playback"), dict) else {}
 
-    title, artist = _now_playing(playback)
+    title, artist, album = _now_playing(playback)
     is_playing = bool(playback.get("isPlaying"))
 
     return LyricsSnapshot(
@@ -158,6 +167,8 @@ def parse_payload(payload: Any) -> LyricsSnapshot:
         around=_parse_lines(lyrics.get("aroundLines")),
         title=title,
         artist=artist,
+        album=album,
+        duration_s=_as_positive_float(playback.get("currentPlaybackDuration")),
         is_playing=is_playing,
         error=lyrics.get("error") if isinstance(lyrics.get("error"), str) else None,
     )

@@ -286,3 +286,31 @@ async def test_matching_cider_tick_drives_external_line_selection():
     assert state.snapshot.current is not None
     assert state.snapshot.current.text == "second"
     assert state.snapshot.current_time == 7.5
+
+
+async def test_matching_cider_duration_corrects_mpris_search_metadata():
+    gate = SourceGate()
+    gate.observe_snapshot(
+        10,
+        LyricsSnapshot(
+            found=False,
+            title="Song",
+            artist="Artist",
+            album="Album",
+            duration_s=194.222,
+        ),
+    )
+    gate.observe_tick(10, 50.0, True)
+    resolver = RecordingResolver()
+    provider = MprisProvider(LyricsState(), resolver=resolver, gate=gate)
+    provider._schedule_load(
+        TrackCommit(
+            generation=1,
+            player_name="org.mpris.MediaPlayer2.chromium.test",
+            info=TrackInfo("Song", "Artist", "Album", 305.059159, "/track/1"),
+        )
+    )
+    assert provider._load_task is not None
+    await provider._load_task
+
+    assert resolver.tracks[0].duration_s == 194.222

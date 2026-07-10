@@ -20,6 +20,7 @@ class CiderTiming:
     client_id: int
     current_time: float | None
     is_playing: bool | None
+    duration_s: float | None = None
 
 
 class SourceGate:
@@ -99,7 +100,12 @@ class SourceGate:
             if retained is None or retained[0] != snapshot_sequence:
                 continue
             if self._snapshot_matches(retained[1], track, require_lyrics=False):
-                return timing
+                return CiderTiming(
+                    timing.client_id,
+                    timing.current_time,
+                    timing.is_playing,
+                    retained[1].duration_s,
+                )
         return None
 
     def accepts(self, client_id: int) -> bool:

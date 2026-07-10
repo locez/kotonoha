@@ -52,6 +52,26 @@ def test_parse_full_word_payload():
     assert snap.next is not None and snap.next.text == "next"
 
 
+def test_parse_playback_album_and_duration():
+    payload = {
+        "playback": {
+            "currentPlaybackDuration": 194.222,
+            "nowPlayingItem": {
+                "attributes": {
+                    "name": "Song",
+                    "artistName": "Artist",
+                    "albumName": "Album",
+                }
+            },
+        }
+    }
+
+    snap = parse_payload(payload)
+
+    assert snap.album == "Album"
+    assert snap.duration_s == 194.222
+
+
 def test_word_karaoke_true_when_word_timing_present():
     assert parse_payload(_word_payload()).word_karaoke is True
 

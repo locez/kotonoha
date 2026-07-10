@@ -57,7 +57,7 @@ def test_cider_match_rejects_different_track():
 
 def test_matching_cider_tick_is_available_without_selecting_cider_lyrics():
     gate = SourceGate()
-    gate.observe_snapshot(10, LyricsSnapshot(found=False, title="Song", artist="Artist"))
+    gate.observe_snapshot(10, LyricsSnapshot(found=False, title="Song", artist="Artist", duration_s=194.222))
     gate.observe_tick(10, 12.5, True)
     gate.select_external()
 
@@ -67,6 +67,7 @@ def test_matching_cider_tick_is_available_without_selecting_cider_lyrics():
     assert timing.client_id == 10
     assert timing.current_time == 12.5
     assert timing.is_playing is True
+    assert timing.duration_s == 194.222
     assert gate.accepts(10) is False
 
 

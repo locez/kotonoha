@@ -427,8 +427,18 @@ class MprisProvider:
                 is_playing=True,
             )
         )
+        track = commit.info.metadata()
+        cider_timing = self._gate.current_timing(track)
+        if cider_timing is not None and cider_timing.duration_s is not None:
+            if cider_timing.duration_s != track.duration_s:
+                logger.debug(
+                    "Using matching Cider duration %.3fs instead of MPRIS %s",
+                    cider_timing.duration_s,
+                    track.duration_s,
+                )
+            track = TrackMetadata(track.title, track.artist, track.album, cider_timing.duration_s)
         try:
-            result = await self._resolver.resolve(self._session, commit.info.metadata(), self._lyrics_sources)
+            result = await self._resolver.resolve(self._session, track, self._lyrics_sources)
         except asyncio.CancelledError:
             raise
         if self._current_commit != commit:
