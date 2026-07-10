@@ -1,35 +1,32 @@
-"""MPRIS provider — M1: discovery + a Position probe.
-
-Connects to the session bus, enumerates ``org.mpris.MediaPlayer2.*`` players and
-reads track metadata + playback position. The ``probe`` entry point
-(``python -m kotonoha.providers.mpris``) prints each player's metadata and
-samples ``Position`` once a second, so we can verify on the target machine
-whether a player — notably browser YouTube Music via Plasma Browser Integration
-/ playerctld — reports a Position that actually advances. That ground-truth check
-is the foundation of the whole MPRIS lyrics feature.
-
-D-Bus needs a real session bus + a running player, so the live parts are
-validated by the user, not in CI. The metadata parsing (`parse_metadata`) is a
-pure function and is unit-tested. dbus-fast is imported lazily so the pure parts
-import without it.
-"""
+"""Stable MPRIS sampling and ordered external-lyrics resolution."""
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
 import logging
-from dataclasses import dataclass
-from typing import Any
+import time
+from typing import Any, Protocol
 
 import aiohttp
 
 from ..config import DEFAULT_LYRICS_SOURCES
-from ..lyrics import lrclib, netease
+from ..lyrics.match import TrackMetadata
+from ..lyrics.resolver import LyricsResolver, ResolvedLyrics
 from ..lyrics.select import build_snapshot, find_current_index
 from ..model import LyricLine
 from ..state import LyricsState
 from .gate import SourceGate
+from .mpris_track import (
+    TrackCommit,
+    TrackInfo,
+    TrackObservation,
+    TrackStabilizer,
+    parse_metadata,
+)
+from .mpris_track import (
+    unwrap as _unwrap,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +36,6 @@ PLAYER_IFACE = "org.mpris.MediaPlayer2.Player"
 DBUS_NAME = "org.freedesktop.DBus"
 DBUS_PATH = "/org/freedesktop/DBus"
 
-# Some players (Chromium/Edge) don't declare the Player interface in their own
-# introspection even though they implement it, so dbus-fast can't find it. We
-# supply the standard MPRIS introspection ourselves instead of trusting theirs.
 MPRIS_INTROSPECTION = """<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
  "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
 <node>
@@ -73,46 +67,19 @@ MPRIS_INTROSPECTION = """<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object
 </node>"""
 
 
-@dataclass(frozen=True)
-class TrackInfo:
-    title: str
-    artist: str
-    album: str
-    length_s: float | None
-    track_id: str
+class ResolverLike(Protocol):
+    async def resolve(
+        self,
+        session: Any,
+        track: TrackMetadata,
+        sources: list[str],
+    ) -> ResolvedLyrics | None: ...
 
+    def reset_memory(self) -> None: ...
 
-def _as_text(value: Any) -> str:
-    if isinstance(value, str):
-        return value
-    if isinstance(value, (list, tuple)):
-        return " / ".join(str(v) for v in value if isinstance(v, str))
-    return ""
+    def set_cache_enabled(self, enabled: bool) -> None: ...
 
-
-def parse_metadata(raw: dict[str, Any]) -> TrackInfo:
-    """Build a :class:`TrackInfo` from an MPRIS metadata dict (Variants unwrapped)."""
-    length_us = raw.get("mpris:length")
-    length_s = (
-        float(length_us) / 1_000_000.0
-        if isinstance(length_us, (int, float)) and not isinstance(length_us, bool)
-        else None
-    )
-    return TrackInfo(
-        title=_as_text(raw.get("xesam:title")),
-        artist=_as_text(raw.get("xesam:artist")),
-        album=_as_text(raw.get("xesam:album")),
-        length_s=length_s,
-        track_id=str(raw.get("mpris:trackid") or ""),
-    )
-
-
-def _unwrap(metadata: dict[str, Any]) -> dict[str, Any]:
-    """Unwrap dbus-fast Variant values (each has ``.value``) to plain Python."""
-    return {key: getattr(variant, "value", variant) for key, variant in metadata.items()}
-
-
-# --- live D-Bus (validated by the user) ---
+    async def clear_cache(self) -> None: ...
 
 
 async def _connect() -> Any:
@@ -127,24 +94,15 @@ async def list_players(bus: Any) -> list[str]:
     obj = bus.get_proxy_object(DBUS_NAME, DBUS_PATH, introspection)
     iface = obj.get_interface(DBUS_NAME)
     names = await iface.call_list_names()
-    return sorted(n for n in names if n.startswith(MPRIS_PREFIX))
+    return sorted(name for name in names if name.startswith(MPRIS_PREFIX))
 
 
 async def _player_interface(bus: Any, name: str) -> Any:
-    # Use our own standard introspection, not the player's (which may omit Player).
     obj = bus.get_proxy_object(name, MPRIS_PATH, MPRIS_INTROSPECTION)
     return obj.get_interface(PLAYER_IFACE)
 
 
 class MprisProvider:
-    """Drives the overlay from an MPRIS player + external timed lyrics.
-
-    Polls the active player (Playing preferred) every ``poll_interval`` seconds:
-    re-calibrates the clock with the real Position (tick), fetches lyrics on a
-    track change, and emits a new snapshot only when the current line changes.
-    All live D-Bus work is validated by the user; pure parts are tested.
-    """
-
     def __init__(
         self,
         state: LyricsState,
@@ -152,30 +110,47 @@ class MprisProvider:
         *,
         lyrics_sources: list[str] | None = None,
         gate: SourceGate | None = None,
+        resolver: ResolverLike | None = None,
     ) -> None:
         self._state = state
         self._poll_interval = poll_interval
         self._lyrics_sources = lyrics_sources if lyrics_sources is not None else list(DEFAULT_LYRICS_SOURCES)
-        self._gate = gate
+        self._gate = gate or SourceGate()
+        self._resolver: ResolverLike = resolver or LyricsResolver(gate=self._gate)
         self._bus: Any = None
         self._session: aiohttp.ClientSession | None = None
         self._task: asyncio.Task[None] | None = None
+        self._poll_wakeup = asyncio.Event()
+        self._stabilizer = TrackStabilizer()
+        self._empty_since: float | None = None
         self._lines: list[LyricLine] = []
-        self._song_key: str | None = None
-        self._last_index: int = -2
-        self._current_name: str | None = None  # sticky active player
+        self._last_index = -2
+        self._current_name: str | None = None
         self._props_iface: Any = None
         self._subscribed_name: str | None = None
-        self._load_lock = asyncio.Lock()
+        self._load_task: asyncio.Task[None] | None = None
+        self._load_tasks: set[asyncio.Task[None]] = set()
+        self._current_commit: TrackCommit | None = None
+        self._content_owner = "none"
+        self._provider_name = ""
 
     def set_lyrics_sources(self, sources: list[str]) -> None:
         self._lyrics_sources = list(sources)
-        self._song_key = None  # force a re-resolve with the new priority on next poll
+        self._resolver.reset_memory()
+        self._force_reload()
+
+    def set_cache_enabled(self, enabled: bool) -> None:
+        self._resolver.set_cache_enabled(enabled)
+        self._force_reload()
+
+    async def clear_cache(self) -> None:
+        await self._resolver.clear_cache()
 
     async def start(self) -> None:
         self._bus = await _connect()
-        self._session = aiohttp.ClientSession()
-        self._task = asyncio.ensure_future(self._run())
+        timeout = aiohttp.ClientTimeout(total=3.0, connect=1.5)
+        self._session = aiohttp.ClientSession(timeout=timeout)
+        self._task = asyncio.create_task(self._run())
         logger.info("MPRIS provider started")
 
     async def stop(self) -> None:
@@ -184,6 +159,14 @@ class MprisProvider:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
             self._task = None
+
+        tasks = tuple(self._load_tasks)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._load_task = None
+
         if self._session is not None:
             await self._session.close()
             self._session = None
@@ -199,11 +182,15 @@ class MprisProvider:
     async def _run(self) -> None:
         try:
             while True:
+                self._poll_wakeup.clear()
                 try:
                     await self._poll_once()
-                except Exception as exc:  # noqa: BLE001 - D-Bus calls fail in many ways; keep polling
+                except Exception as exc:  # noqa: BLE001 - D-Bus boundary; keep polling
                     logger.debug("MPRIS poll error: %s", exc)
-                await asyncio.sleep(self._poll_interval)
+                try:
+                    await asyncio.wait_for(self._poll_wakeup.wait(), timeout=self._poll_interval)
+                except TimeoutError:
+                    pass
         except asyncio.CancelledError:
             pass
 
@@ -218,46 +205,69 @@ class MprisProvider:
     async def _safe_status(player: Any) -> str:
         try:
             return await player.get_playback_status()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 - D-Bus boundary
             logger.debug("status read failed: %s", exc)
             return ""
 
+    @staticmethod
+    async def _safe_info(player: Any) -> TrackInfo | None:
+        try:
+            return parse_metadata(_unwrap(await player.get_metadata()))
+        except Exception as exc:  # noqa: BLE001 - D-Bus boundary
+            logger.debug("metadata read failed while selecting player: %s", exc)
+            return None
+
     async def _active_player(self) -> tuple[Any, str] | None:
-        """Pick the active player, **stickily**.
-
-        Keep the current player while it is still Playing so that a second player
-        (another browser tab, Cider's built-in Chrome) does not cause flip-flop
-        switching. Only when the current one is not playing do we move to another
-        Playing player; otherwise fall back to the first usable one.
-        """
         names = await list_players(self._bus)
+        ordered = list(names)
+        if self._current_name in ordered:
+            ordered.remove(self._current_name)
+            ordered.insert(0, self._current_name)
 
-        if self._current_name in names:
-            player = await self._safe_iface(self._current_name)
-            if player is not None and await self._safe_status(player) == "Playing":
-                return player, self._current_name
-
-        fallback: tuple[Any, str] | None = None
-        for name in names:
+        current_record: tuple[Any, str, str, TrackInfo] | None = None
+        paused_fallback: tuple[Any, str, str, TrackInfo] | None = None
+        playing_empty_fallback: tuple[Any, str, str, TrackInfo] | None = None
+        for name in ordered:
             player = await self._safe_iface(name)
             if player is None:
                 continue
-            if await self._safe_status(player) == "Playing":
+            status = await self._safe_status(player)
+            if status not in {"Playing", "Paused"}:
+                continue
+            info = await self._safe_info(player)
+            if info is None:
+                continue
+            record = player, name, status, info
+            if name == self._current_name:
+                current_record = record
+            has_identity = bool(info.title or info.artist)
+            if status == "Playing" and has_identity:
                 self._current_name = name
                 return player, name
-            if fallback is None:
-                fallback = (player, name)
+            if status == "Paused" and has_identity and paused_fallback is None:
+                paused_fallback = record
+            if status == "Playing" and not has_identity and playing_empty_fallback is None:
+                playing_empty_fallback = record
 
-        if fallback is not None:
-            self._current_name = fallback[1]
-            return fallback
-        self._current_name = None
-        return None
+        selected: tuple[Any, str, str, TrackInfo] | None = None
+        if current_record is not None and current_record[2] == "Paused" and (
+            current_record[3].title or current_record[3].artist
+        ):
+            selected = current_record
+        elif current_record is not None and current_record[2] == "Playing":
+            selected = current_record
+        elif paused_fallback is not None:
+            selected = paused_fallback
+        elif playing_empty_fallback is not None:
+            selected = playing_empty_fallback
+
+        if selected is None:
+            self._current_name = None
+            return None
+        self._current_name = selected[1]
+        return selected[0], selected[1]
 
     async def _ensure_subscribed(self, name: str) -> None:
-        """Subscribe to the active player's PropertiesChanged so metadata/track
-        changes arrive immediately, even when Get(Metadata) lags (Spotify, browser
-        integrations). Polling stays as a fallback."""
         if name == self._subscribed_name and self._props_iface is not None:
             return
         if self._props_iface is not None:
@@ -270,127 +280,178 @@ class MprisProvider:
             props.on_properties_changed(self._on_props_changed)
             self._props_iface = props
             self._subscribed_name = name
-        except Exception as exc:  # noqa: BLE001 - signals are best-effort; polling still works
+        except Exception as exc:  # noqa: BLE001 - signals are best effort
             logger.debug("subscribe failed for %s: %s", name, exc)
             self._props_iface = None
             self._subscribed_name = None
 
-    def _on_props_changed(self, interface: str, changed: dict[str, Any], _invalidated: list[str]) -> None:
-        if interface != PLAYER_IFACE or "Metadata" not in changed:
+    def _on_props_changed(self, interface: str, changed: dict[str, Any], invalidated: list[str]) -> None:
+        if interface != PLAYER_IFACE:
             return
-        try:
-            info = parse_metadata(_unwrap(changed["Metadata"].value))
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("signal metadata parse failed: %s", exc)
-            return
-        name = self._subscribed_name
-        if not name:
-            return
-        key = f"{info.track_id}|{info.title}|{info.artist}"
-        if key != self._song_key:
-            self._song_key = key  # claim synchronously to dedupe against the poll loop
-            asyncio.ensure_future(self._load_song(info, key, name))
+        interesting = {"Metadata", "PlaybackStatus"}
+        if interesting.intersection(changed) or interesting.intersection(invalidated):
+            self._poll_wakeup.set()
 
-    async def _poll_once(self) -> None:
+    async def _poll_once(self, *, now: float | None = None) -> None:
+        observed_at = time.monotonic() if now is None else now
         active = await self._active_player()
         if active is None:
-            if self._song_key is not None:
-                self._reset()
+            self._handle_no_player(observed_at)
             return
+
         player, name = active
         await self._ensure_subscribed(name)
-        playing = await self._safe_status(player) == "Playing"
-        info = parse_metadata(_unwrap(await player.get_metadata()))
-        position = (await player.get_position()) / 1_000_000.0
+        status = await self._safe_status(player)
+        if status not in {"Playing", "Paused"}:
+            self._handle_no_player(observed_at)
+            return
 
-        # Fallback to the PropertiesChanged signal: keyed on trackid+title+artist
-        # so any change counts. Most switches come via the signal, not here.
-        key = f"{info.track_id}|{info.title}|{info.artist}"
-        if key != self._song_key:
-            self._song_key = key
-            await self._load_song(info, key, name)
+        try:
+            first_info = parse_metadata(_unwrap(await player.get_metadata()))
+        except Exception as exc:  # noqa: BLE001 - D-Bus boundary
+            logger.debug("metadata sample failed: %s", exc)
+            return
 
+        position: float | None = None
+        try:
+            raw_position = await player.get_position()
+            if isinstance(raw_position, (int, float)) and not isinstance(raw_position, bool):
+                position = float(raw_position) / 1_000_000.0
+        except Exception as exc:  # noqa: BLE001 - Position is optional
+            logger.debug("position read failed: %s", exc)
+
+        try:
+            second_info = parse_metadata(_unwrap(await player.get_metadata()))
+        except Exception as exc:  # noqa: BLE001 - D-Bus boundary
+            logger.debug("metadata verification failed: %s", exc)
+            return
+        if first_info != second_info:
+            self._stabilizer.observe(
+                TrackObservation(
+                    player_name=name,
+                    info=TrackInfo("", "", "", None, ""),
+                    playback_status=status,
+                    position_s=position,
+                    observed_at=observed_at,
+                )
+            )
+            self._poll_wakeup.set()
+            return
+
+        info = second_info
+        observation = TrackObservation(name, info, status, position, observed_at)
+        commit = self._stabilizer.observe(observation)
+        if not info.title and not info.artist:
+            if status == "Playing":
+                self._empty_since = None
+            return
+        self._empty_since = None
+
+        if commit is not None:
+            self._schedule_load(commit)
+        if not self._stabilizer.transitioning:
+            self._ensure_content_owner()
+        if self._stabilizer.transitioning or self._content_owner != "external" or position is None:
+            return
+
+        current = self._current_commit
+        if current is None:
+            return
+        playing = status == "Playing"
         self._state.tick(position, playing)
         index = find_current_index(self._lines, position)
         if index != self._last_index:
             self._last_index = index
-            self._emit(info, position, playing)
+            self._emit(current.info, position, playing)
 
-    async def _load_song(self, info: TrackInfo, key: str, player_name: str) -> None:
-        # song_key is claimed by the caller (poll loop or signal handler). The lock
-        # serialises concurrent loads (signal vs poll); the stale check drops a
-        # result if a newer switch claimed song_key while we were fetching.
-        async with self._load_lock:
-            self._lines = []
-            self._last_index = -2
-            # Ignore WS-pushed lyrics while switching, so a stale push from the
-            # previous song can't overwrite the new one during the async fetch.
-            if self._gate is not None:
-                self._gate.set_accept_ws(False)
-            # Show the title immediately while lyrics are fetched.
-            self._state.update(
-                build_snapshot(
-                    [], 0.0, provider="MPRIS", song_id=None,
-                    title=info.title, artist=info.artist, is_playing=True,
-                )
+    def _handle_no_player(self, now: float) -> None:
+        if self._current_commit is None and self._content_owner == "none":
+            return
+        if self._empty_since is None:
+            self._empty_since = now
+            return
+        if now - self._empty_since >= 0.35:
+            self._reset()
+
+    def _schedule_load(self, commit: TrackCommit) -> None:
+        current = self._current_commit
+        if current is not None and commit != current and commit.generation <= current.generation:
+            commit = TrackCommit(current.generation + 1, commit.player_name, commit.info)
+        if self._load_task is not None and not self._load_task.done():
+            self._load_task.cancel()
+        self._current_commit = commit
+        self._content_owner = "resolving"
+        task = asyncio.create_task(self._load_song(commit))
+        self._load_task = task
+        self._load_tasks.add(task)
+        task.add_done_callback(self._load_finished)
+
+    def _load_finished(self, task: asyncio.Task[None]) -> None:
+        self._load_tasks.discard(task)
+        if task.cancelled():
+            return
+        error = task.exception()
+        if error is not None:
+            logger.warning("MPRIS lyrics load failed: %s", error)
+
+    async def _load_song(self, commit: TrackCommit) -> None:
+        self._lines = []
+        self._last_index = -2
+        self._provider_name = ""
+        self._gate.select_external()
+        self._state.update(
+            build_snapshot(
+                [],
+                0.0,
+                provider="MPRIS",
+                song_id=None,
+                title=commit.info.title,
+                artist=commit.info.artist,
+                is_playing=True,
             )
-
-            lines, accept_ws = await self._resolve_lyrics(info, player_name)
-            if self._song_key != key:
-                return  # a newer switch claimed the song; this result is stale
-            self._lines = lines
-            if self._gate is not None:
-                self._gate.set_accept_ws(accept_ws)
-            logger.info(
-                "MPRIS %r / %r -> %d lines (accept_ws=%s)", info.title, info.artist, len(lines), accept_ws
-            )
-
-    async def _is_cider(self, name: str) -> bool:
-        """Cider is an Electron app whose bus name is often 'chromium…' — so check
-        the MPRIS Identity property, not just the bus name."""
-        if "cider" in name.lower():
-            return True
+        )
         try:
-            obj = self._bus.get_proxy_object(name, MPRIS_PATH, MPRIS_INTROSPECTION)
-            props = obj.get_interface("org.freedesktop.DBus.Properties")
-            variant = await props.call_get("org.mpris.MediaPlayer2", "Identity")
-            identity = str(getattr(variant, "value", variant))
-        except Exception as exc:  # noqa: BLE001 - identity is best-effort
-            logger.debug("identity read failed for %s: %s", name, exc)
-            return False
-        return "cider" in identity.lower()
+            result = await self._resolver.resolve(self._session, commit.info.metadata(), self._lyrics_sources)
+        except asyncio.CancelledError:
+            raise
+        if self._current_commit != commit:
+            return
+        if result is None:
+            self._content_owner = "none"
+            return
+        if result.source == "cider" and result.live_snapshot is not None:
+            self._content_owner = "cider"
+            self._provider_name = "cider"
+            self._state.update(result.live_snapshot)
+            return
+        self._content_owner = "external"
+        self._provider_name = result.source
+        self._lines = list(result.lines)
+        logger.info(
+            "MPRIS %r / %r -> %d %s lines",
+            commit.info.title,
+            commit.info.artist,
+            len(self._lines),
+            result.source,
+        )
 
-    async def _resolve_lyrics(self, info: TrackInfo, player_name: str) -> tuple[list[LyricLine], bool]:
-        """Walk the priority order; first source with lyrics wins (hit-and-stop).
+    def _force_reload(self) -> None:
+        current = self._current_commit
+        if current is None:
+            return
+        self._schedule_load(TrackCommit(current.generation + 1, current.player_name, current.info))
 
-        Returns (lines, accept_ws). ``accept_ws`` is True when the order reached
-        the 'cider' source (its player is the one playing) before any pull source
-        had lyrics — meaning the Cider WS push should drive this song.
-        """
-        if self._session is None or not info.title:
-            return [], False
-        is_cider = await self._is_cider(player_name)
-        for source in self._lyrics_sources:
-            if source == "cider":
-                if is_cider:
-                    return [], True  # hand off to the Cider WS push
-                continue  # not the Cider player -> this source isn't available
-            if source == "netease":
-                lines = await netease.fetch(self._session, info.title, info.artist, info.length_s)
-            elif source == "lrclib":
-                lines = await lrclib.fetch(self._session, info.title, info.artist, info.length_s)
-            else:
-                continue
-            if lines:
-                return lines, False
-        return [], False
+    def _ensure_content_owner(self) -> None:
+        if self._content_owner == "cider" and not self._gate.cider_active:
+            self._force_reload()
 
     def _emit(self, info: TrackInfo, position: float, playing: bool) -> None:
+        provider = f"MPRIS:{self._provider_name}" if self._provider_name else "MPRIS"
         self._state.update(
             build_snapshot(
                 self._lines,
                 position,
-                provider="MPRIS:netease",
+                provider=provider,
                 song_id=None,
                 title=info.title,
                 artist=info.artist,
@@ -399,9 +460,16 @@ class MprisProvider:
         )
 
     def _reset(self) -> None:
-        self._song_key = None
+        if self._load_task is not None and not self._load_task.done():
+            self._load_task.cancel()
+        self._stabilizer.reset()
+        self._current_commit = None
         self._lines = []
         self._last_index = -2
+        self._content_owner = "none"
+        self._provider_name = ""
+        self._empty_since = None
+        self._gate.select_standalone()
         self._state.clear()
 
 
@@ -423,19 +491,19 @@ async def probe() -> None:
             print(f"  title    = {info.title!r}")
             print(f"  artist   = {info.artist!r}")
             print(f"  length   = {info.length_s}s")
-            print("  Position once/sec — does Δ advance ~1.0 while playing?")
+            print("  Position once/sec - does delta advance about 1.0 while playing?")
             last: float | None = None
             for _ in range(6):
                 try:
                     pos_s = (await player.get_position()) / 1_000_000.0
-                except Exception as exc:  # noqa: BLE001 - diagnostic tool, report and move on
+                except Exception as exc:  # noqa: BLE001 - diagnostic command
                     print(f"    Position read failed: {exc}")
                     break
-                delta = "" if last is None else f"   Δ = {pos_s - last:+.3f}"
+                delta = "" if last is None else f"   delta = {pos_s - last:+.3f}"
                 print(f"    position = {pos_s:8.3f}s{delta}")
                 last = pos_s
                 await asyncio.sleep(1.0)
-        except Exception as exc:  # noqa: BLE001 - diagnostic tool, report and move on
+        except Exception as exc:  # noqa: BLE001 - diagnostic command
             print(f"  error reading player: {exc}")
 
 

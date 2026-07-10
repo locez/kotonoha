@@ -1,4 +1,20 @@
-from kotonoha.providers.mpris import _unwrap, parse_metadata
+from kotonoha.providers.mpris import (
+    TrackInfo,
+    TrackObservation,
+    TrackStabilizer,
+    _unwrap,
+    parse_metadata,
+)
+
+
+def observation(track_id, title, artist, *, at):
+    return TrackObservation(
+        player_name="org.mpris.MediaPlayer2.test",
+        info=TrackInfo(title, artist, "", 180.0, track_id),
+        playback_status="Playing",
+        position_s=0.0,
+        observed_at=at,
+    )
 
 
 def test_parse_basic():
@@ -46,3 +62,29 @@ def test_unwrap_variants():
 
     raw = {"a": FakeVariant(5), "b": FakeVariant("x")}
     assert _unwrap(raw) == {"a": 5, "b": "x"}
+
+
+def test_empty_metadata_never_commits_and_same_track_id_can_recover():
+    stabilizer = TrackStabilizer()
+    assert stabilizer.observe(observation("/track/1", "", "", at=0.0)) is None
+    assert stabilizer.observe(observation("/track/1", "Song", "Artist", at=0.2)) is None
+    commit = stabilizer.observe(observation("/track/1", "Song", "Artist", at=0.6))
+    assert commit is not None
+    assert commit.info.title == "Song"
+
+
+def test_new_title_old_artist_does_not_commit_before_stable_pair():
+    stabilizer = TrackStabilizer()
+    stabilizer.observe(observation("/old", "Old", "Old Artist", at=0.0))
+    assert stabilizer.observe(observation("/new", "New", "Old Artist", at=1.0)) is None
+    assert stabilizer.observe(observation("/new", "New", "New Artist", at=1.1)) is None
+    commit = stabilizer.observe(observation("/new", "New", "New Artist", at=1.5))
+    assert commit is not None
+    assert commit.info.artist == "New Artist"
+
+
+def test_missing_artist_commits_after_longer_window():
+    stabilizer = TrackStabilizer()
+    assert stabilizer.observe(observation("/1", "Instrumental", "", at=0.0)) is None
+    assert stabilizer.observe(observation("/1", "Instrumental", "", at=0.5)) is None
+    assert stabilizer.observe(observation("/1", "Instrumental", "", at=0.9)) is not None
