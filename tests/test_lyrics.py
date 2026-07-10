@@ -1,5 +1,13 @@
 from kotonoha.lyrics.lrc_parser import merge_translation, parse_lrc
-from kotonoha.lyrics.match import Candidate, best_match, normalize
+from kotonoha.lyrics.match import (
+    Candidate,
+    MatchConfidence,
+    TrackMetadata,
+    best_match,
+    evaluate_match,
+    normalize,
+    query_variants,
+)
 from kotonoha.lyrics.yrc_parser import parse_yrc
 
 # Real lines from the live Netease api/song/lyric/v1 response (id=299981).
@@ -65,19 +73,60 @@ def test_normalize_strips_notes_and_punctuation():
     assert normalize("A - B!") == "ab"
 
 
+def test_normalize_uses_nfkc_and_safe_feat_boundaries():
+    assert normalize("Ｓｏｎｇ") == "song"
+    assert normalize("Feather") == "feather"
+    assert normalize("FTISLAND") == "ftisland"
+    assert normalize("Song feat. Guest") == "song"
+
+
+def test_duration_alone_is_not_a_match():
+    track = TrackMetadata("Target", "Artist", "", 180.0)
+    candidate = Candidate("1", "Other", "Someone", 180.0)
+    assert evaluate_match(candidate, track).confidence is MatchConfidence.NONE
+
+
+def test_explicit_live_version_conflict_is_rejected():
+    track = TrackMetadata("Song", "Artist", "Album", 200.0)
+    candidate = Candidate("1", "Song (Live)", "Artist", 200.5, album="Album")
+    assert evaluate_match(candidate, track).confidence is MatchConfidence.NONE
+
+
+def test_artist_order_does_not_change_identity():
+    track = TrackMetadata("Song", "A / B", "", 180.0)
+    candidate = Candidate("1", "Song", "B, A", 180.5)
+    assert evaluate_match(candidate, track).confidence is MatchConfidence.HIGH
+
+
+def test_missing_artist_and_duration_is_not_persistent_confidence():
+    track = TrackMetadata("Song", "")
+    candidate = Candidate("1", "Song", "Other Artist", None)
+    assert evaluate_match(candidate, track).confidence is MatchConfidence.MEDIUM
+
+
+def test_query_variants_are_raw_then_base_title_primary_artist():
+    track = TrackMetadata("Song (Remastered 2011)", "A feat. B", "Album", 180.0)
+    assert query_variants(track) == (
+        "Song (Remastered 2011) A feat. B",
+        "Song A",
+    )
+
+
 def test_best_match_prefers_duration():
     cands = [
         Candidate("1", "暧昧", "王菲", 282.0),   # right duration
         Candidate("2", "暧昧 (Live)", "王菲", 350.0),  # wrong duration
     ]
-    best = best_match(cands, "曖昧", "王菲", duration_s=281.0)
-    assert best is not None and best.song_id == "1"
+    best = best_match(cands, TrackMetadata("曖昧", "王菲", duration_s=281.0))
+    assert best is not None
+    assert best.candidate.song_id == "1"
+    assert best.confidence is MatchConfidence.MEDIUM
 
 
 def test_best_match_rejects_when_nothing_close():
     cands = [Candidate("9", "totally other", "someone", 999.0)]
-    assert best_match(cands, "暧昧", "王菲", duration_s=281.0) is None
+    assert best_match(cands, TrackMetadata("暧昧", "王菲", duration_s=281.0)) is None
 
 
 def test_best_match_empty():
-    assert best_match([], "t", "a", 100.0) is None
+    assert best_match([], TrackMetadata("t", "a", duration_s=100.0)) is None
