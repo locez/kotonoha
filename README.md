@@ -69,9 +69,11 @@ Reordering a provider moves its cache and network stages together. Cider is atte
 
 ## Cider probe (experimental, optional)
 
-> **Experimental:** The Cider probe depends on Cider's internal plugin APIs and Apple Music's TTML response. It may break after Cider updates or produce missing, incomplete, or delayed snapshots. Use it cautiously and keep external lyric providers enabled.
+> **Experimental:** Current Cider 4 playback state and MusicKit timing are supported and have been runtime-tested, but the probe still depends on Cider's internal plugin APIs and Apple Music's TTML response. A future Cider update can require compatibility changes, and Apple Music lyrics may still be unavailable for individual tracks. Keep external lyric providers enabled.
 
-The Cider plugin adds Apple Music's own TTML lyrics to the configured priority list. It is not required for MPRIS playback or external providers. Built with Vite + pnpm:
+The Cider plugin adds Apple Music's own TTML lyrics to the configured priority list. It also supplies song-relative playback time and duration when Chromium's MPRIS bridge exposes an HLS/media timeline instead of the real track duration. Matching Cider timing can therefore improve external lyric lookup and progression even when Netease or lrclib wins the configured provider order.
+
+The plugin is not required for ordinary MPRIS playback or external providers. Build it with Vite + pnpm:
 
 ```bash
 cd plugins/cider/lyrics
@@ -79,14 +81,19 @@ pnpm install
 pnpm build
 ```
 
-Copy the built plugin into Cider's plugin directory:
+Install or update the built plugin in Cider's plugin directory:
 
 ```bash
-rm -rf ~/.config/sh.cider.genten/plugins/dev.locez.kotonoha.cider.lyrics
-cp -r dist/dev.locez.kotonoha.cider.lyrics ~/.config/sh.cider.genten/plugins/
+install -d ~/.config/sh.cider.genten/plugins/dev.locez.kotonoha.cider.lyrics
+cp dist/dev.locez.kotonoha.cider.lyrics/plugin.js \
+  ~/.config/sh.cider.genten/plugins/dev.locez.kotonoha.cider.lyrics/plugin.js
+cp dist/dev.locez.kotonoha.cider.lyrics/plugin.yml \
+  ~/.config/sh.cider.genten/plugins/dev.locez.kotonoha.cider.lyrics/plugin.yml
 ```
 
-The plugin connects to Kotonoha over WebSocket (`ws://127.0.0.1:28745/kotonoha/cider/lyrics`) and pushes Apple Music lyric snapshots + playback ticks. Kotonoha retains the latest snapshot while external providers are being tried and only lets the selected connection drive content and time. `pnpm receive` runs a standalone debug receiver; `pnpm test` runs the unit tests.
+Reload Cider after installing. Source changes under `plugins/cider/lyrics/` do not update the installed plugin automatically; run `pnpm build`, copy the two generated files again, then reload Cider.
+
+The plugin connects to Kotonoha over WebSocket (`ws://127.0.0.1:28745/kotonoha/cider/lyrics`) and pushes Apple Music lyric snapshots, track metadata, and high-frequency playback ticks. Kotonoha retains the latest matching snapshot while external providers are being tried and only lets the selected connection drive lyric content. A matching snapshot may still correct unreliable MPRIS timing metadata without changing provider priority. `pnpm receive` runs a standalone debug receiver; `pnpm test` runs the unit tests.
 
 During an MPRIS track transition, empty or partially updated metadata is held briefly instead of being searched immediately. A player that cannot expose `Position` can still resolve lyrics, although synchronized progression then depends on that player eventually providing usable progress.
 

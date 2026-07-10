@@ -1,17 +1,19 @@
 # Kotonoha Cider Lyrics
 
-Minimal Cider plugin for checking whether Cider can fetch Apple Music TTML lyrics in the background for Kotonoha's Linux desktop lyric overlay.
+Optional Cider plugin that supplies Apple Music TTML lyrics and reliable playback metadata to Kotonoha's Linux desktop lyric overlay.
 
-The probe does not mount or scrape Cider lyric views. It reads the current Apple Music song id, fetches `/syllable-lyrics` through `CiderApp.mkfetch`, parses TTML, and streams the current timed lyric line to the local receiver over WebSocket.
+> **Experimental:** The current Cider 4 player layout and MusicKit clock are supported, but this plugin still depends on Cider internals and Apple Music's private TTML response. Keep Netease or lrclib enabled as external providers.
 
-It connects as a WebSocket client (with automatic reconnect/backoff), pushes a full snapshot on connect, sends a frame on every change (line/play-pause/seek/track), and a low-frequency heartbeat for clock-drift correction.
+The probe does not mount or scrape Cider lyric views. It reads the current Apple Music song ID, fetches `/syllable-lyrics` through `CiderApp.mkfetch`, parses TTML, and streams the current timed lyric line to the local receiver over WebSocket. Playback state is read from the current Cider player layout with MusicKit fallbacks for song-relative time, duration, playing state, and now-playing metadata.
+
+It connects as a WebSocket client with automatic reconnect/backoff, pushes a full snapshot on connect and track/line changes, sends a heartbeat about once per second, and sends lightweight clock ticks about every 100 ms.
 
 ## Local Receiver
 
-`npm run receive` starts a standalone WebSocket debug receiver (handy when Kotonoha itself is not running):
+`pnpm receive` starts a standalone WebSocket debug receiver when Kotonoha itself is not running:
 
 ```bash
-npm run receive
+pnpm receive
 ```
 
 It listens on:
@@ -25,16 +27,17 @@ Kotonoha's Python app hosts the same WebSocket endpoint, so in normal use you do
 ## Plugin Development
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
-In Cider, enable plugin development/Vite loading for this plugin. The plugin streams snapshots to the local receiver over WebSocket (event-driven, plus a ~1s heartbeat).
+In Cider, enable plugin development/Vite loading for this plugin. The plugin streams full snapshots and lightweight playback ticks to the local receiver.
 
 ## Build
 
 ```bash
-npm run build
+pnpm test
+pnpm build
 ```
 
 The built plugin goes to:
@@ -43,8 +46,14 @@ The built plugin goes to:
 dist/dev.locez.kotonoha.cider.lyrics/plugin.js
 ```
 
-For a manual install on Linux, copy the built plugin directory into:
+For a manual install or update on Linux:
 
-```text
-~/.config/sh.cider.genten/plugins
+```bash
+install -d ~/.config/sh.cider.genten/plugins/dev.locez.kotonoha.cider.lyrics
+cp dist/dev.locez.kotonoha.cider.lyrics/plugin.js \
+  ~/.config/sh.cider.genten/plugins/dev.locez.kotonoha.cider.lyrics/plugin.js
+cp dist/dev.locez.kotonoha.cider.lyrics/plugin.yml \
+  ~/.config/sh.cider.genten/plugins/dev.locez.kotonoha.cider.lyrics/plugin.yml
 ```
+
+Reload Cider after copying. Repeat the build, copy, and reload steps after changing plugin source code.
