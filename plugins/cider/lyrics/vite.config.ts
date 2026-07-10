@@ -9,6 +9,8 @@ import { stringify } from "yaml";
 
 import pluginConfig from "./src/plugin.config";
 
+const kotonohaVersion = process.env.KOTONOHA_VERSION ?? "";
+
 function ciderPluginManifest(): Plugin {
   return {
     name: "cider-plugin-manifest",
@@ -29,6 +31,7 @@ export default defineConfig({
     "process.env": JSON.stringify({
       NODE_ENV: "production",
       cider: "2",
+      KOTONOHA_VERSION: kotonohaVersion,
     }),
     cplugin: JSON.stringify({
       ce_prefix: pluginConfig.ce_prefix,
