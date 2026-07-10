@@ -15,11 +15,16 @@ except ModuleNotFoundError:  # pragma: no cover - exercised by the Python 3.10 C
 PROJECT_ROOT = Path(__file__).parents[1]
 DEBIAN_DIR = PROJECT_ROOT / "packaging" / "debian"
 FEDORA_SPEC = PROJECT_ROOT / "packaging" / "fedora" / "kotonoha.spec"
+PACKAGE_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "package.yml"
 NATIVE_PACKAGING_DOCS = (
     PROJECT_ROOT / "docs" / "superpowers" / "specs" / "2026-07-11-github-workflows-design.md",
     PROJECT_ROOT / "docs" / "superpowers" / "plans" / "2026-07-11-github-workflows.md",
 )
 SED_EXPRESSION_PATTERN = re.compile(r"^\s*sed -i '([^']+)' pyproject\.toml$", re.MULTILINE)
+RPM_SPEC_SED_PATTERN = re.compile(
+    r'^\s*(sed -i -E "[^"]+" packaging/fedora/kotonoha\.spec)$',
+    re.MULTILINE,
+)
 
 
 def read_packaging_file(path: Path) -> str:
@@ -175,6 +180,26 @@ def test_fedora_spec_only_packages_existing_documentation() -> None:
 
     for documentation_path in documentation_paths:
         assert (PROJECT_ROOT / documentation_path).is_file()
+
+
+def test_rpm_workflow_updates_spec_version_and_changelog(tmp_path: Path) -> None:
+    workflow = read_packaging_file(PACKAGE_WORKFLOW)
+    sed_commands = RPM_SPEC_SED_PATTERN.findall(workflow)
+    assert sed_commands
+
+    spec_path = tmp_path / "packaging" / "fedora" / "kotonoha.spec"
+    spec_path.parent.mkdir(parents=True)
+    spec_path.write_bytes(FEDORA_SPEC.read_bytes())
+
+    environment = os.environ.copy()
+    environment["VERSION"] = "2.3.4"
+    for command in sed_commands:
+        subprocess.run(("bash", "-c", command), cwd=tmp_path, env=environment, check=True)
+
+    transformed = spec_path.read_text(encoding="utf-8")
+    assert "Version:        2.3.4" in transformed
+    assert re.search(r"^\* .* - 2\.3\.4-1$", transformed, re.MULTILINE)
+    assert "Source0:        %{name}-%{version}.tar.gz" in transformed
 
 
 def apply_packaging_sed_expressions(tmp_path: Path, packaging_path: Path, *, makefile: bool) -> tuple[str, dict]:

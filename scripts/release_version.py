@@ -12,8 +12,9 @@ except ModuleNotFoundError:  # pragma: no cover - exercised by the Python 3.10 C
     import tomli as tomllib  # ty: ignore[unresolved-import]
 
 
-VERSION_PATTERN = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
-TAG_PATTERN = re.compile(r"v([0-9]+\.[0-9]+\.[0-9]+)")
+CANONICAL_VERSION = r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
+VERSION_PATTERN = re.compile(CANONICAL_VERSION)
+TAG_PATTERN = re.compile(rf"v({CANONICAL_VERSION})")
 
 
 def resolve_version(ref_type: str, ref_name: str, project_path: Path) -> tuple[str, bool]:

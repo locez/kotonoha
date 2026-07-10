@@ -66,7 +66,7 @@ For a manual dispatch, including one launched with a tag selected as its ref, th
 
 ## Version Contract
 
-A tag matching `vX.Y.Z` is the authoritative version for every artifact in that release. The leading `v` is removed before passing the version to the DEB, RPM, wheel, and Cider builds.
+A tag matching canonical `vX.Y.Z` is the authoritative version for every artifact in that release. Each component is ASCII digits and is either `0` or begins with `1`-`9`, so multi-digit components cannot have a leading zero. The leading `v` is removed before passing the version to the DEB, RPM, wheel, and Cider builds. Manual builds apply the same canonical rule to `project.version`.
 
 For `workflow_dispatch`, the authoritative version is `project.version` from `pyproject.toml`, even when the operator selects a tag ref. Only a tag push passes `ref_type=tag` to the version resolver.
 
@@ -132,7 +132,7 @@ Only a DEB that passes these installation checks is uploaded.
 
 The RPM build runs in a Fedora 43 container with Bash selected explicitly for every `run` step and adds `packaging/fedora/kotonoha.spec`.
 
-The workflow uses the pinned `setup-uv` action with uv 0.11.19 only to run `uv version "$VERSION" --frozen`, creates a source archive named for the resolved version, updates the spec version for the build, and invokes `rpmbuild`. During `%prep`, the spec removes the optional Hatch build-script hook from the package build tree. During `%build`, it compiles the native bridge explicitly with `USE_SYSTEM_LIBS=1` before invoking Fedora's Python wheel macro. The existing wheel force-include packages the manually built library without relying on files installed outside the declared RPM build requirements.
+The workflow uses the pinned `setup-uv` action with uv 0.11.19 only to run `uv version "$VERSION" --frozen`, creates a source archive named for the resolved version, updates both the spec `Version:` header and the single `%changelog` release to `${VERSION}-1`, and invokes `rpmbuild`. During `%prep`, the spec removes the optional Hatch build-script hook from the package build tree. During `%build`, it compiles the native bridge explicitly with `USE_SYSTEM_LIBS=1` before invoking Fedora's Python wheel macro. The existing wheel force-include packages the manually built library without relying on files installed outside the declared RPM build requirements.
 
 Qt 6, PyQt6, Wayland, LayerShellQt, aiohttp, qasync, and dbus-fast are declared as system build/runtime requirements. After building, the container installs the generated RPM and performs the same import, executable, native library, desktop file, icon, and desktop validation checks as the DEB job.
 

@@ -5,7 +5,7 @@ export function resolvePluginVersion(value: string | undefined): string {
     return DEVELOPMENT_VERSION;
   }
 
-  if (!/^[0-9]+\.[0-9]+\.[0-9]+$/.test(value)) {
+  if (!/^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$/.test(value)) {
     throw new Error(`Invalid KOTONOHA_VERSION "${value}": expected X.Y.Z`);
   }
 

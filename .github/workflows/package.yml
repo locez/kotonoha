@@ -170,6 +170,8 @@ jobs:
           set -euo pipefail
           uv version "$VERSION" --frozen
           sed -i -E "s/^Version:[[:space:]]+.*/Version:        ${VERSION}/" packaging/fedora/kotonoha.spec
+          test "$(grep -Ec '^\* .* - (0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-1$' packaging/fedora/kotonoha.spec)" -eq 1
+          sed -i -E "0,/^(\* .* - )(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-1$/s//\1${VERSION}-1/" packaging/fedora/kotonoha.spec
           rpm_root=/tmp/kotonoha-rpmbuild
           mkdir -p "$rpm_root"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
           tar \

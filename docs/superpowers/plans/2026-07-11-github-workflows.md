@@ -104,7 +104,8 @@ import re
 import tomllib
 from pathlib import Path
 
-VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
+# Canonical numeric X.Y.Z: each component is 0 or starts with 1-9.
+VERSION_PATTERN = re.compile(r"^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$")
 
 
 def _validate_version(version: str) -> str:
@@ -263,7 +264,7 @@ Add to `src/plugin.config.ts`:
 
 ```ts
 const DEVELOPMENT_VERSION = "0.0.1";
-const RELEASE_VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
+const RELEASE_VERSION_PATTERN = /^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$/;
 
 export function resolvePluginVersion(value: string | undefined): string {
   if (value === undefined || value === "") {
@@ -819,6 +820,8 @@ jobs:
         run: |
           uv version "$VERSION" --frozen
           sed -i "s/^Version:.*/Version:        ${VERSION}/" packaging/fedora/kotonoha.spec
+          test "$(grep -Ec '^\* .* - (0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-1$' packaging/fedora/kotonoha.spec)" -eq 1
+          sed -i -E "0,/^(\* .* - )(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-1$/s//\1${VERSION}-1/" packaging/fedora/kotonoha.spec
           mkdir -p ~/rpmbuild/SOURCES
           tar --transform "s|^\.|kotonoha-${VERSION}|" --exclude='.git' -czf ~/rpmbuild/SOURCES/kotonoha-${VERSION}.tar.gz .
       - name: Build RPM

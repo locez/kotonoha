@@ -17,18 +17,20 @@ def write_project(path: Path, version: str) -> None:
     path.write_text(f'[project]\nname = "kotonoha"\nversion = "{version}"\n', encoding="utf-8")
 
 
-def test_tag_version_is_authoritative_over_pyproject(tmp_path: Path) -> None:
+@pytest.mark.parametrize("version", ("0.0.0", "0.1.0", "10.20.30"))
+def test_canonical_tag_version_is_authoritative_over_pyproject(tmp_path: Path, version: str) -> None:
     project_path = tmp_path / "pyproject.toml"
     write_project(project_path, "not-a-version")
 
-    assert resolve_version("tag", "v1.2.3", project_path) == ("1.2.3", True)
+    assert resolve_version("tag", f"v{version}", project_path) == (version, True)
 
 
-def test_manual_version_comes_from_pyproject(tmp_path: Path) -> None:
+@pytest.mark.parametrize("version", ("0.0.0", "0.1.0", "10.20.30"))
+def test_canonical_manual_version_comes_from_pyproject(tmp_path: Path, version: str) -> None:
     project_path = tmp_path / "pyproject.toml"
-    write_project(project_path, "4.5.6")
+    write_project(project_path, version)
 
-    assert resolve_version("branch", "main", project_path) == ("4.5.6", False)
+    assert resolve_version("branch", "main", project_path) == (version, False)
 
 
 @pytest.mark.parametrize(
@@ -39,6 +41,9 @@ def test_manual_version_comes_from_pyproject(tmp_path: Path) -> None:
         "v1.2.3.4",
         "v1.two.3",
         "v1.2.3-extra",
+        "v01.2.3",
+        "v1.02.3",
+        "v1.2.03",
     ),
 )
 def test_invalid_tags_are_rejected(tmp_path: Path, tag: str) -> None:
@@ -46,7 +51,10 @@ def test_invalid_tags_are_rejected(tmp_path: Path, tag: str) -> None:
         resolve_version("tag", tag, tmp_path / "unused.toml")
 
 
-@pytest.mark.parametrize("version", ("v1.2.3", "1.2", "1.2.3.4", "1.two.3", "1.2.3rc1"))
+@pytest.mark.parametrize(
+    "version",
+    ("v1.2.3", "1.2", "1.2.3.4", "1.two.3", "1.2.3rc1", "01.2.3", "1.02.3", "1.2.03"),
+)
 def test_invalid_project_versions_are_rejected(tmp_path: Path, version: str) -> None:
     project_path = tmp_path / "pyproject.toml"
     write_project(project_path, version)
