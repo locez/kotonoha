@@ -55,7 +55,7 @@ function audioElement(globals: CiderGlobals, player: any): any {
  * song clock, then the resolved Cider player store. Used by the ~100ms tick loop
  * so Kotonoha's local clock is frequently re-calibrated against ground truth.
  */
-export function probePlaybackTime(globals: CiderGlobals): {
+export function probePlaybackTime(globals: any): {
   currentTime: number | null;
   isPlaying: boolean | null;
 } {
