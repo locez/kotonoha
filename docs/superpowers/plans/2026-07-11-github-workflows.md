@@ -743,7 +743,14 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - id: release
         name: Resolve release version
-        run: python3 scripts/release_version.py --github-output "$GITHUB_OUTPUT"
+        env:
+          VERSION_REF_TYPE: ${{ github.event_name == 'push' && github.ref_type == 'tag' && 'tag' || 'manual' }}
+          VERSION_REF_NAME: ${{ github.ref_name }}
+        run: |
+          python3 scripts/release_version.py \
+            --ref-type "$VERSION_REF_TYPE" \
+            --ref-name "$VERSION_REF_NAME" \
+            --github-output "$GITHUB_OUTPUT"
 
   deb:
     needs: [validate, version]
@@ -915,7 +922,7 @@ jobs:
 
   release:
     needs: [version, assemble]
-    if: needs.version.outputs.is_tag == 'true'
+    if: github.event_name == 'push' && needs.version.outputs.is_tag == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -939,10 +946,11 @@ Run:
 ```bash
 go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 .github/workflows/test.yml .github/workflows/package.yml
 python3 scripts/release_version.py --ref-type tag --ref-name v1.2.3
+python3 scripts/release_version.py --ref-type manual --ref-name v1.2.3
 uv run pytest tests/test_release_scripts.py -q
 ```
 
-Expected: actionlint has no diagnostics, the version command prints `version=1.2.3` and `is_tag=true`, and tests pass.
+Expected: actionlint has no diagnostics; the tag command prints `version=1.2.3` and `is_tag=true`; the forced manual command reads `project.version` and prints `is_tag=false`; and tests pass.
 
 - [ ] **Step 3: Commit the package workflow**
 
@@ -980,7 +988,7 @@ git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-Running the Package workflow manually builds and retains the same Actions artifacts using `project.version` from `pyproject.toml`, but does not create a GitHub Release.
+Running the Package workflow manually builds and retains the same Actions artifacts using `project.version` from `pyproject.toml`, but does not create a GitHub Release, even when a tag is selected as the workflow ref.
 ````
 
 - [ ] **Step 2: Run all repository validation**

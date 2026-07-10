@@ -30,7 +30,14 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: Resolve package version
         id: version
-        run: python3 scripts/release_version.py --github-output "$GITHUB_OUTPUT"
+        env:
+          VERSION_REF_TYPE: ${{ github.event_name == 'push' && github.ref_type == 'tag' && 'tag' || 'manual' }}
+          VERSION_REF_NAME: ${{ github.ref_name }}
+        run: |
+          python3 scripts/release_version.py \
+            --ref-type "$VERSION_REF_TYPE" \
+            --ref-name "$VERSION_REF_NAME" \
+            --github-output "$GITHUB_OUTPUT"
 
   deb:
     name: Build DEB
@@ -415,7 +422,7 @@ jobs:
     needs:
       - version
       - assemble
-    if: needs.version.outputs.is_tag == 'true'
+    if: github.event_name == 'push' && needs.version.outputs.is_tag == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write

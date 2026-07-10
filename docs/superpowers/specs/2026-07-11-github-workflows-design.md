@@ -62,13 +62,13 @@ The four package jobs run in parallel after validation. Each uploads a separatel
 
 For a tag, a release job creates a GitHub Release with generated release notes and all verified files. The release job alone receives `contents: write`; all other jobs remain read-only. `fail_on_unmatched_files` or an equivalent explicit file check prevents a partial release.
 
-For a manual dispatch, the workflow stops after uploading the combined Actions artifact and does not create a GitHub Release. Release/tag jobs do not use cancellation concurrency.
+For a manual dispatch, including one launched with a tag selected as its ref, the workflow stops after uploading the combined Actions artifact and does not create a GitHub Release. Release/tag jobs do not use cancellation concurrency.
 
 ## Version Contract
 
 A tag matching `vX.Y.Z` is the authoritative version for every artifact in that release. The leading `v` is removed before passing the version to the DEB, RPM, wheel, and Cider builds.
 
-For `workflow_dispatch`, the authoritative version is `project.version` from `pyproject.toml`.
+For `workflow_dispatch`, the authoritative version is `project.version` from `pyproject.toml`, even when the operator selects a tag ref. Only a tag push passes `ref_type=tag` to the version resolver.
 
 The resolved version is computed once in the package workflow and passed to all package jobs. This prevents artifact versions from diverging inside one run.
 
@@ -197,7 +197,7 @@ No job silently downgrades a failed check to a warning. No GitHub Release is cre
 - A pull request runs Python 3.10-3.14 validation and Cider validation.
 - A failing Python or Cider test prevents package jobs from starting.
 - A `vX.Y.Z` tag produces version-consistent DEB, RPM, Linux wheel, Cider ZIP, and `SHA256SUMS` files.
-- A manual dispatch produces the same Actions artifacts without creating a GitHub Release.
+- A manual dispatch, including one run against a tag ref, uses `project.version`, produces the same Actions artifacts, and does not create a GitHub Release.
 - The DEB and RPM install successfully in their build containers and expose the application command, bridge, desktop file, and icon.
 - Desktop metadata is valid and localized for English, Simplified Chinese, Traditional Chinese, and Japanese.
 - The Cider ZIP can be extracted directly under Cider's plugin directory.
