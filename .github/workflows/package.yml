@@ -1,0 +1,431 @@
+name: Package
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-${{ github.workflow }}-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate release inputs
+    uses: ./.github/workflows/test.yml
+    with:
+      release_validation: true
+
+  version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_tag: ${{ steps.version.outputs.is_tag }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - name: Resolve package version
+        id: version
+        run: python3 scripts/release_version.py --github-output "$GITHUB_OUTPUT"
+
+  deb:
+    name: Build DEB
+    needs:
+      - validate
+      - version
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Install checkout prerequisites
+        run: |
+          apt-get update
+          apt-get install -y ca-certificates git
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: 0.11.19
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install DEB build dependencies
+        run: |
+          apt-get update
+          apt-get install -y \
+            build-essential \
+            debhelper \
+            desktop-file-utils \
+            devscripts \
+            dh-python \
+            dh-sequence-python3 \
+            fakeroot \
+            g++ \
+            liblayershellqtinterface-dev \
+            libwayland-dev \
+            pkg-config \
+            pybuild-plugin-pyproject \
+            python3-aiohttp \
+            python3-all \
+            python3-dbus-fast \
+            python3-hatchling \
+            python3-pyqt6 \
+            python3-qasync \
+            qt6-base-dev \
+            qt6-base-private-dev \
+            qt6-wayland-dev
+      - name: Build DEB
+        env:
+          DEBEMAIL: locez@locez.com
+          DEBFULLNAME: Locez
+        run: |
+          set -euo pipefail
+          uv version "$VERSION" --frozen
+          cp -a packaging/debian debian
+          chmod +x debian/rules
+          dch --newversion "${VERSION}-1" --distribution unstable --force-bad-version "Release ${VERSION}."
+          debuild -us -uc -b
+          mkdir -p dist/deb
+          shopt -s nullglob
+          debs=(../kotonoha_*.deb)
+          test "${#debs[@]}" -eq 1
+          mv "${debs[0]}" dist/deb/
+      - name: Install and verify DEB
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          debs=(dist/deb/kotonoha_*.deb)
+          test "${#debs[@]}" -eq 1
+          apt-get install -y "${debs[0]}"
+          python3 -c "import kotonoha.main"
+          command -v kotonoha
+          bridge=$(python3 -c "import pathlib, kotonoha; print(pathlib.Path(kotonoha.__file__).with_name('libkoto-layer.so'))")
+          test -f "$bridge"
+          test -f /usr/share/applications/kotonoha.desktop
+          test -f /usr/share/pixmaps/kotonoha.png
+          desktop-file-validate /usr/share/applications/kotonoha.desktop
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: kotonoha-deb
+          path: dist/deb/kotonoha_*.deb
+          if-no-files-found: error
+
+  rpm:
+    name: Build RPM
+    needs:
+      - validate
+      - version
+    runs-on: ubuntu-latest
+    container: fedora:43
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Install checkout prerequisites
+        run: dnf install -y ca-certificates git
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: 0.11.19
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install RPM build dependencies
+        run: |
+          dnf install -y \
+            desktop-file-utils \
+            gcc-c++ \
+            gzip \
+            layer-shell-qt \
+            layer-shell-qt-devel \
+            pyproject-rpm-macros \
+            python3-aiohttp \
+            python3-dbus-fast \
+            python3-devel \
+            python3-hatchling \
+            python3-qt6 \
+            python3-qasync \
+            qt6-qtbase-devel \
+            qt6-qtbase-private-devel \
+            qt6-qtwayland-devel \
+            rpm-build \
+            tar \
+            wayland-devel
+      - name: Build RPM
+        run: |
+          set -euo pipefail
+          uv version "$VERSION" --frozen
+          sed -i -E "s/^Version:[[:space:]]+.*/Version:        ${VERSION}/" packaging/fedora/kotonoha.spec
+          rpm_root=/tmp/kotonoha-rpmbuild
+          mkdir -p "$rpm_root"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+          tar \
+            --exclude=.git \
+            --exclude=dist \
+            --transform "s#^\.#kotonoha-${VERSION}#" \
+            -czf "$rpm_root/SOURCES/kotonoha-${VERSION}.tar.gz" \
+            .
+          rpmbuild --define "_topdir $rpm_root" -ba packaging/fedora/kotonoha.spec
+          mkdir -p dist/rpm
+          mapfile -t rpms < <(find "$rpm_root/RPMS" -type f -name "kotonoha-${VERSION}-*.x86_64.rpm" -print)
+          test "${#rpms[@]}" -eq 1
+          mv "${rpms[0]}" dist/rpm/
+      - name: Install and verify RPM
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          rpms=(dist/rpm/kotonoha-"${VERSION}"-*.x86_64.rpm)
+          test "${#rpms[@]}" -eq 1
+          dnf install -y "${rpms[0]}"
+          python3 -c "import kotonoha.main"
+          command -v kotonoha
+          bridge=$(python3 -c "import pathlib, kotonoha; print(pathlib.Path(kotonoha.__file__).with_name('libkoto-layer.so'))")
+          test -f "$bridge"
+          test -f /usr/share/applications/kotonoha.desktop
+          test -f /usr/share/pixmaps/kotonoha.png
+          desktop-file-validate /usr/share/applications/kotonoha.desktop
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: kotonoha-rpm
+          path: dist/rpm/kotonoha-${{ needs.version.outputs.version }}-*.x86_64.rpm
+          if-no-files-found: error
+
+  wheel:
+    name: Build Linux wheel
+    needs:
+      - validate
+      - version
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Install checkout prerequisites
+        run: |
+          apt-get update
+          apt-get install -y ca-certificates git
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: 0.11.19
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install wheel build dependencies
+        run: |
+          apt-get update
+          apt-get install -y \
+            build-essential \
+            liblayershellqtinterface-dev \
+            libwayland-dev \
+            pkg-config \
+            qt6-base-dev \
+            qt6-base-private-dev \
+            qt6-wayland-dev
+      - name: Build and retag wheel
+        run: |
+          set -euo pipefail
+          uv version "$VERSION" --frozen
+          uv build --wheel
+          shopt -s nullglob
+          built_wheels=(dist/*.whl)
+          test "${#built_wheels[@]}" -eq 1
+          uvx --from wheel==0.45.1 wheel tags --remove --platform-tag linux_x86_64 "${built_wheels[0]}"
+          linux_wheels=(dist/*-linux_x86_64.whl)
+          any_wheels=(dist/*-any.whl)
+          all_wheels=(dist/*.whl)
+          test "${#linux_wheels[@]}" -eq 1
+          test "${#any_wheels[@]}" -eq 0
+          test "${#all_wheels[@]}" -eq 1
+      - name: Verify wheel metadata and native linkage
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wheels=(dist/*-linux_x86_64.whl)
+          test "${#wheels[@]}" -eq 1
+          python - "${wheels[0]}" <<'PY'
+          from email.parser import Parser
+          from pathlib import Path
+          import sys
+          from zipfile import ZipFile
+
+          wheel_path = Path(sys.argv[1])
+          with ZipFile(wheel_path) as archive:
+              metadata_files = [name for name in archive.namelist() if name.endswith(".dist-info/WHEEL")]
+              if len(metadata_files) != 1:
+                  raise SystemExit(f"expected one WHEEL metadata file, found {len(metadata_files)}")
+              metadata = Parser().parsestr(archive.read(metadata_files[0]).decode("utf-8"))
+          tags = metadata.get_all("Tag", [])
+          if tags != ["py3-none-linux_x86_64"]:
+              raise SystemExit(f"unexpected wheel tags: {tags}")
+          PY
+          bridge=src/kotonoha/libkoto-layer.so
+          test -f "$bridge"
+          ldd "$bridge" | tee /tmp/libkoto-layer.ldd
+          grep -F "libQt6Core.so" /tmp/libkoto-layer.ldd
+          grep -F "libQt6Gui.so" /tmp/libkoto-layer.ldd
+          grep -F "LayerShellQt" /tmp/libkoto-layer.ldd
+          if grep -E "libQt5[^ ]*\\.so" /tmp/libkoto-layer.ldd; then
+            echo "Qt 5 dependency detected in $bridge" >&2
+            exit 1
+          fi
+      - name: Install and load wheel in a clean environment
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wheels=(dist/*-linux_x86_64.whl)
+          test "${#wheels[@]}" -eq 1
+          python -m venv /tmp/kotonoha-wheel
+          uv pip install --python /tmp/kotonoha-wheel/bin/python "${wheels[0]}"
+          /tmp/kotonoha-wheel/bin/python - <<'PY'
+          import ctypes
+          from pathlib import Path
+
+          from PyQt6 import QtCore, QtGui
+          import kotonoha
+          from kotonoha.lyrics_loader import find_layer_shell_library
+
+          assert QtCore is not None
+          assert QtGui is not None
+          package_dir = Path(kotonoha.__file__).parent
+          bridge = find_layer_shell_library(package_dir)
+          if bridge is None:
+              raise SystemExit(f"native bridge not found under {package_dir}")
+          ctypes.CDLL(bridge)
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: kotonoha-wheel
+          path: dist/*-linux_x86_64.whl
+          if-no-files-found: error
+
+  cider:
+    name: Build Cider plugin
+    needs:
+      - validate
+      - version
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    defaults:
+      run:
+        working-directory: plugins/cider/lyrics
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 9.10.0
+          run_install: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: plugins/cider/lyrics/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Test
+        run: pnpm test
+      - name: Build versioned plugin
+        run: KOTONOHA_VERSION="$VERSION" pnpm build
+      - name: Verify versioned plugin
+        run: |
+          set -euo pipefail
+          plugin_dir=dist/dev.locez.kotonoha.cider.lyrics
+          test -f "$plugin_dir/plugin.js"
+          test -f "$plugin_dir/plugin.yml"
+          mapfile -t entries < <(find "$plugin_dir" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort)
+          test "${#entries[@]}" -eq 2
+          test "${entries[0]}" = plugin.js
+          test "${entries[1]}" = plugin.yml
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            import { parse } from "yaml";
+            const manifest = parse(readFileSync("dist/dev.locez.kotonoha.cider.lyrics/plugin.yml", "utf8"));
+            if (manifest.version !== process.env.VERSION) {
+              throw new Error(`expected manifest version ${process.env.VERSION}, found ${manifest.version}`);
+            }
+          '
+      - name: Package plugin ZIP
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          from zipfile import ZIP_DEFLATED, ZipFile
+
+          version = os.environ["VERSION"]
+          plugin_dir = Path("dist/dev.locez.kotonoha.cider.lyrics")
+          archive_path = Path(os.environ["GITHUB_WORKSPACE"]) / f"kotonoha-cider-lyrics-{version}.zip"
+          with ZipFile(archive_path, "w", compression=ZIP_DEFLATED) as archive:
+              for filename in ("plugin.js", "plugin.yml"):
+                  path = plugin_dir / filename
+                  archive.write(path, f"{plugin_dir.name}/{filename}")
+          PY
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          from zipfile import ZipFile
+
+          version = os.environ["VERSION"]
+          archive_path = Path(os.environ["GITHUB_WORKSPACE"]) / f"kotonoha-cider-lyrics-{version}.zip"
+          expected = [
+              "dev.locez.kotonoha.cider.lyrics/plugin.js",
+              "dev.locez.kotonoha.cider.lyrics/plugin.yml",
+          ]
+          with ZipFile(archive_path) as archive:
+              if sorted(archive.namelist()) != expected:
+                  raise SystemExit(f"unexpected ZIP layout: {archive.namelist()}")
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: kotonoha-cider-plugin
+          path: kotonoha-cider-lyrics-${{ needs.version.outputs.version }}.zip
+          if-no-files-found: error
+
+  assemble:
+    name: Assemble release bundle
+    needs:
+      - version
+      - deb
+      - rpm
+      - wheel
+      - cider
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: kotonoha-*
+          path: artifacts
+          merge-multiple: false
+      - name: Assemble artifacts and checksums
+        run: |
+          test ! -e release
+          python3 scripts/assemble_release.py artifacts release
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: kotonoha-release-${{ needs.version.outputs.version }}
+          path: release/*
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub release
+    needs:
+      - version
+      - assemble
+    if: needs.version.outputs.is_tag == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: kotonoha-release-${{ needs.version.outputs.version }}
+          path: release
+      - uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3
+        with:
+          files: release/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true

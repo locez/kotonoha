@@ -764,7 +764,7 @@ jobs:
           python3 -m pip install uv --break-system-packages
       - name: Prepare Debian source
         run: |
-          uv version "$VERSION" --frozen --no-sync
+          uv version "$VERSION" --frozen
           cp -r packaging/debian debian
           chmod +x debian/rules
           export DEBEMAIL="actions@github.com"
@@ -804,7 +804,7 @@ jobs:
           python3 -m pip install uv
       - name: Prepare RPM source
         run: |
-          uv version "$VERSION" --frozen --no-sync
+          uv version "$VERSION" --frozen
           sed -i "s/^Version:.*/Version:        ${VERSION}/" packaging/fedora/kotonoha.spec
           mkdir -p ~/rpmbuild/SOURCES
           tar --transform "s|^\.|kotonoha-${VERSION}|" --exclude='.git' -czf ~/rpmbuild/SOURCES/kotonoha-${VERSION}.tar.gz .
@@ -841,7 +841,7 @@ jobs:
           sudo apt-get install -y qt6-base-dev qt6-base-private-dev libwayland-dev liblayershellqtinterface-dev pkg-config build-essential
       - name: Build Linux wheel
         run: |
-          uv version "$VERSION" --frozen --no-sync
+          uv version "$VERSION" --frozen
           uv build --wheel
           uvx --from wheel wheel tags --remove --platform-tag linux_x86_64 dist/*.whl
       - name: Verify wheel platform and installation

@@ -114,7 +114,7 @@ The DEB build runs in an Ubuntu 26.04 container and adds:
 - `packaging/debian/install` for the desktop entry and icon;
 - `packaging/debian/changelog` as the checked-in base changelog.
 
-The workflow installs `uv` only to update the release version, copies `packaging/debian` to the repository-root `debian` directory, updates the changelog to the resolved version, and builds an unsigned binary package with `debuild`.
+The workflow uses the pinned `setup-uv` action with uv 0.11.19 only to run `uv version "$VERSION" --frozen`, copies `packaging/debian` to the repository-root `debian` directory, updates the changelog to the resolved version, and builds an unsigned binary package with `debuild`.
 
 Qt 6, PyQt6, Wayland, LayerShellQt, aiohttp, qasync, and dbus-fast are represented as system build/runtime dependencies rather than bundled Qt libraries. `dh-sequence-python3` activates `dh_python3` so `${python3:Depends}` is populated. Before pybuild configures the PEP 517 backend, `debian/rules` saves the original `pyproject.toml` under `debian/`, removes the optional Hatch build-script hook from the package build tree, compiles the native bridge explicitly with `USE_SYSTEM_LIBS=1`, and then resumes the normal pybuild configure/build sequence. Its clean override removes the generated bridge and restores the original file exactly before calling `dh_clean`. This keeps the package build self-contained and links the bridge against the target distribution's Qt and LayerShellQt ABI without leaving source-tree changes behind.
 
@@ -132,7 +132,7 @@ Only a DEB that passes these installation checks is uploaded.
 
 The RPM build runs in a Fedora 43 container and adds `packaging/fedora/kotonoha.spec`.
 
-The workflow installs `uv` only to update the release version, creates a source archive named for the resolved version, updates the spec version for the build, and invokes `rpmbuild`. During `%prep`, the spec removes the optional Hatch build-script hook from the package build tree. During `%build`, it compiles the native bridge explicitly with `USE_SYSTEM_LIBS=1` before invoking Fedora's Python wheel macro. The existing wheel force-include packages the manually built library without relying on files installed outside the declared RPM build requirements.
+The workflow uses the pinned `setup-uv` action with uv 0.11.19 only to run `uv version "$VERSION" --frozen`, creates a source archive named for the resolved version, updates the spec version for the build, and invokes `rpmbuild`. During `%prep`, the spec removes the optional Hatch build-script hook from the package build tree. During `%build`, it compiles the native bridge explicitly with `USE_SYSTEM_LIBS=1` before invoking Fedora's Python wheel macro. The existing wheel force-include packages the manually built library without relying on files installed outside the declared RPM build requirements.
 
 Qt 6, PyQt6, Wayland, LayerShellQt, aiohttp, qasync, and dbus-fast are declared as system build/runtime requirements. After building, the container installs the generated RPM and performs the same import, executable, native library, desktop file, icon, and desktop validation checks as the DEB job.
 
@@ -140,11 +140,11 @@ Only an RPM that passes these installation checks is uploaded.
 
 ## Wheel Packaging
 
-The wheel job runs on Ubuntu and installs the native bridge build requirements. It builds the project with the resolved release version and includes `libkoto-layer.so` and all application icon assets.
+The wheel job runs in an Ubuntu 26.04 container with Python 3.14, the pinned `setup-uv` action at uv 0.11.19, and the native bridge build requirements. It applies the resolved version with `uv version "$VERSION" --frozen`, builds the project, and includes `libkoto-layer.so` and all application icon assets.
 
-Because the wheel contains a native Linux shared library, it must not be published as `py3-none-any`. The build produces or retags the artifact with an explicit Linux x86_64 platform tag and verifies the wheel metadata agrees with the filename.
+Because the wheel contains a native Linux shared library, it must not be published as `py3-none-any`. The build retags the sole wheel with `uvx --from wheel==0.45.1 wheel tags --remove --platform-tag linux_x86_64`, requires exactly one `linux_x86_64` wheel and no `any` wheel, and verifies the `WHEEL` metadata tag agrees with the filename. It also inspects the bridge with `ldd`, requires Qt 6 and LayerShellQt linkage, and rejects Qt 5 linkage.
 
-The job installs the wheel into a clean virtual environment and verifies `import kotonoha.main` and native library discovery. The artifact is deliberately a Linux x86_64 wheel, not a manylinux compatibility claim and not a Windows or macOS package.
+The job installs the wheel and its dependencies into a clean virtual environment, imports PyQt6's QtCore and QtGui modules before importing Kotonoha, locates the installed bridge, and loads it with `ctypes.CDLL`. The artifact is deliberately a Linux x86_64 wheel, not a manylinux compatibility claim and not a Windows or macOS package.
 
 ## Cider Plugin Package
 
