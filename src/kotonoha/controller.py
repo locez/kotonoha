@@ -6,7 +6,9 @@ real Qt event loop.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import sqlite3
 
 from PyQt6.QtWidgets import QApplication
 
@@ -44,6 +46,7 @@ class AppController:
             gate=self._gate,
         )
         self._mpris = MprisProvider(self._state, lyrics_sources=config.lyrics_sources, gate=self._gate)
+        self._mpris.set_cache_enabled(config.cache_enabled)
         self._settings_dialog: SettingsDialog | None = None
 
         self._tray = KotonohaTray(
@@ -103,6 +106,7 @@ class AppController:
             return
         dialog = SettingsDialog(self._config)
         dialog.applied.connect(self._apply_config)
+        dialog.clear_cache_requested.connect(self._clear_lyrics_cache)
         dialog.finished.connect(lambda _: self._clear_dialog())
         self._settings_dialog = dialog
         dialog.show()
@@ -118,6 +122,7 @@ class AppController:
         self._overlay.activate_layer_shell()
         self._tray.set_passthrough_checked(config.passthrough)
         self._mpris.set_lyrics_sources(config.lyrics_sources)
+        self._mpris.set_cache_enabled(config.cache_enabled)
         set_language(config.ui_language)  # affects newly-opened dialogs; UI restart for the rest
 
         new_language = resolve_translation_language(config.translation_language)
@@ -125,6 +130,19 @@ class AppController:
             self._receiver.update_translation_language(new_language)
 
         self._persist()
+
+    def _clear_lyrics_cache(self) -> None:
+        task = asyncio.create_task(self._mpris.clear_cache())
+
+        def finished(done: asyncio.Task[None]) -> None:
+            try:
+                done.result()
+            except asyncio.CancelledError:
+                return
+            except (OSError, sqlite3.Error) as exc:
+                logger.warning("Could not clear lyrics cache: %s", exc)
+
+        task.add_done_callback(finished)
 
     def _persist(self) -> None:
         try:

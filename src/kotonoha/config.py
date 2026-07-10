@@ -55,6 +55,7 @@ class Config:
     show_translation: bool = True    # bilingual
     translation_language: str = "auto"  # "auto" -> from system locale, else an Apple tag (zh-Hans/en/ja/...)
     lyrics_sources: list[str] = field(default_factory=lambda: list(DEFAULT_LYRICS_SOURCES))
+    cache_enabled: bool = True
     ui_language: str = "auto"        # UI language: "auto" -> system locale, else zh-Hans/zh-Hant/ja/en
     # Pink accent (sung text gradient + sweep highlight)
     accent_start: str = "#FF4FA3"
@@ -81,6 +82,7 @@ class Config:
             accent_end=str(self.accent_end),
             accent_sweep=str(self.accent_sweep),
             lyrics_sources=_clean_sources(self.lyrics_sources),
+            cache_enabled=bool(self.cache_enabled),
             ui_language=str(self.ui_language),
         )
 

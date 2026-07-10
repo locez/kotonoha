@@ -103,6 +103,18 @@ STRINGS: dict[str, dict[str, str]] = {
     "src.netease": {"en": "Netease", "zh-Hans": "网易云", "zh-Hant": "網易雲", "ja": "网易云"},
     "src.lrclib": {"en": "lrclib", "zh-Hans": "lrclib", "zh-Hant": "lrclib", "ja": "lrclib"},
     "src.cider": {"en": "Cider", "zh-Hans": "Cider 自带", "zh-Hant": "Cider 自帶", "ja": "Cider 内蔵"},
+    "set.cache_enabled": {
+        "en": "Enable local lyrics cache",
+        "zh-Hans": "启用本地歌词缓存",
+        "zh-Hant": "啟用本地歌詞快取",
+        "ja": "ローカル歌詞キャッシュを有効化",
+    },
+    "btn.clear_cache": {
+        "en": "Clear lyrics cache",
+        "zh-Hans": "清除歌词缓存",
+        "zh-Hant": "清除歌詞快取",
+        "ja": "歌詞キャッシュを消去",
+    },
     "set.port": {"en": "WebSocket port", "zh-Hans": "WebSocket 端口",
                  "zh-Hant": "WebSocket 連接埠", "ja": "WebSocket ポート"},
     "set.port_hint": {

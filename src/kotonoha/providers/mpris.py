@@ -133,14 +133,22 @@ class MprisProvider:
         self._current_commit: TrackCommit | None = None
         self._content_owner = "none"
         self._provider_name = ""
+        self._cache_enabled = True
 
     def set_lyrics_sources(self, sources: list[str]) -> None:
-        self._lyrics_sources = list(sources)
+        updated = list(sources)
+        if updated == self._lyrics_sources:
+            return
+        self._lyrics_sources = updated
         self._resolver.reset_memory()
         self._force_reload()
 
     def set_cache_enabled(self, enabled: bool) -> None:
-        self._resolver.set_cache_enabled(enabled)
+        updated = bool(enabled)
+        if updated == self._cache_enabled:
+            return
+        self._cache_enabled = updated
+        self._resolver.set_cache_enabled(updated)
         self._force_reload()
 
     async def clear_cache(self) -> None:

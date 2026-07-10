@@ -108,6 +108,7 @@ _CLOSE_STYLE = (
 
 class SettingsDialog(QDialog):
     applied = pyqtSignal(object)  # emits Config
+    clear_cache_requested = pyqtSignal()
 
     def __init__(self, config: Config, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -286,6 +287,14 @@ class SettingsDialog(QDialog):
             item.setCheckState(Qt.CheckState.Checked if source in enabled else Qt.CheckState.Unchecked)
             self._sources_list.addItem(item)
         layout.addWidget(self._sources_list)
+
+        self._cache_enabled = QCheckBox(t("set.cache_enabled"))
+        self._cache_enabled.setChecked(self._config.cache_enabled)
+        layout.addWidget(self._cache_enabled)
+
+        self._clear_cache = QPushButton(t("btn.clear_cache"))
+        self._clear_cache.clicked.connect(lambda _checked=False: self.clear_cache_requested.emit())
+        layout.addWidget(self._clear_cache)
         return page
 
     def _selected_sources(self) -> list[str]:
@@ -343,6 +352,7 @@ class SettingsDialog(QDialog):
             passthrough=self._passthrough.isChecked(),
             port=self._port.value(),
             lyrics_sources=self._selected_sources(),
+            cache_enabled=self._cache_enabled.isChecked(),
         ).clamped()
 
     def _emit(self) -> None:

@@ -40,3 +40,15 @@ def test_clamping():
 def test_from_dict_non_dict():
     assert Config.from_dict("nope") == Config()
     assert Config.from_dict(None) == Config()
+
+
+def test_cache_enabled_defaults_true_and_roundtrips(tmp_path):
+    assert Config().cache_enabled is True
+    path = tmp_path / "config.json"
+    save_config(Config(cache_enabled=False), path)
+    assert load_config(path).cache_enabled is False
+
+
+def test_cache_enabled_is_clamped_to_bool():
+    assert Config(cache_enabled=0).clamped().cache_enabled is False
+    assert Config(cache_enabled=1).clamped().cache_enabled is True
