@@ -1,0 +1,99 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.event_name == 'workflow_call' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_call' }}
+
+jobs:
+  python:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.10"
+          - "3.11"
+          - "3.12"
+          - "3.13"
+          - "3.14"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            desktop-file-utils \
+            libdbus-1-3 \
+            libegl1 \
+            liblayershellqtinterface-dev \
+            libwayland-dev \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-randr0 \
+            libxcb-render-util0 \
+            libxcb-xfixes0 \
+            libxcb-xinerama0 \
+            libxkbcommon-x11-0 \
+            pkg-config \
+            qt6-base-dev \
+            qt6-base-private-dev \
+            xvfb
+      - name: Install Python dependencies
+        run: uv sync --extra test
+      - name: Test
+        run: xvfb-run -a uv run pytest
+      - name: Lint
+        run: uv run ruff check .
+      - name: Type check
+        run: uv run ty check
+      - name: Validate desktop entry
+        run: desktop-file-validate packaging/kotonoha.desktop
+
+  cider:
+    name: Cider plugin
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: plugins/cider/lyrics
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.10.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: plugins/cider/lyrics/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Test
+        run: pnpm test
+      - name: Build
+        run: pnpm build
+      - name: Verify plugin output
+        run: |
+          test -f dist/dev.locez.kotonoha.cider.lyrics/plugin.js
+          test -f dist/dev.locez.kotonoha.cider.lyrics/plugin.yml
