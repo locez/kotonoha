@@ -12,6 +12,7 @@ Built on the same core stack as BiliHUD: Python, PyQt6, qasync, and a `layer-she
 - **Word-by-word karaoke sweep** with a synced translation line and a pink accent.
 - **Multi-source timed lyrics**, user-ordered priority (Settings → 来源): Netease (word-level YRC) / lrclib / Cider (Apple Music).
 - **Provider-local persistent cache**: each network source checks its own validated local artifacts first; cache can be disabled or cleared.
+- **Dynamic app icon picker**: Settings scans bundled PNG/SVG icon assets and applies the selection immediately.
 - Floats above fullscreen on Wayland via `wlr-layer-shell`; translucent, **click-through** by default, **lock-to-immersive** (text only), draggable.
 - Smooth: a local 60fps clock interpolates between ~100ms progress samples; adjustable lead offset.
 - Tabbed settings panel + system tray.
@@ -54,6 +55,8 @@ uv run kotonoha          # add -v for verbose logs
 > `bash src/kotonoha/build_bridge.sh`.
 
 Then just play something in any MPRIS player. Kotonoha shows a tray icon; left-click it to lock/unlock the overlay, right-click for Settings.
+
+The app icon picker scans the top level of `src/kotonoha/assets/icons/` whenever Settings is opened. Add a PNG or SVG there and reopen Settings; no filename or code registration is needed. Subdirectories are ignored, identical files are shown only once, and a missing saved selection falls back to `src/kotonoha/assets/icon.png`.
 
 **Lyric source priority** is in Settings → **来源**: drag to reorder, uncheck to disable. Default order is `netease → lrclib → cider`.
 

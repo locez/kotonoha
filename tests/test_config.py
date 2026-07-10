@@ -52,3 +52,10 @@ def test_cache_enabled_defaults_true_and_roundtrips(tmp_path):
 def test_cache_enabled_is_clamped_to_bool():
     assert Config.from_dict({"cache_enabled": 0}).cache_enabled is False
     assert Config.from_dict({"cache_enabled": 1}).cache_enabled is True
+
+
+def test_icon_name_roundtrips_and_rejects_paths(tmp_path):
+    path = tmp_path / "config.json"
+    save_config(Config(icon_name="leaf-pink.svg"), path)
+    assert load_config(path).icon_name == "leaf-pink.svg"
+    assert Config.from_dict({"icon_name": "../outside.svg"}).icon_name == "default"

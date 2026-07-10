@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QMouseEvent, QPainter, QPaintEvent, QPen
+from PyQt6.QtCore import QSize, Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QIcon, QMouseEvent, QPainter, QPaintEvent, QPen
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QLabel,
+    QListView,
     QListWidget,
     QListWidgetItem,
     QPushButton,
@@ -30,8 +31,9 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from .config import ACCENT_PRESETS, VALID_LYRICS_SOURCES, Config
+from .config import ACCENT_PRESETS, DEFAULT_ICON_NAME, VALID_LYRICS_SOURCES, Config
 from .strings import UI_LANGUAGES, t
+from .tray import discover_icon_paths
 
 _STYLE = """
 QWidget {
@@ -89,6 +91,17 @@ QListWidget {
 }
 QListWidget::item { padding: 7px 8px; border-radius: 5px; }
 QListWidget::item:selected { background: rgba(255,255,255,28); color: #FFFFFF; }
+QListWidget#iconPicker { padding: 3px; }
+QListWidget#iconPicker::item {
+    padding: 0;
+    margin: 2px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+}
+QListWidget#iconPicker::item:selected {
+    background: rgba(255,255,255,26);
+    border-color: %ACCENT%;
+}
 QPushButton {
     background: rgba(255,255,255,22);
     border: 1px solid rgba(255,255,255,40);
@@ -203,6 +216,35 @@ class SettingsDialog(QDialog):
         c = self._config
         page = QWidget()
         form = QFormLayout(page)
+
+        self._icon_list = QListWidget()
+        self._icon_list.setObjectName("iconPicker")
+        self._icon_list.setViewMode(QListView.ViewMode.IconMode)
+        self._icon_list.setFlow(QListView.Flow.LeftToRight)
+        self._icon_list.setMovement(QListView.Movement.Static)
+        self._icon_list.setResizeMode(QListView.ResizeMode.Adjust)
+        self._icon_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self._icon_list.setWrapping(True)
+        self._icon_list.setIconSize(QSize(42, 42))
+        self._icon_list.setGridSize(QSize(56, 56))
+        self._icon_list.setFixedHeight(68)
+        self._icon_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        selected_item: QListWidgetItem | None = None
+        default_item: QListWidgetItem | None = None
+        for choice in discover_icon_paths():
+            icon = QIcon(str(choice.path))
+            if icon.isNull():
+                continue
+            item = QListWidgetItem(icon, "")
+            item.setData(Qt.ItemDataRole.UserRole, choice.key)
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._icon_list.addItem(item)
+            if choice.key == c.icon_name:
+                selected_item = item
+            if choice.key == DEFAULT_ICON_NAME:
+                default_item = item
+        self._icon_list.setCurrentItem(selected_item or default_item)
+        form.addRow(t("set.app_icon"), self._icon_list)
 
         self._font_size = self._spin(8, 120, c.font_size, " px")
         form.addRow(t("set.font_size"), self._font_size)
@@ -334,9 +376,16 @@ class SettingsDialog(QDialog):
 
     def current_config(self) -> Config:
         accent_start, accent_end, accent_sweep = self._accent.currentData()
+        icon_item = self._icon_list.currentItem()
+        icon_name = (
+            str(icon_item.data(Qt.ItemDataRole.UserRole))
+            if icon_item is not None
+            else DEFAULT_ICON_NAME
+        )
         return replace(
             self._config,
             ui_language=str(self._ui_language.currentData()),
+            icon_name=icon_name,
             font_size=self._font_size.value(),
             opacity=self._opacity.value() / 100.0,
             panel_style=str(self._panel.currentData()),

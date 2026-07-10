@@ -53,6 +53,7 @@ STRINGS: dict[str, dict[str, str]] = {
 
     "set.font_size": {"en": "Current line size", "zh-Hans": "当前行字号",
                       "zh-Hant": "當前行字級", "ja": "現在行のサイズ"},
+    "set.app_icon": {"en": "App icon", "zh-Hans": "应用图标", "zh-Hant": "應用圖示", "ja": "アプリアイコン"},
     "set.opacity": {"en": "Opacity", "zh-Hans": "不透明度", "zh-Hant": "不透明度", "ja": "不透明度"},
     "set.panel_style": {"en": "Panel style", "zh-Hans": "背板样式", "zh-Hant": "背板樣式", "ja": "パネル様式"},
     "set.panel.pill": {"en": "Glass panel", "zh-Hans": "玻璃面板", "zh-Hant": "玻璃面板", "ja": "グラスパネル"},

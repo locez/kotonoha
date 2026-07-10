@@ -21,7 +21,7 @@ from .receiver import LyricsReceiver
 from .settings_dialog import SettingsDialog
 from .state import LyricsState
 from .strings import set_language
-from .tray import KotonohaTray
+from .tray import KotonohaTray, load_icon
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,7 @@ class AppController:
             config.port = cli_port
         self._config = config
         set_language(config.ui_language)  # before any UI strings are created
+        self._app.setWindowIcon(load_icon(config.icon_name))
 
         self._state = LyricsState()
         self._overlay = LyricsOverlay(self._state, config)
@@ -50,6 +51,7 @@ class AppController:
         self._settings_dialog: SettingsDialog | None = None
 
         self._tray = KotonohaTray(
+            icon_name=config.icon_name,
             passthrough=config.passthrough,
             on_toggle_passthrough=self._on_toggle_passthrough,
             on_open_settings=self._open_settings,
@@ -121,6 +123,8 @@ class AppController:
         # Push new anchor/margins/passthrough through the layer-shell bridge.
         self._overlay.activate_layer_shell()
         self._tray.set_passthrough_checked(config.passthrough)
+        self._app.setWindowIcon(load_icon(config.icon_name))
+        self._tray.set_icon_name(config.icon_name)
         self._mpris.set_lyrics_sources(config.lyrics_sources)
         self._mpris.set_cache_enabled(config.cache_enabled)
         set_language(config.ui_language)  # affects newly-opened dialogs; UI restart for the rest

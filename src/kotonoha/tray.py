@@ -9,14 +9,35 @@ perform on the HUD itself while it is passing clicks through.
 
 from __future__ import annotations
 
-import os
+import hashlib
 from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import QMenu, QSystemTrayIcon, QWidget
 
+from .config import DEFAULT_ICON_NAME
 from .strings import t
+
+ASSETS_DIR = Path(__file__).with_name("assets")
+DEFAULT_ICON_PATH = ASSETS_DIR / "icon.png"
+ICON_DIR = ASSETS_DIR / "icons"
+SUPPORTED_ICON_SUFFIXES = {".png", ".svg"}
+
+
+@dataclass(frozen=True)
+class IconChoice:
+    key: str
+    path: Path
+
+
+def _icon_digest(path: Path) -> bytes | None:
+    try:
+        return hashlib.sha256(path.read_bytes()).digest()
+    except OSError:
+        return None
 
 
 def _fallback_icon() -> QIcon:
@@ -38,10 +59,47 @@ def _fallback_icon() -> QIcon:
     return QIcon(pixmap)
 
 
-def load_icon() -> QIcon:
-    asset = os.path.join(os.path.dirname(__file__), "assets", "icon.png")
-    if os.path.exists(asset):
-        icon = QIcon(asset)
+def discover_icon_paths(
+    *,
+    icon_dir: Path = ICON_DIR,
+    default_icon: Path = DEFAULT_ICON_PATH,
+) -> tuple[IconChoice, ...]:
+    choices: list[IconChoice] = []
+    seen: set[bytes] = set()
+    if default_icon.is_file():
+        choices.append(IconChoice(DEFAULT_ICON_NAME, default_icon))
+        digest = _icon_digest(default_icon)
+        if digest is not None:
+            seen.add(digest)
+    try:
+        entries = sorted(icon_dir.iterdir(), key=lambda path: path.name.casefold())
+    except OSError:
+        entries = []
+    for path in entries:
+        if not path.is_file() or path.suffix.lower() not in SUPPORTED_ICON_SUFFIXES:
+            continue
+        digest = _icon_digest(path)
+        if digest is not None and digest in seen:
+            continue
+        choices.append(IconChoice(path.name, path))
+        if digest is not None:
+            seen.add(digest)
+    return tuple(choices)
+
+
+def load_icon(
+    icon_name: str = DEFAULT_ICON_NAME,
+    *,
+    icon_dir: Path = ICON_DIR,
+    default_icon: Path = DEFAULT_ICON_PATH,
+) -> QIcon:
+    choices = discover_icon_paths(icon_dir=icon_dir, default_icon=default_icon)
+    selected = next((choice for choice in choices if choice.key == icon_name), None)
+    default = next((choice for choice in choices if choice.key == DEFAULT_ICON_NAME), None)
+    for choice in (selected, default):
+        if choice is None:
+            continue
+        icon = QIcon(str(choice.path))
         if not icon.isNull():
             return icon
     return _fallback_icon()
@@ -52,6 +110,7 @@ class KotonohaTray(QSystemTrayIcon):
         self,
         parent: QWidget | None = None,
         *,
+        icon_name: str = DEFAULT_ICON_NAME,
         passthrough: bool,
         on_toggle_passthrough: Callable[[bool], None],
         on_open_settings: Callable[[], None],
@@ -59,7 +118,7 @@ class KotonohaTray(QSystemTrayIcon):
     ) -> None:
         super().__init__(parent)
         self._on_toggle_passthrough = on_toggle_passthrough
-        self.setIcon(load_icon())
+        self.setIcon(load_icon(icon_name))
         self.setToolTip(t("tray.tooltip"))
 
         menu = QMenu()
@@ -91,3 +150,6 @@ class KotonohaTray(QSystemTrayIcon):
 
     def set_passthrough_checked(self, checked: bool) -> None:
         self._lock_action.setChecked(checked)
+
+    def set_icon_name(self, icon_name: str) -> None:
+        self.setIcon(load_icon(icon_name))

@@ -34,6 +34,8 @@ ACCENT_PRESETS: tuple[tuple[str, str, str, str], ...] = (
     ("orange", "#FF8A4F", "#FFC58F", "#FFA56E"),
 )
 
+DEFAULT_ICON_NAME = "default"
+
 
 @dataclass
 class Config:
@@ -48,6 +50,7 @@ class Config:
     font_size: int = 24             # current-line size (px)
     opacity: float = 1.0            # whole-window opacity 0.3..1.0
     panel_style: str = "pill"        # "pill" (glass panel) | "text" (text only)
+    icon_name: str = DEFAULT_ICON_NAME
     # Behaviour
     passthrough: bool = False        # start unlocked (interactive) so first-run positioning is easy
     karaoke: bool = True             # per-word sweep when timing == "Word"
@@ -73,6 +76,7 @@ class Config:
             font_size=_clamp_int(self.font_size, 8, 200, 24),
             opacity=_clamp_float(self.opacity, 0.3, 1.0, 1.0),
             panel_style=self.panel_style if self.panel_style in ("pill", "text") else "pill",
+            icon_name=_clean_icon_name(self.icon_name),
             passthrough=bool(self.passthrough),
             karaoke=bool(self.karaoke),
             lead_ms=_clamp_int(self.lead_ms, -2000, 2000, 120),
@@ -150,6 +154,12 @@ def _clean_sources(value: Any) -> list[str]:
         if source in VALID_LYRICS_SOURCES and source not in cleaned:
             cleaned.append(source)
     return cleaned or list(DEFAULT_LYRICS_SOURCES)
+
+
+def _clean_icon_name(value: Any) -> str:
+    if not isinstance(value, str) or not value or value == DEFAULT_ICON_NAME:
+        return DEFAULT_ICON_NAME
+    return value if Path(value).name == value else DEFAULT_ICON_NAME
 
 
 def _clamp_float(value: Any, low: float, high: float, default: float) -> float:
