@@ -47,6 +47,7 @@ export type PlaybackProbe = {
   nowPlayingItem: unknown;
   isPlaying?: boolean;
   currentPlaybackTime?: number;
+  currentPlaybackDuration?: number;
   audioCurrentTime?: number;
   audioDuration?: number;
 };
