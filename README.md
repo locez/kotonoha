@@ -100,6 +100,33 @@ The plugin connects to Kotonoha over WebSocket (`ws://127.0.0.1:28745/kotonoha/c
 
 During an MPRIS track transition, empty or partially updated metadata is held briefly instead of being searched immediately. A player that cannot expose `Position` can still resolve lyrics, although synchronized progression then depends on that player eventually providing usable progress.
 
+## Release packages
+
+Pushing a `vX.Y.Z` tag runs the complete Python and Cider test suites, builds the release packages, and
+publishes a GitHub Release containing a DEB, an RPM, a Linux x86_64 wheel,
+`kotonoha-cider-lyrics-X.Y.Z.zip`, and `SHA256SUMS`. The DEB and RPM install a multilingual desktop
+entry and the default application icon.
+
+The wheel is a non-pure Linux x86_64 package containing Kotonoha's native LayerShellQt bridge. It
+requires compatible system Qt 6, Wayland, and LayerShellQt libraries; it is not a Windows, macOS, or
+manylinux portability claim.
+
+The Cider ZIP contains `dev.locez.kotonoha.cider.lyrics/` as its top-level directory, so it can be
+extracted under Cider's plugins directory. The integration remains experimental; keep external lyric
+providers enabled.
+
+Maintainers create a release with:
+
+```bash
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+The manually dispatched **Package** workflow takes its version from `pyproject.toml` and produces the
+same downloadable GitHub Actions artifacts. It never creates a GitHub Release, even when dispatched
+against a tag ref. Before the first tag, run **Package** manually and confirm that its Ubuntu 26.04 and
+Fedora 43 package jobs pass.
+
 ## Layout
 
 ```text
