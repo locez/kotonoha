@@ -10,12 +10,13 @@ Kotonoha currently combines two different lyric paths:
 The existing architecture is directionally correct, but several small boundary problems reduce real-world reliability:
 
 - MPRIS metadata changes can trigger a search before title, artist, duration, and position belong to the same track.
+- Transitional MPRIS metadata can contain an empty title and artist, and the current provider may treat that empty sample as a real track.
 - An obsolete lyric request can hold the load lock and delay the current track.
 - Search normalization and candidate scoring can accept the wrong version or even a different song with a similar duration.
 - Fallback requests are repeated after restarts even when the same provider result was already fetched.
 - Cider ticks can currently reach the shared clock while an external provider owns the lyrics.
 
-This work focuses on making external lyrics reliable and fast enough that Cider is an optional final fallback, not the preferred path.
+This work focuses on making external lyrics reliable and fast while preserving Cider as a live provider at its configured position.
 
 ## Goals
 
@@ -23,7 +24,7 @@ This work focuses on making external lyrics reliable and fast enough that Cider 
 2. Improve Netease and LRCLIB search recall without accepting low-confidence or wrong-version matches.
 3. Reduce cold fallback latency and eliminate repeated searches for previously fetched lyrics.
 4. Preserve the configured provider order exactly.
-5. Keep Cider available as a live fallback while preventing it from interfering with an external lyric source.
+5. Keep Cider available as an ordered live provider while preventing it from interfering with another selected source.
 6. Leave the HUD renderer, karaoke widgets, layer-shell bridge, and overlay geometry unchanged.
 
 ## Non-Goals
@@ -68,8 +69,8 @@ TrackObservation -> MetadataStabilizer -> committed TrackIdentity + generation
                                               |
                   +---------------------------+---------------------------+
                   |                           |                           |
-             Netease stage               LRCLIB stage              Cider fallback
-          cache -> network             cache -> network             existing WS gate
+             Netease stage               LRCLIB stage             Cider live stage
+          cache -> network             cache -> network             existing WS data
                   |                           |                           |
                   +---------------------------+---------------------------+
                                               |
@@ -83,8 +84,8 @@ TrackObservation -> MetadataStabilizer -> committed TrackIdentity + generation
 The selected provider owns both lyric content and clock calibration:
 
 - External provider selected: full lyrics are selected with MPRIS position; Cider snapshots and ticks are rejected.
-- Cider selected after earlier providers miss: the existing Cider snapshot and tick behavior is preserved.
-- No usable MPRIS track: the existing standalone Cider behavior remains available.
+- Cider selected when the configured provider walk reaches it: the existing Cider snapshot and tick behavior is preserved.
+- No MPRIS player or committed track after transition expiry: the existing standalone Cider behavior remains available.
 
 ## Stable Track Observation
 
@@ -106,6 +107,8 @@ The player name and duration are part of the committed identity so switching bet
 
 When individual property getters are required, metadata is read before and after status/position. If the identity fields changed between the reads, the sample is discarded. When supported, `org.freedesktop.DBus.Properties.GetAll` may be used as the primary sample path, with the current getters retained as compatibility fallback.
 
+Metadata acquisition and lyric resolution must not depend on a successful Position read. A player that temporarily rejects or omits Position can still commit stable metadata and search for lyrics; it simply cannot calibrate the clock until a valid position is available.
+
 ### Stabilization rule
 
 - A candidate must have a non-empty title.
@@ -115,6 +118,19 @@ When individual property getters are required, metadata is read before and after
 - During an uncommitted transition, old lyric ticks and content updates are suppressed so a new position cannot drive the previous song's lyrics.
 
 These values are implementation constants covered by deterministic tests, not user-facing settings.
+
+### Empty and partial metadata
+
+An observation whose title and artist are both empty is a transitional or unusable MPRIS sample, not a searchable track.
+
+- It never becomes `_song_key` or a committed `TrackIdentity`.
+- It never starts provider resolution or writes a positive/negative cache result.
+- It never closes the resolution as "no lyrics found".
+- If it follows a committed track, the provider enters a transition and suppresses ticks that could drive the old lyrics with a new position.
+- Polling continues until a valid title appears; a later valid sample is processed normally even when the MPRIS track ID did not change.
+- If playback is Stopped or the player disappears and empty metadata persists beyond the settling window, clear the committed track and return Cider arbitration to its no-MPRIS state.
+
+Active player selection prefers, in order: the current Playing player with usable metadata, another Playing player with usable metadata, the current Paused player with usable metadata, then another Paused player with usable metadata. A current Playing player that briefly reports empty metadata is held during the settling window instead of immediately switching to a Paused fallback, but it is not committed or searched. Stopped services and services with persistent empty metadata are not selected merely because their bus name sorts first.
 
 ### Cancellable loading
 
@@ -196,15 +212,23 @@ the exact execution order is:
 2. network Netease
 3. local LRCLIB cache
 4. network LRCLIB
-5. existing Cider live fallback
+5. existing Cider live provider
 ```
 
 Changing the provider order changes the local and network stages together. A cached lower-priority provider must never outrank a higher-priority provider's network result.
+
+The sequence above is only the default example. Cider is attempted wherever it appears in `lyrics_sources`. For example, `lrclib -> cider -> netease` means local LRCLIB, network LRCLIB, the Cider live stage, local Netease, then network Netease.
 
 The resolver therefore follows this contract:
 
 ```python
 for provider in configured_providers:
+    if provider is the live Cider source:
+        live_snapshot = cider_source.current_match(track)
+        if live_snapshot is available:
+            return live_snapshot
+        continue
+
     if cache_enabled and provider.cacheable:
         cached = cache.find(provider.name, track)
         if cached is a high-confidence match:
@@ -216,11 +240,11 @@ for provider in configured_providers:
             cache.store(provider.name, fetched)
         return fetched
 
-    if provider is the live Cider source:
-        hand off through the existing gate
 ```
 
 Network providers are attempted strictly in order. There is no cross-provider hedging or prefetching.
+
+The Python receiver retains the latest parsed Cider snapshot per connection even while another provider is selected. The Cider stage uses the shared title/artist matcher to check that snapshot against the committed MPRIS track. If no valid matching snapshot is available when the stage is reached, resolution continues to later configured providers. Selecting Cider binds that connection for the current track generation; only its lyric frames and ticks are then accepted. A Cider snapshot arriving after another provider has already been selected does not replace that provider mid-track.
 
 ## Persistent Cache
 
@@ -274,16 +298,18 @@ Provider reordering continues to list only Netease, LRCLIB, and Cider. The cache
 
 This touches the settings dialog and configuration model only. It does not change overlay rendering or the layer-shell bridge.
 
-## Cider Isolation
+## Cider Ordering And Isolation
 
 The Cider TypeScript plugin and WebSocket payload remain unchanged.
 
 Python-side arbitration receives only narrow corrections:
 
-- close the Cider gate as soon as a stable MPRIS track enters external resolution;
-- keep it closed after an external cache or network hit;
+- close the Cider gate as soon as a stable MPRIS track enters ordered provider resolution;
+- retain the most recent parsed Cider snapshot per WebSocket connection without publishing it while the gate is closed;
+- attempt Cider exactly at its configured position, using a matching retained snapshot when available and continuing to later providers when unavailable;
+- keep the gate closed after another cache or network provider is selected;
 - reject Cider tick frames whenever the gate rejects Cider lyric frames;
-- restore the gate only when the configured provider walk actually reaches the Cider fallback, or when no usable MPRIS track exists;
+- open and bind the gate only when the configured provider walk selects the Cider live stage, or when no MPRIS player/committed track exists outside an active metadata transition;
 - prevent MPRIS empty snapshots from overwriting a selected Cider snapshot.
 
 Improving Cider player identification, changing its payload shape, or making it provide complete lyrics is deferred.
@@ -316,6 +342,7 @@ The initial total timeout target is 3 seconds per network provider, with connect
 ### Pure Python tests
 
 - metadata stabilization for new-title/old-artist, old-title/new-artist, missing artist, repeated identical signals, and player switches;
+- empty-title/empty-artist samples never commit or search, and later valid metadata with the same track ID still resolves;
 - normalization for Unicode width, composed/decomposed accents, safe `feat.` handling, artist ordering, and version qualifiers;
 - candidate acceptance for duration-only false matches, short titles, live/remix conflicts, cross-script titles, album evidence, and duration boundaries;
 - exact provider-stage ordering with cache enabled and disabled;
@@ -324,11 +351,13 @@ The initial total timeout target is 3 seconds per network provider, with connect
 ### Async provider tests
 
 - signal arrival wakes sampling but does not fetch immediately;
+- Position read failures do not prevent stable metadata from starting provider resolution;
 - A -> B -> C transitions cancel obsolete loads;
 - an obsolete result cannot update state or the Cider gate;
 - Netease and LRCLIB response/fallback paths use recorded fixtures or mocks;
 - in-flight requests for the same committed identity are deduplicated;
-- Cider full frames and ticks are rejected while an external provider owns the track.
+- Cider full frames and ticks are rejected while an external provider owns the track;
+- Cider is attempted at the configured position, continues when unavailable, and does not replace an already selected provider mid-track.
 
 ### Configuration and UI tests
 
