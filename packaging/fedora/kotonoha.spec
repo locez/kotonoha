@@ -5,7 +5,7 @@ Summary:        Desktop lyrics overlay for Linux
 
 License:        MIT
 URL:            https://github.com/locez/kotonoha
-Source0:        %{url}/archive/refs/tags/v%{version}.tar.gz
+Source0:        %{name}-%{version}.tar.gz
 
 BuildRequires:  python3-devel
 BuildRequires:  python3-hatchling
