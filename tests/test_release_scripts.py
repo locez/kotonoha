@@ -111,6 +111,7 @@ def test_assemble_release_copies_four_artifacts_and_writes_checksums(tmp_path: P
     artifacts_dir = tmp_path / "artifacts"
     output_dir = tmp_path / "release"
     contents = create_artifacts(artifacts_dir)
+    output_dir.mkdir()
 
     copied = assemble_release(artifacts_dir, output_dir)
 
@@ -123,6 +124,21 @@ def test_assemble_release_copies_four_artifacts_and_writes_checksums(tmp_path: P
     ]
 
 
+def test_assemble_release_rejects_non_empty_output_without_mutating_it(tmp_path: Path) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    output_dir = tmp_path / "release"
+    create_artifacts(artifacts_dir)
+    output_dir.mkdir()
+    stale_path = output_dir / "stale-package.deb"
+    stale_path.write_bytes(b"stale")
+
+    with pytest.raises(ValueError, match=r"output directory.*empty"):
+        assemble_release(artifacts_dir, output_dir)
+
+    assert list(output_dir.iterdir()) == [stale_path]
+    assert stale_path.read_bytes() == b"stale"
+
+
 def test_assemble_release_rejects_duplicate_deb(tmp_path: Path) -> None:
     artifacts_dir = tmp_path / "artifacts"
     create_artifacts(artifacts_dir)
@@ -131,6 +147,22 @@ def test_assemble_release_rejects_duplicate_deb(tmp_path: Path) -> None:
     duplicate.write_bytes(b"another deb")
 
     with pytest.raises(ValueError, match=r"exactly one.*\.deb"):
+        assemble_release(artifacts_dir, tmp_path / "release")
+
+
+def test_assemble_release_rejects_symlinked_artifact(tmp_path: Path) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    create_artifacts(artifacts_dir)
+    deb_path = next(artifacts_dir.rglob("*.deb"))
+    deb_path.unlink()
+    symlink_target = tmp_path / "external-deb"
+    symlink_target.write_bytes(b"external")
+    try:
+        deb_path.symlink_to(symlink_target)
+    except (NotImplementedError, OSError) as error:
+        pytest.skip(f"cannot create symlinks on this platform: {error}")
+
+    with pytest.raises(ValueError, match=r"exactly one.*\.deb.*found 0"):
         assemble_release(artifacts_dir, tmp_path / "release")
 
 

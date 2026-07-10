@@ -15,7 +15,7 @@ ARTIFACT_PATTERNS = (
 
 
 def _require_artifact(artifacts_dir: Path, label: str, pattern: str) -> Path:
-    matches = sorted(path for path in artifacts_dir.rglob(pattern) if path.is_file())
+    matches = sorted(path for path in artifacts_dir.rglob(pattern) if not path.is_symlink() and path.is_file())
     if len(matches) != 1:
         raise ValueError(f"expected exactly one {label} artifact matching {pattern!r}, found {len(matches)}")
     return matches[0]
@@ -30,6 +30,9 @@ def _sha256(path: Path) -> str:
 
 
 def assemble_release(artifacts_dir: Path, output_dir: Path) -> tuple[Path, ...]:
+    if output_dir.exists() and (not output_dir.is_dir() or any(output_dir.iterdir())):
+        raise ValueError(f"output directory must be absent or empty: {output_dir}")
+
     selected = [_require_artifact(artifacts_dir, label, pattern) for label, pattern in ARTIFACT_PATTERNS]
     filenames = [path.name for path in selected]
     if len(filenames) != len(set(filenames)):
