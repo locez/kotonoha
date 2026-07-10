@@ -32,14 +32,17 @@ class Record:
 
 
 def _record(data: object) -> Record | None:
-    if not isinstance(data, dict) or data.get("id") is None:
+    if not isinstance(data, dict):
+        return None
+    song_id = data.get("id")
+    if song_id is None:
         return None
     synced = data.get("syncedLyrics")
     if not isinstance(synced, str) or not synced.strip():
         return None
     duration = data.get("duration")
     return Record(
-        song_id=str(data["id"]),
+        song_id=str(song_id),
         title=str(data.get("trackName", "")),
         artist=str(data.get("artistName", "")),
         album=str(data.get("albumName", "")),
@@ -97,6 +100,9 @@ async def fetch_artifact(
     if exact_match is None or exact_match.confidence.value != "high":
         records.extend(await search_records(session, track))
 
+    records_by_id = {record.song_id: record for record in records}
+    records = list(records_by_id.values())
+
     candidates = [
         Candidate(record.song_id, record.title, record.artist, record.duration_s, album=record.album)
         for record in records
@@ -104,7 +110,7 @@ async def fetch_artifact(
     match = best_match(candidates, track)
     if match is None:
         return None
-    record = next(item for item in records if item.song_id == match.candidate.song_id)
+    record = records_by_id[match.candidate.song_id]
     payload = {"syncedLyrics": record.synced_lyrics}
     lines = parse_payload(payload)
     if not lines:

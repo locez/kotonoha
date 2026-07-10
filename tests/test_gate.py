@@ -41,6 +41,14 @@ def test_select_cider_binds_one_connection_and_ticks_follow_binding():
     assert gate.cider_active is False
 
 
+def test_selected_cider_becomes_inactive_when_snapshot_has_no_lyrics():
+    gate = SourceGate()
+    gate.observe_snapshot(10, LyricsSnapshot(found=True, title="Song", artist="Artist"))
+    gate.select_cider(10)
+    gate.observe_snapshot(10, LyricsSnapshot(found=False, title="Song", artist="Artist"))
+    assert gate.cider_active is False
+
+
 def test_cider_match_rejects_different_track():
     gate = SourceGate()
     gate.observe_snapshot(10, LyricsSnapshot(found=True, title="Other", artist="Artist"))

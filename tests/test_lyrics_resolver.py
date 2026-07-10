@@ -1,5 +1,8 @@
 import asyncio
 import sqlite3
+from typing import cast
+
+import aiohttp
 
 from kotonoha.lyrics.artifact import LyricsArtifact
 from kotonoha.lyrics.match import MatchConfidence, TrackMetadata
@@ -8,6 +11,7 @@ from kotonoha.model import LyricLine, LyricsSnapshot
 from kotonoha.providers.gate import CiderMatch
 
 TRACK = TrackMetadata("Song", "Artist", "Album", 180.0)
+SESSION = cast(aiohttp.ClientSession, None)
 
 
 def artifact(*, provider: str = "netease") -> LyricsArtifact:
@@ -94,7 +98,7 @@ async def test_default_order_is_cache_network_per_provider_then_cider():
         network_hits={"lrclib": artifact(provider="lrclib")},
     )
 
-    result = await resolver.resolve(None, TRACK, ["netease", "lrclib", "cider"])
+    result = await resolver.resolve(SESSION, TRACK, ["netease", "lrclib", "cider"])
 
     assert result is not None and result.source == "lrclib"
     assert calls == [
@@ -110,7 +114,7 @@ async def test_cider_runs_at_configured_position_and_continues_when_unavailable(
     calls = []
     resolver = resolver_with_fakes(calls, network_hits={"netease": artifact()})
 
-    await resolver.resolve(None, TRACK, ["lrclib", "cider", "netease"])
+    await resolver.resolve(SESSION, TRACK, ["lrclib", "cider", "netease"])
 
     assert calls == [
         "cache:lrclib",
@@ -127,7 +131,7 @@ async def test_available_cider_stops_at_its_configured_position():
     snapshot = LyricsSnapshot(found=True, title="Song", artist="Artist")
     resolver = resolver_with_fakes(calls, cider_match=CiderMatch(12, snapshot))
 
-    result = await resolver.resolve(None, TRACK, ["cider", "netease"])
+    result = await resolver.resolve(SESSION, TRACK, ["cider", "netease"])
 
     assert result is not None
     assert result.source == "cider"
@@ -138,7 +142,7 @@ async def test_available_cider_stops_at_its_configured_position():
 async def test_cache_disabled_skips_reads_and_writes():
     calls = []
     resolver = resolver_with_fakes(calls, cache_enabled=False, network_hits={"netease": artifact()})
-    await resolver.resolve(None, TRACK, ["netease"])
+    await resolver.resolve(SESSION, TRACK, ["netease"])
     assert calls == ["network:netease"]
 
 
@@ -147,7 +151,7 @@ async def test_cache_failure_does_not_block_same_provider_network():
     cache = FakeCache(calls, lookup_error=sqlite3.OperationalError("locked"))
     resolver = resolver_with_fakes(calls, cache=cache, network_hits={"netease": artifact()})
 
-    result = await resolver.resolve(None, TRACK, ["netease"])
+    result = await resolver.resolve(SESSION, TRACK, ["netease"])
 
     assert result is not None and result.source == "netease"
     assert calls == ["cache:netease", "network:netease", "store:netease"]
@@ -157,8 +161,12 @@ async def test_normal_provider_miss_is_cached_only_in_memory():
     calls = []
     resolver = resolver_with_fakes(calls)
 
-    assert await resolver.resolve(None, TRACK, ["netease"]) is None
-    assert await resolver.resolve(None, TrackMetadata("Ｓｏｎｇ", "Artist", "Album", 180.0), ["netease"]) is None
+    assert await resolver.resolve(SESSION, TRACK, ["netease"]) is None
+    assert await resolver.resolve(
+        SESSION,
+        TrackMetadata("Ｓｏｎｇ", "Artist", "Album", 180.0),
+        ["netease"],
+    ) is None
 
     assert calls == ["cache:netease", "network:netease", "cache:netease"]
 
@@ -180,9 +188,9 @@ async def test_concurrent_identical_requests_share_network_work():
         providers={"netease": NetworkProvider("netease", fetch, lambda _payload: ())},
         cache_enabled=False,
     )
-    first = asyncio.create_task(resolver.resolve(None, TRACK, ["netease"]))
+    first = asyncio.create_task(resolver.resolve(SESSION, TRACK, ["netease"]))
     await started.wait()
-    second = asyncio.create_task(resolver.resolve(None, TRACK, ["netease"]))
+    second = asyncio.create_task(resolver.resolve(SESSION, TRACK, ["netease"]))
     release.set()
 
     first_result, second_result = await asyncio.gather(first, second)

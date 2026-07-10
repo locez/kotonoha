@@ -101,7 +101,6 @@ async def test_position_failure_does_not_block_lyric_resolution():
     player = FakePlayer(metadata=VALID_METADATA, position_error=RuntimeError("unsupported"))
     resolver = RecordingResolver()
     provider = MprisProvider(LyricsState(), resolver=resolver, poll_interval=0.01)
-    provider._session = object()
     prepare_poll(provider, player)
 
     await provider._poll_once(now=0.0)
@@ -115,7 +114,6 @@ async def test_position_failure_does_not_block_lyric_resolution():
 async def test_empty_metadata_never_reaches_resolver():
     resolver = RecordingResolver()
     provider = MprisProvider(LyricsState(), resolver=resolver)
-    provider._session = object()
     prepare_poll(provider, FakePlayer(metadata={"mpris:trackid": "/track/1"}))
 
     await provider._poll_once(now=0.0)
@@ -130,7 +128,6 @@ async def test_metadata_changed_during_sample_is_discarded():
     player = SequencedMetadataPlayer([mixed, VALID_METADATA, VALID_METADATA, VALID_METADATA])
     resolver = RecordingResolver()
     provider = MprisProvider(LyricsState(), resolver=resolver)
-    provider._session = object()
     prepare_poll(provider, player)
 
     await provider._poll_once(now=0.0)
@@ -153,7 +150,6 @@ async def test_new_generation_cancels_old_fetch():
     resolver = BlockingResolver()
     state = LyricsState()
     provider = MprisProvider(state, resolver=resolver)
-    provider._session = object()
     provider._schedule_load(track_commit(1, "A", "Artist A"))
     await resolver.started.wait()
     provider._schedule_load(track_commit(2, "B", "Artist B"))
@@ -186,7 +182,6 @@ async def test_external_result_uses_actual_provider_label():
     state = LyricsState()
     resolver = RecordingResolver(ResolvedLyrics(source="lrclib", lines=()))
     provider = MprisProvider(state, resolver=resolver)
-    provider._session = object()
     provider._schedule_load(track_commit(1, "Song", "Artist"))
     assert provider._load_task is not None
     await provider._load_task

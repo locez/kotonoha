@@ -50,5 +50,5 @@ def test_cache_enabled_defaults_true_and_roundtrips(tmp_path):
 
 
 def test_cache_enabled_is_clamped_to_bool():
-    assert Config(cache_enabled=0).clamped().cache_enabled is False
-    assert Config(cache_enabled=1).clamped().cache_enabled is True
+    assert Config.from_dict({"cache_enabled": 0}).cache_enabled is False
+    assert Config.from_dict({"cache_enabled": 1}).cache_enabled is True

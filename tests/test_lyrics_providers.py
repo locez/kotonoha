@@ -1,5 +1,11 @@
+from typing import cast
+
+import aiohttp
+
 from kotonoha.lyrics import lrclib, netease
 from kotonoha.lyrics.match import Candidate, MatchConfidence, TrackMetadata
+
+SESSION = cast(aiohttp.ClientSession, None)
 
 
 def async_return(value):
@@ -19,7 +25,7 @@ async def test_netease_empty_parsed_yrc_falls_back_to_lrc(monkeypatch):
     monkeypatch.setattr(netease, "search", fake_search)
     monkeypatch.setattr(netease, "fetch_payload", fake_payload)
 
-    artifact = await netease.fetch_artifact(None, TrackMetadata("Song", "Artist", "Album", 180.0))
+    artifact = await netease.fetch_artifact(SESSION, TrackMetadata("Song", "Artist", "Album", 180.0))
 
     assert artifact is not None
     assert artifact.provider_song_id == "42"
@@ -44,12 +50,33 @@ async def test_netease_tries_normalized_query_before_accepting_medium_match(monk
     )
 
     track = TrackMetadata("Song (Remastered 2011)", "Artist feat. Guest", duration_s=180.0)
-    artifact = await netease.fetch_artifact(None, track)
+    artifact = await netease.fetch_artifact(SESSION, track)
 
     assert queries == ["Song (Remastered 2011) Artist feat. Guest", "Song Artist"]
     assert artifact is not None
     assert artifact.provider_song_id == "high"
     assert artifact.confidence is MatchConfidence.HIGH
+
+
+async def test_netease_can_upgrade_same_song_id_to_high_confidence(monkeypatch):
+    async def fake_search(_session, query, limit=10):
+        if query == "Song (Remastered 2011) Artist feat. Guest":
+            return [Candidate("same", "Song (Remastered 2011)", "", None)]
+        return [Candidate("same", "Song (Remastered 2011)", "Artist", 180.0)]
+
+    monkeypatch.setattr(netease, "search", fake_search)
+    monkeypatch.setattr(
+        netease,
+        "fetch_payload",
+        async_return({"yrc": "", "lrc": "[00:01.00]line", "tlyric": ""}),
+    )
+
+    track = TrackMetadata("Song (Remastered 2011)", "Artist feat. Guest", duration_s=180.0)
+    result = await netease.fetch_artifact(SESSION, track)
+
+    assert result is not None
+    assert result.provider_song_id == "same"
+    assert result.confidence is MatchConfidence.HIGH
 
 
 async def test_lrclib_search_ranks_results_instead_of_taking_first(monkeypatch):
@@ -65,7 +92,7 @@ async def test_lrclib_search_ranks_results_instead_of_taking_first(monkeypatch):
         ),
     )
 
-    artifact = await lrclib.fetch_artifact(None, TrackMetadata("Song", "Artist", "Album", 180.0))
+    artifact = await lrclib.fetch_artifact(SESSION, TrackMetadata("Song", "Artist", "Album", 180.0))
 
     assert artifact is not None
     assert artifact.provider_song_id == "right"
@@ -83,7 +110,27 @@ async def test_lrclib_exact_failure_still_uses_search(monkeypatch):
         async_return([lrclib.Record("right", "Song", "Artist", "", 180.0, "[00:01]right")]),
     )
 
-    artifact = await lrclib.fetch_artifact(None, TrackMetadata("Song", "Artist", duration_s=180.0))
+    artifact = await lrclib.fetch_artifact(SESSION, TrackMetadata("Song", "Artist", duration_s=180.0))
 
     assert artifact is not None
     assert artifact.provider_song_id == "right"
+
+
+async def test_lrclib_duplicate_id_uses_the_better_search_record(monkeypatch):
+    monkeypatch.setattr(
+        lrclib,
+        "get_exact",
+        async_return(lrclib.Record("same", "Song", "", "", None, "[00:01]medium")),
+    )
+    monkeypatch.setattr(
+        lrclib,
+        "search_records",
+        async_return([lrclib.Record("same", "Song", "Artist", "Album", 180.0, "[00:01]high")]),
+    )
+
+    result = await lrclib.fetch_artifact(SESSION, TrackMetadata("Song", "Artist", "Album", 180.0))
+
+    assert result is not None
+    assert result.artist == "Artist"
+    assert result.confidence is MatchConfidence.HIGH
+    assert [line.text for line in result.lines] == ["high"]

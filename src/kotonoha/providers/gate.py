@@ -28,7 +28,8 @@ class SourceGate:
 
     @property
     def cider_active(self) -> bool:
-        return self._mode == "cider" and self._bound_client_id in self._snapshots
+        retained = self._snapshots.get(self._bound_client_id) if self._bound_client_id is not None else None
+        return self._mode == "cider" and retained is not None and retained[1].found
 
     def select_external(self) -> None:
         self._mode = "external"

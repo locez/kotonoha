@@ -47,7 +47,11 @@ def parse_metadata(raw: dict[str, Any]) -> TrackInfo:
 def unwrap(metadata: object) -> dict[str, Any]:
     if not isinstance(metadata, dict):
         return {}
-    return {key: getattr(variant, "value", variant) for key, variant in metadata.items()}
+    return {
+        key: getattr(variant, "value", variant)
+        for key, variant in metadata.items()
+        if isinstance(key, str)
+    }
 
 
 @dataclass(frozen=True)
@@ -99,6 +103,11 @@ class TrackStabilizer:
             return None
 
         settle_seconds = 0.35 if info.artist else 0.8
+        if self._committed_key is not None:
+            previous_title = self._committed_key[2]
+            previous_artist = self._committed_key[3]
+            if info.title != previous_title and info.artist and info.artist == previous_artist:
+                settle_seconds = max(settle_seconds, 0.8)
         if observation.observed_at - self._changed_at < settle_seconds:
             return None
         if key == self._committed_key:

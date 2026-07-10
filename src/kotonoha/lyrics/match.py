@@ -9,6 +9,7 @@ from enum import Enum
 from unicodedata import normalize as unicode_normalize
 
 _PARENS = re.compile(r"[\(（\[【](.*?)[\)）\]】]")
+_DASH_SUFFIX = re.compile(r"\s+[-–—]\s+(.+)$")
 _FEAT_SUFFIX = re.compile(r"\b(?:feat(?:uring)?|ft)\b\.?.*$", re.IGNORECASE)
 _ARTIST_SEPARATOR = re.compile(
     r"\s*(?:,|/|&|;|、|，|\band\b|\bwith\b|\bfeat(?:uring)?\b\.?|\bft\b\.?)\s*",
@@ -77,11 +78,24 @@ def split_title(title: str) -> tuple[str, frozenset[str]]:
     value = unicode_normalize("NFKC", title)
     tags: set[str] = set()
     for group in _PARENS.findall(value):
-        normalized_group = group.casefold()
-        for tag, markers in _VERSION_TAGS.items():
-            if any(re.search(rf"\b{re.escape(marker)}\b", normalized_group) for marker in markers):
-                tags.add(tag)
-    return _PARENS.sub("", value).strip(), frozenset(tags)
+        tags.update(_extract_version_tags(group))
+    base = _PARENS.sub("", value).strip()
+    suffix = _DASH_SUFFIX.search(base)
+    if suffix is not None:
+        suffix_tags = _extract_version_tags(suffix.group(1))
+        if suffix_tags:
+            tags.update(suffix_tags)
+            base = base[: suffix.start()].strip()
+    return base, frozenset(tags)
+
+
+def _extract_version_tags(value: str) -> set[str]:
+    normalized_value = value.casefold()
+    return {
+        tag
+        for tag, markers in _VERSION_TAGS.items()
+        if any(re.search(rf"\b{re.escape(marker)}\b", normalized_value) for marker in markers)
+    }
 
 
 def base_title(title: str) -> str:
@@ -135,7 +149,13 @@ def evaluate_match(candidate: Candidate, track: TrackMetadata) -> MatchEvidence:
             confidence = MatchConfidence.HIGH
         elif title_strong and (duration_delta is None or duration_delta <= 8.0):
             confidence = MatchConfidence.MEDIUM
-        elif not title_strong and track_artists and candidate_artists and duration_delta is not None:
+        elif (
+            not title_strong
+            and title_ratio >= 0.5
+            and track_artists
+            and candidate_artists
+            and duration_delta is not None
+        ):
             if duration_delta <= 3.0 and (album_match or track_artists == candidate_artists):
                 confidence = MatchConfidence.MEDIUM
 

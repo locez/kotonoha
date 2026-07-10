@@ -113,21 +113,26 @@ async def fetch_artifact(
     session: aiohttp.ClientSession,
     track: TrackMetadata,
 ) -> LyricsArtifact | None:
-    medium_matches: list[MatchEvidence] = []
-    seen_song_ids: set[str] = set()
+    medium_matches: dict[str, MatchEvidence] = {}
+    attempted_song_ids: set[str] = set()
     for query in query_variants(track):
         match = best_match(await search(session, query), track)
-        if match is None or match.candidate.song_id in seen_song_ids:
+        if match is None:
             continue
-        seen_song_ids.add(match.candidate.song_id)
+        song_id = match.candidate.song_id
         if match.confidence is MatchConfidence.HIGH:
+            if song_id in attempted_song_ids:
+                continue
+            attempted_song_ids.add(song_id)
             artifact = await _artifact_for_match(session, match)
             if artifact is not None:
                 return artifact
         else:
-            medium_matches.append(match)
+            medium_matches[song_id] = match
 
-    for match in medium_matches:
+    for song_id, match in medium_matches.items():
+        if song_id in attempted_song_ids:
+            continue
         artifact = await _artifact_for_match(session, match)
         if artifact is not None:
             return artifact

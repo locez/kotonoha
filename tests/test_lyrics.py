@@ -92,6 +92,18 @@ def test_explicit_live_version_conflict_is_rejected():
     assert evaluate_match(candidate, track).confidence is MatchConfidence.NONE
 
 
+def test_dash_suffix_live_version_conflict_is_rejected():
+    track = TrackMetadata("Song", "Artist", "Album", 200.0)
+    candidate = Candidate("1", "Song - Live at Wembley", "Artist", 200.5, album="Album")
+    assert evaluate_match(candidate, track).confidence is MatchConfidence.NONE
+
+
+def test_same_artist_and_duration_do_not_rescue_unrelated_title():
+    track = TrackMetadata("Target", "Artist", "", 180.0)
+    candidate = Candidate("1", "Completely Different", "Artist", 180.0)
+    assert evaluate_match(candidate, track).confidence is MatchConfidence.NONE
+
+
 def test_artist_order_does_not_change_identity():
     track = TrackMetadata("Song", "A / B", "", 180.0)
     candidate = Candidate("1", "Song", "B, A", 180.5)

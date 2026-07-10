@@ -8,12 +8,12 @@ import sqlite3
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import TypeAlias
+from typing import Protocol, TypeAlias
 
 import aiohttp
 
 from ..model import LyricLine, LyricsSnapshot
-from ..providers.gate import SourceGate
+from ..providers.gate import CiderMatch, SourceGate
 from . import lrclib, netease
 from .artifact import LyricsArtifact
 from .cache import LyricsCache
@@ -40,6 +40,28 @@ class NetworkProvider:
     parse_payload: Callable[[Mapping[str, str]], tuple[LyricLine, ...]]
 
 
+class CacheLike(Protocol):
+    async def lookup(
+        self,
+        provider: str,
+        track: TrackMetadata,
+        parser: Callable[[Mapping[str, str]], tuple[LyricLine, ...]],
+        /,
+    ) -> LyricsArtifact | None: ...
+
+    async def store(self, artifact: LyricsArtifact, /) -> None: ...
+
+    async def clear(self) -> None: ...
+
+
+class GateLike(Protocol):
+    def select_external(self) -> None: ...
+
+    def current_match(self, track: TrackMetadata, /) -> CiderMatch | None: ...
+
+    def select_cider(self, client_id: int, /) -> None: ...
+
+
 def _track_key(track: TrackMetadata) -> TrackKey:
     base, tags = split_title(track.title)
     duration = round(track.duration_s, 1) if track.duration_s is not None else None
@@ -56,8 +78,8 @@ class LyricsResolver:
     def __init__(
         self,
         *,
-        cache: LyricsCache | None = None,
-        gate: SourceGate | None = None,
+        cache: CacheLike | None = None,
+        gate: GateLike | None = None,
         providers: Mapping[str, NetworkProvider] | None = None,
         cache_enabled: bool = True,
         negative_ttl: float = 30.0,

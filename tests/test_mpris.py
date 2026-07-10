@@ -83,6 +83,16 @@ def test_new_title_old_artist_does_not_commit_before_stable_pair():
     assert commit.info.artist == "New Artist"
 
 
+def test_new_title_with_previous_artist_uses_longer_settle_window():
+    stabilizer = TrackStabilizer()
+    assert stabilizer.observe(observation("/old", "Old", "Artist", at=0.0)) is None
+    assert stabilizer.observe(observation("/old", "Old", "Artist", at=0.4)) is not None
+
+    assert stabilizer.observe(observation("/new", "New", "Artist", at=1.0)) is None
+    assert stabilizer.observe(observation("/new", "New", "Artist", at=1.4)) is None
+    assert stabilizer.observe(observation("/new", "New", "Artist", at=1.81)) is not None
+
+
 def test_missing_artist_commits_after_longer_window():
     stabilizer = TrackStabilizer()
     assert stabilizer.observe(observation("/1", "Instrumental", "", at=0.0)) is None
