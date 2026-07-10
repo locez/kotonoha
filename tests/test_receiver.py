@@ -7,6 +7,8 @@ pytest.importorskip("aiohttp")
 
 from aiohttp.test_utils import TestClient, TestServer  # noqa: E402
 
+from kotonoha.lyrics.match import TrackMetadata  # noqa: E402
+from kotonoha.providers.gate import SourceGate  # noqa: E402
 from kotonoha.receiver import CONFIG_FRAME_TYPE, WS_PATH, LyricsReceiver  # noqa: E402
 from kotonoha.state import LyricsState  # noqa: E402
 
@@ -120,3 +122,21 @@ async def test_post_malformed_frame_returns_400():
 def test_build_app_registers_route():
     app = LyricsReceiver(LyricsState()).build_app()
     assert any(getattr(r.resource, "canonical", "") == WS_PATH for r in app.router.routes())
+
+
+def test_closed_gate_rejects_tick_but_retains_full_frame():
+    state = LyricsState()
+    ticks = []
+    state.time_ticked.connect(lambda current, playing: ticks.append((current, playing)))
+    gate = SourceGate()
+    gate.select_external()
+    receiver = LyricsReceiver(state, gate=gate)
+
+    assert receiver._ingest(json.dumps(FRAME), client_id=10) is True
+    assert receiver._ingest(
+        json.dumps({"reason": "tick", "currentTime": 3.0, "isPlaying": True}),
+        client_id=10,
+    )
+    assert state.snapshot.found is False
+    assert ticks == []
+    assert gate.current_match(TrackMetadata("Song", "X")) is not None

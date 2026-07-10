@@ -94,7 +94,7 @@ class LyricsReceiver:
             await self._runner.cleanup()
             self._runner = None
 
-    def _ingest(self, raw_text: str) -> bool:
+    def _ingest(self, raw_text: str, *, client_id: int = 0) -> bool:
         """Parse one JSON frame and push it into state. Returns True on success."""
         try:
             payload = json.loads(raw_text)
@@ -104,18 +104,21 @@ class LyricsReceiver:
         # Lightweight high-frequency tick: only calibrate the clock, do not
         # rebuild lyric content.
         if isinstance(payload, dict) and payload.get("reason") == "tick":
-            self._state.tick(_coerce_float(payload.get("currentTime")), _coerce_bool(payload.get("isPlaying")))
+            if self._gate is None or self._gate.accepts(client_id):
+                self._state.tick(_coerce_float(payload.get("currentTime")), _coerce_bool(payload.get("isPlaying")))
             return True
-        # Lyric frame is gated: when an external source (Netease/lrclib) has this
-        # song, ignore the Cider WS lyrics. Progress ticks above are never gated.
-        if self._gate is not None and not self._gate.accept_ws:
-            return True
-        self._state.update(parse_payload(payload))
+        snapshot = parse_payload(payload)
+        if self._gate is not None:
+            self._gate.observe_snapshot(client_id, snapshot)
+            if not self._gate.accepts(client_id):
+                return True
+        self._state.update(snapshot)
         return True
 
     async def _handle_ws(self, request: web.Request) -> web.WebSocketResponse:
         ws = web.WebSocketResponse(heartbeat=30)
         await ws.prepare(request)
+        client_id = id(ws)
         self._clients.add(ws)
         logger.debug("Probe connected")
         # Tell the probe which translation language to extract from the TTML.
@@ -123,12 +126,14 @@ class LyricsReceiver:
         try:
             async for msg in ws:
                 if msg.type == WSMsgType.TEXT:
-                    self._ingest(msg.data)
+                    self._ingest(msg.data, client_id=client_id)
                 elif msg.type == WSMsgType.ERROR:
                     logger.debug("WS connection error: %s", ws.exception())
                     break
         finally:
             self._clients.discard(ws)
+            if self._gate is not None:
+                self._gate.drop_client(client_id)
         logger.debug("Probe disconnected")
         return ws
 

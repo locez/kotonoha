@@ -1,4 +1,6 @@
 from kotonoha.config import Config
+from kotonoha.lyrics.match import TrackMetadata
+from kotonoha.model import LyricsSnapshot
 from kotonoha.providers.gate import SourceGate
 
 
@@ -13,6 +15,42 @@ def test_gate_set():
     assert gate.accept_ws is False
     gate.set_accept_ws(True)
     assert gate.accept_ws is True
+
+
+def test_closed_gate_retains_matching_snapshot_without_publishing():
+    gate = SourceGate()
+    gate.select_external()
+    snapshot = LyricsSnapshot(found=True, title="Song", artist="Artist", song_id="am-1")
+    gate.observe_snapshot(10, snapshot)
+
+    match = gate.current_match(TrackMetadata("Song", "Artist"))
+
+    assert match is not None
+    assert match.client_id == 10
+    assert gate.accepts(10) is False
+
+
+def test_select_cider_binds_one_connection_and_ticks_follow_binding():
+    gate = SourceGate()
+    gate.observe_snapshot(10, LyricsSnapshot(found=True, title="Song", artist="Artist"))
+    gate.select_cider(10)
+    assert gate.accepts(10) is True
+    assert gate.accepts(20) is False
+    assert gate.cider_active is True
+    gate.drop_client(10)
+    assert gate.cider_active is False
+
+
+def test_cider_match_rejects_different_track():
+    gate = SourceGate()
+    gate.observe_snapshot(10, LyricsSnapshot(found=True, title="Other", artist="Artist"))
+    assert gate.current_match(TrackMetadata("Song", "Artist")) is None
+
+
+def test_cider_exact_title_can_cover_transient_missing_mpris_artist():
+    gate = SourceGate()
+    gate.observe_snapshot(10, LyricsSnapshot(found=True, title="Song", artist="Artist"))
+    assert gate.current_match(TrackMetadata("Song", "")) is not None
 
 
 def test_lyrics_sources_default():
