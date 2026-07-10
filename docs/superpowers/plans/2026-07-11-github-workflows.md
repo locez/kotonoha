@@ -756,6 +756,9 @@ jobs:
     needs: [validate, version]
     runs-on: ubuntu-latest
     container: ubuntu:26.04
+    defaults:
+      run:
+        shell: bash
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
@@ -799,6 +802,9 @@ jobs:
     needs: [validate, version]
     runs-on: ubuntu-latest
     container: fedora:43
+    defaults:
+      run:
+        shell: bash
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
@@ -835,26 +841,73 @@ jobs:
   wheel:
     needs: [validate, version]
     runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    defaults:
+      run:
+        shell: bash
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
+      - name: Install checkout prerequisites
+        run: |
+          apt-get update
+          apt-get install -y ca-certificates git
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.14'
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
           version: 0.11.19
       - name: Install native build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y qt6-base-dev qt6-base-private-dev libwayland-dev liblayershellqtinterface-dev pkg-config build-essential
-      - name: Build Linux wheel
+          apt-get update
+          apt-get install -y qt6-base-dev qt6-base-private-dev qt6-wayland-dev libwayland-dev liblayershellqtinterface-dev pkg-config build-essential
+      - name: Build non-pure Linux wheel
         run: |
+          set -euo pipefail
           uv version "$VERSION" --frozen
           uv build --wheel
-          uvx --from wheel wheel tags --remove --platform-tag linux_x86_64 dist/*.whl
-      - name: Verify wheel platform and installation
+          shopt -s nullglob
+          built_wheels=(dist/*.whl)
+          test "${#built_wheels[@]}" -eq 1
+          uvx --from wheel==0.45.1 wheel unpack --dest dist/unpacked "${built_wheels[0]}"
+          unpacked_dirs=(dist/unpacked/*)
+          test "${#unpacked_dirs[@]}" -eq 1
+          test -d "${unpacked_dirs[0]}"
+          metadata_files=("${unpacked_dirs[0]}"/*.dist-info/WHEEL)
+          test "${#metadata_files[@]}" -eq 1
+          python - "${metadata_files[0]}" <<'PY'
+          from pathlib import Path
+          import sys
+
+          metadata_path = Path(sys.argv[1])
+          contents = metadata_path.read_text(encoding="utf-8")
+          lines = contents.splitlines()
+          if lines.count("Root-Is-Purelib: true") != 1 or "Root-Is-Purelib: false" in lines:
+              raise SystemExit("unexpected Root-Is-Purelib metadata")
+          metadata_path.write_text(
+              contents.replace("Root-Is-Purelib: true", "Root-Is-Purelib: false", 1),
+              encoding="utf-8",
+          )
+          PY
+          rm "${built_wheels[0]}"
+          repacked_dir=dist/repacked
+          test ! -e "$repacked_dir"
+          mkdir "$repacked_dir"
+          uvx --from wheel==0.45.1 wheel pack --dest-dir "$repacked_dir" "${unpacked_dirs[0]}"
+          packed_wheels=("$repacked_dir"/*.whl)
+          test "${#packed_wheels[@]}" -eq 1
+          uvx --from wheel==0.45.1 wheel tags --remove --platform-tag linux_x86_64 "${packed_wheels[0]}"
+          repacked_wheels=("$repacked_dir"/*.whl)
+          test "${#repacked_wheels[@]}" -eq 1
+          mv "${repacked_wheels[0]}" dist/
+      - name: Verify wheel metadata and installation
         run: |
+          set -euo pipefail
           test "$(find dist -maxdepth 1 -name '*-linux_x86_64.whl' | wc -l)" -eq 1
           test "$(find dist -maxdepth 1 -name '*-any.whl' | wc -l)" -eq 0
+          python -c 'from email.parser import Parser; from zipfile import ZipFile; path=next(__import__("pathlib").Path("dist").glob("*-linux_x86_64.whl")); archive=ZipFile(path); names=[name for name in archive.namelist() if name.endswith(".dist-info/WHEEL")]; assert len(names) == 1; metadata=Parser().parsestr(archive.read(names[0]).decode()); assert metadata.get_all("Root-Is-Purelib") == ["false"]; assert metadata.get_all("Tag") == ["py3-none-linux_x86_64"]'
           uv venv /tmp/kotonoha-wheel-test
           uv pip install --python /tmp/kotonoha-wheel-test/bin/python dist/*-linux_x86_64.whl
           /tmp/kotonoha-wheel-test/bin/python -c "import kotonoha.main; from kotonoha.lyrics_loader import find_layer_shell_library; assert find_layer_shell_library()"

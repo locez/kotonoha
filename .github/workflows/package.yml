@@ -46,6 +46,9 @@ jobs:
       - version
     runs-on: ubuntu-latest
     container: ubuntu:26.04
+    defaults:
+      run:
+        shell: bash
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
@@ -127,6 +130,9 @@ jobs:
       - version
     runs-on: ubuntu-latest
     container: fedora:43
+    defaults:
+      run:
+        shell: bash
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
@@ -204,6 +210,9 @@ jobs:
       - version
     runs-on: ubuntu-latest
     container: ubuntu:26.04
+    defaults:
+      run:
+        shell: bash
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
@@ -231,7 +240,7 @@ jobs:
             qt6-base-dev \
             qt6-base-private-dev \
             qt6-wayland-dev
-      - name: Build and retag wheel
+      - name: Build non-pure Linux wheel
         run: |
           set -euo pipefail
           uv version "$VERSION" --frozen
@@ -239,7 +248,40 @@ jobs:
           shopt -s nullglob
           built_wheels=(dist/*.whl)
           test "${#built_wheels[@]}" -eq 1
-          uvx --from wheel==0.45.1 wheel tags --remove --platform-tag linux_x86_64 "${built_wheels[0]}"
+          uvx --from wheel==0.45.1 wheel unpack --dest dist/unpacked "${built_wheels[0]}"
+          unpacked_dirs=(dist/unpacked/*)
+          test "${#unpacked_dirs[@]}" -eq 1
+          test -d "${unpacked_dirs[0]}"
+          metadata_files=("${unpacked_dirs[0]}"/*.dist-info/WHEEL)
+          test "${#metadata_files[@]}" -eq 1
+          test -f "${metadata_files[0]}"
+          python - "${metadata_files[0]}" <<'PY'
+          from pathlib import Path
+          import sys
+
+          metadata_path = Path(sys.argv[1])
+          contents = metadata_path.read_text(encoding="utf-8")
+          lines = contents.splitlines()
+          if lines.count("Root-Is-Purelib: true") != 1:
+              raise SystemExit("expected exactly one Root-Is-Purelib: true field")
+          if "Root-Is-Purelib: false" in lines:
+              raise SystemExit("WHEEL metadata already contains Root-Is-Purelib: false")
+          metadata_path.write_text(
+              contents.replace("Root-Is-Purelib: true", "Root-Is-Purelib: false", 1),
+              encoding="utf-8",
+          )
+          PY
+          rm "${built_wheels[0]}"
+          repacked_dir=dist/repacked
+          test ! -e "$repacked_dir"
+          mkdir "$repacked_dir"
+          uvx --from wheel==0.45.1 wheel pack --dest-dir "$repacked_dir" "${unpacked_dirs[0]}"
+          packed_wheels=("$repacked_dir"/*.whl)
+          test "${#packed_wheels[@]}" -eq 1
+          uvx --from wheel==0.45.1 wheel tags --remove --platform-tag linux_x86_64 "${packed_wheels[0]}"
+          repacked_wheels=("$repacked_dir"/*.whl)
+          test "${#repacked_wheels[@]}" -eq 1
+          mv "${repacked_wheels[0]}" dist/
           linux_wheels=(dist/*-linux_x86_64.whl)
           any_wheels=(dist/*-any.whl)
           all_wheels=(dist/*.whl)
@@ -263,7 +305,13 @@ jobs:
               metadata_files = [name for name in archive.namelist() if name.endswith(".dist-info/WHEEL")]
               if len(metadata_files) != 1:
                   raise SystemExit(f"expected one WHEEL metadata file, found {len(metadata_files)}")
-              metadata = Parser().parsestr(archive.read(metadata_files[0]).decode("utf-8"))
+              metadata_text = archive.read(metadata_files[0]).decode("utf-8")
+              metadata = Parser().parsestr(metadata_text)
+          purelib = metadata.get_all("Root-Is-Purelib", [])
+          if purelib != ["false"]:
+              raise SystemExit(f"unexpected Root-Is-Purelib fields: {purelib}")
+          if "Root-Is-Purelib: true" in metadata_text.splitlines():
+              raise SystemExit("purelib=true remains in WHEEL metadata")
           tags = metadata.get_all("Tag", [])
           if tags != ["py3-none-linux_x86_64"]:
               raise SystemExit(f"unexpected wheel tags: {tags}")

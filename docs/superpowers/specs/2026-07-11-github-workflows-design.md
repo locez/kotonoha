@@ -107,7 +107,7 @@ The exact localized file is checked with `desktop-file-validate`. Packages insta
 
 ## DEB Packaging
 
-The DEB build runs in an Ubuntu 26.04 container and adds:
+The DEB build runs in an Ubuntu 26.04 container with Bash selected explicitly for every `run` step and adds:
 
 - `packaging/debian/control` for build and runtime dependencies;
 - `packaging/debian/rules` using `pybuild` with the PEP 517 backend;
@@ -130,7 +130,7 @@ Only a DEB that passes these installation checks is uploaded.
 
 ## RPM Packaging
 
-The RPM build runs in a Fedora 43 container and adds `packaging/fedora/kotonoha.spec`.
+The RPM build runs in a Fedora 43 container with Bash selected explicitly for every `run` step and adds `packaging/fedora/kotonoha.spec`.
 
 The workflow uses the pinned `setup-uv` action with uv 0.11.19 only to run `uv version "$VERSION" --frozen`, creates a source archive named for the resolved version, updates the spec version for the build, and invokes `rpmbuild`. During `%prep`, the spec removes the optional Hatch build-script hook from the package build tree. During `%build`, it compiles the native bridge explicitly with `USE_SYSTEM_LIBS=1` before invoking Fedora's Python wheel macro. The existing wheel force-include packages the manually built library without relying on files installed outside the declared RPM build requirements.
 
@@ -140,9 +140,9 @@ Only an RPM that passes these installation checks is uploaded.
 
 ## Wheel Packaging
 
-The wheel job runs in an Ubuntu 26.04 container with Python 3.14, the pinned `setup-uv` action at uv 0.11.19, and the native bridge build requirements. It applies the resolved version with `uv version "$VERSION" --frozen`, builds the project, and includes `libkoto-layer.so` and all application icon assets.
+The wheel job runs in an Ubuntu 26.04 container with Bash selected explicitly, Python 3.14, the pinned `setup-uv` action at uv 0.11.19, and the native bridge build requirements. It applies the resolved version with `uv version "$VERSION" --frozen`, builds the project, and includes `libkoto-layer.so` and all application icon assets.
 
-Because the wheel contains a native Linux shared library, it must not be published as `py3-none-any`. The build retags the sole wheel with `uvx --from wheel==0.45.1 wheel tags --remove --platform-tag linux_x86_64`, requires exactly one `linux_x86_64` wheel and no `any` wheel, and verifies the `WHEEL` metadata tag agrees with the filename. It also inspects the bridge with `ldd`, requires Qt 6 and LayerShellQt linkage, and rejects Qt 5 linkage.
+Because the wheel contains a native Linux shared library, it must be both non-pure and platform-specific. With pinned wheel 0.45.1, the job unpacks the sole Hatch wheel, requires exactly one unpacked distribution and one `.dist-info/WHEEL`, changes the single `Root-Is-Purelib: true` field to `Root-Is-Purelib: false`, removes the original wheel, and repacks it into a clean output directory so `RECORD` is regenerated. It then retags the repacked wheel with `wheel tags --remove --platform-tag linux_x86_64`, moves only that final wheel to the artifact directory, requires exactly one `linux_x86_64` wheel and no `any` wheel, and verifies both the non-pure field and platform tag in `WHEEL`. It also inspects the bridge with `ldd`, requires Qt 6 and LayerShellQt linkage, and rejects Qt 5 linkage.
 
 The job installs the wheel and its dependencies into a clean virtual environment, imports PyQt6's QtCore and QtGui modules before importing Kotonoha, locates the installed bridge, and loads it with `ctypes.CDLL`. The artifact is deliberately a Linux x86_64 wheel, not a manylinux compatibility claim and not a Windows or macOS package.
 
