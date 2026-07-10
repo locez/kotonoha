@@ -1,160 +1,149 @@
-# Kotonoha MPRIS + 外部歌词源 — 设计规格 (Spec v0.1)
+# Kotonoha MPRIS + 外部歌词源设计规格
 
-> 让"只有静态歌词"的播放器(YouTube Music / Spotify / VLC / mpv …)也能动起来:
-> 通过 **Linux MPRIS** 拿到正在播放的歌曲信息与进度,从**网易云(优先,尽量逐字)**等外部源
-> 抓带时间轴的歌词,复用现有 overlay/clock/karaoke 把它驱动起来。与现有 **Cider 探针共存**。
+本文描述当前实现。目标是在不改动 HUD 渲染、Qt bridge、时钟与卡拉 OK 组件的前提下，让任意 MPRIS 播放器可靠地使用外部定时歌词，并让 Cider WebSocket 作为可排序的实时歌词来源参与同一条解析链。
 
----
+## 1. 关键原则
 
-## 1. 目标与范围
+- 当前播放器和歌词来源是两个独立选择。即使当前播放器是 Cider，也优先按用户配置尝试网易云、lrclib 或其他外部 provider。
+- Cider 不是固定 fallback，也不因当前播放器身份自动优先；它在 `lyrics_sources` 中出现在哪里，就在哪里尝试。
+- Cider WS 提供的是当前播放位置附近的实时快照，不假定它能提供可缓存的完整带时间歌词文档。
+- 本地缓存属于每一个网络 provider 的内部阶段，不是单独的 provider。
+- 不保存 MPRIS player、track ID、搜索词到 provider 歌曲的持久映射。
+- `overlay.py`、`karaoke_label.py`、`karaoke.py`、`native.py`、layer-shell bridge 和 Cider 插件协议保持不变。
 
-- **新增一个通用 provider**:不依赖播放器插件,凡是暴露 MPRIS 的播放器都能用(浏览器里的 YTM/Spotify Web、原生 Spotify、VLC、mpv、Cider 本身也行)。
-- 歌词来自**外部源**:**网易云优先**(尽量逐字 YRC,退化逐行 LRC),`lrclib.net` 兜底。
-- **与 Cider 探针共存**:Cider 仍走探针(能拿 Apple Music 逐字 TTML,质量最高);其余播放器走 MPRIS。
-- **复用现有一切**:`LyricsState / MediaClock / KaraokeLabel / overlay / tick`。数据模型(`LyricLine`/`LyricWord`)**无需改动**。
+## 2. 数据流
 
-非目标(v0.1 外):歌词编辑/上传;非 Linux;无 MPRIS 的播放器。
-
----
-
-## 2. 架构:Provider 抽象
-
-```
-                         ┌──────────────────────────────────────────┐
-  Cider (探针, 现有) ──WS─▶│ LyricsReceiver ─┐                          │
-                         │                 ├─▶ LyricsState ─▶ overlay │
-  任意 MPRIS 播放器 ──D-Bus─▶│ MprisProvider ──┘   (snapshot + tick)     │
-   (YTM/Spotify/VLC…)    │     │                                       │
-                         │     └─▶ LyricsFetcher ─▶ 网易云/lrclib       │
-                         └──────────────────────────────────────────┘
-```
-
-两个 provider 都最终调用 `LyricsState.update(snapshot)`(切歌/换行)与 `LyricsState.tick(t, playing)`(高频进度校准)。下游完全不变。
-
-**协调(谁在驱动)**:
-- 默认**自动**:Cider 探针有连接 → 用 Cider(忽略 MPRIS,避免双重驱动);否则用 MPRIS 选中的活跃播放器。
-- 可在设置里强制指定(自动 / 仅 Cider / 仅 MPRIS / 指定某个 MPRIS player)。
-- 实现:`ProviderCoordinator` 持有当前 active 源;切换时 `state.clear()`。
-
----
-
-## 3. MPRIS 接入(D-Bus)
-
-**库**:`dbus-fast`(纯 Python、asyncio 原生,完美配 qasync;`dbus-next` 的高性能后继)。新依赖。
-
-读 `org.mpris.MediaPlayer2.Player`:
-| 数据 | 来源 | 用途 |
-|---|---|---|
-| 标题/艺术家/专辑/时长 | `Metadata`(`xesam:title`/`xesam:artist`/`xesam:album`/`mpris:length`) | 搜歌词 + 时长校验匹配 |
-| 播放状态 | `PlaybackStatus`(Playing/Paused/Stopped) | 驱动时钟 |
-| 进度 | `Position`(微秒) | tick 校准 |
-| seek | `Seeked` 信号 | 立即重锚时钟 |
-
-**进度获取 = 复用现有 tick 机制**:MPRIS 不主动推 `Position`(只有 `Seeked` 信号),所以**每 ~200ms 轮询一次 `Position`** → `state.tick(position_s, playing)`,本地 60fps 插值补平滑。和 Cider 的 tick 一模一样的模型。
-
-**播放器发现与选择**:
-- 枚举 `org.mpris.MediaPlayer2.*` bus names;监听 `NameOwnerChanged` 处理出现/消失。
-- 选 active player:优先 `PlaybackStatus == Playing` 的;多个时可让用户在设置里选(下拉)。
-- 浏览器里的 YTM 经 **KDE Plasma Browser Integration / `playerctld`** 暴露为 MPRIS——需实测其 `Position` 是否真实更新(已知风险,见 §7)。
-
-`MetadataChanged`(`PropertiesChanged`)→ 换歌 → 触发重新抓词。
-
----
-
-## 4. 歌词获取(LyricsFetcher)
-
-**抽象**:`LyricsSource.fetch(title, artist, album, duration) -> ParsedLyrics | None`。按优先级串联,命中即止;结果按 `(title, artist, duration)` **缓存**(切歌频繁、网络慢)。
-
-**优先级链(按用户决策:网易云优先、尽量逐字)**:
-1. **网易云 YRC(逐字)** — 最优,逐字 + 翻译(`tlyric`)+ 罗马音。难点见 §5。
-2. **网易云 LRC(逐行)** — 逐字拿不到时退化;公开接口,简单。
-3. **lrclib.net(逐行)** — 网易云都没有时兜底;免费、开放、按时长匹配、无鉴权。
-
-**匹配准确度(关键)**:搜索 `title + artist` 往往有 live/remix/翻唱/同名。用 **MPRIS `length` 做时长校验**(容差 ±3s)挑最接近的;标题/艺术家做规范化(去除 "feat."、括号备注、大小写、全半角)。匹配不确定时宁可不显示也不显示错的(可在设置开"宽松匹配")。
-
-**翻译**:网易云 `tlyric` 直接接到现有 `show_translation` / `translation_language`(中文翻译现成)。
-
----
-
-## 5. 网易云 API 与逐字(最大难点,诚实标注)
-
-- **逐行 LRC**:`GET /api/song/lyric?id=<id>&lv=1&kv=1&tv=1`(weapi/公开),返回 `lrc`(逐行)+ `tlyric`(翻译)。相对简单稳定。
-- **逐字 YRC**:网易云的逐字歌词走 **eapi**(`/api/song/lyric/v1`,参数含 `yrc`),**需要请求加密**(AES + 固定 key/RSA),可能还需要登录 cookie。纯 Python 可实现(社区有成熟参考:NeteaseCloudMusicApi 等的加密算法),但**这是本功能工作量与不确定性的主要来源**:
-  - 接口/加密参数可能随网易云变动 → 实现时需现网验证。
-  - 部分歌曲**根本没有**逐字数据(只有逐行)→ 必须能优雅退化。
-  - 可能需要用户提供网易云 cookie(逐字/部分歌)→ 设置里加一项(可选)。
-- **加密依赖**:`pycryptodome`(AES/RSA)。新依赖。
-
-**YRC 解析**:逐字格式形如 `[行起,行时长](字起,字时长,0)字(…)字…`,解析为 `LyricLine.words[]`(每词 `start/end`)。需要专门 parser + 单元测试(纯函数,易测)。
-
-> 工程策略:**先把整条链路用逐行跑通**(lrclib / 网易云 LRC),验证 MPRIS→匹配→歌词→驱动 全程 OK,再单独攻 YRC 逐字。逐字是增量,不阻塞前面。
-
----
-
-## 6. 数据映射(复用现有 model,零改动)
-
-- **LRC 逐行** → `LyricLine(start=该行时间, end=下一行时间, text, translation, words=())` → `has_word_timing=False` → 现有 karaoke **整行扫光**。
-- **YRC 逐字** → `LyricLine(..., words=(LyricWord(start,end,text),…))` → `has_word_timing=True` → 现有 karaoke **逐字扫光**。
-- `LyricsSnapshot.current/previous/next/around` 由 MPRIS `Position` 选当前行(复用 `find_current_line` 同款逻辑,放 Python 侧)。
-- `timing` 标 `"Word"`/`"Line"`,`provider` 标 `"MPRIS:网易云"` 等便于调试。
-
-所以渲染、时钟、双语、逐字高亮**全部自动复用**。
-
----
-
-## 7. 风险 / 已知坑
-
-1. **网易云逐字 API 加密 + 可得性**(§5)——最大不确定性;降级链兜底。
-2. **匹配错歌**——时长校验 + 规范化缓解;宁缺毋滥。
-3. **MPRIS `Position` 在浏览器播放器**(YTM)可能不更新/不准——依赖 Plasma Browser Integration / playerctld,需实测;不行则只能逐行近似或提示不支持。
-4. **多播放器/无播放器**——协调逻辑 + 设置选择。
-5. **网络/限流**——缓存 + 失败静默 + 不阻塞 UI(全 async)。
-
----
-
-## 8. 模块与依赖
-
-```
-src/kotonoha/providers/
-  __init__.py
-  coordinator.py        # ProviderCoordinator:在 Cider/MPRIS 间选 active 源
-  mpris.py              # MprisProvider:dbus-fast 监听 + Position 轮询 → state
-src/kotonoha/lyrics/
-  fetcher.py            # LyricsFetcher:优先级链 + 缓存 + 匹配/规范化
-  netease.py            # 网易云源(LRC + YRC),加密在 netease_crypto.py
-  netease_crypto.py     # weapi/eapi 加密(AES/RSA)
-  lrclib.py             # lrclib.net 源
-  lrc_parser.py         # LRC → LyricLine（纯函数，测试）
-  yrc_parser.py         # YRC → LyricLine（纯函数，测试）
-  match.py              # 标题/艺术家规范化 + 时长校验（纯函数，测试）
+```text
+MPRIS Metadata/Status/Position
+            |
+            v
+  TrackStabilizer (忽略空值，等待稳定组合)
+            |
+            v
+  LyricsResolver (严格按设置顺序)
+       |                     |
+       v                     v
+provider 本地缓存/网络     Cider retained snapshot
+       |                     |
+       +----------+----------+
+                  v
+             LyricsState
+                  v
+       现有 overlay / clock / karaoke
 ```
 
-新依赖:`dbus-fast`、`pycryptodome`。
+MPRIS 负责当前歌曲身份和外部歌词的进度。Cider 被选中时，内容和 tick 都由绑定的同一个 WS 连接负责，避免两个时钟同时驱动 HUD。
 
-**可测**:`lrc_parser`/`yrc_parser`/`match` 是纯函数,CI 全覆盖(无需 GUI/D-Bus/网络)。网络与 D-Bus 部分用 mock/录制响应测。
+## 3. Provider 顺序
 
----
+假设用户配置：
 
-## 9. 配置(新增)
+```text
+netease -> lrclib -> cider
+```
 
-`config.json` 增:`provider_mode`(auto/cider/mpris),`mpris_player`(指定 bus name 或 auto),`lyrics_sources`(顺序,默认 `["netease","lrclib"]`),`netease_cookie`(可选,逐字用),`match_strict`(bool)。
+启用缓存时的实际尝试顺序必须是：
 
-设置面板加一个 **"来源"** tab:provider 模式、MPRIS 播放器选择、歌词源开关/顺序、网易云 cookie、严格匹配。
+1. 本地网易云缓存
+2. 网络网易云
+3. 本地 lrclib 缓存
+4. 网络 lrclib
+5. 当前可匹配的 Cider 实时快照
 
----
+如果调整为 `lrclib -> cider -> netease`，顺序相应变为：本地 lrclib、网络 lrclib、Cider、本地网易云、网络网易云。缓存开关关闭时只跳过网络 provider 的缓存读写，不改变 provider 顺序。
 
-## 10. 里程碑(已按决策调整:直奔逐字,降级链兜底)
+网络 provider 正常返回无结果时记录 30 秒内存 miss，减少切歌抖动造成的重复请求。网络异常不记录 miss。相同歌曲、相同来源顺序的并发请求共用一个 in-flight task。
 
-1. **M1 — MPRIS 打通 + 验证地基**:`mpris.py` 用 dbus-fast 读 Metadata/Position/PlaybackStatus + 选 active player;先只把"标题/艺术家/进度"打到日志(不抓词)。**关键验证浏览器 YTM 的 `Position` 是否随播放真实前进**——这是整个功能的地基,不行就得先解决。
-2. **M2 — 歌词链路端到端(逐字优先 + 降级)**:`netease.py`(YRC 逐字,无 cookie;拿不到退 LRC 逐行)+ `lrclib.py`(兜底)+ `yrc_parser`/`lrc_parser`/`match`/`fetcher`;MPRIS → 匹配 → 歌词 → 驱动 overlay。**端到端可用,逐字优先**;某首没逐字就自动整行扫光。
-3. **M3 — 协调与设置打磨**:Cider/MPRIS 共存协调(自动选源)、"来源" 设置 tab、缓存、多播放器选择、错误兜底、文档。
+## 4. 搜索归一化与置信度
 
-> 实现上仍会**先用 lrclib(最简单)在 M2 内部秒通链路**当冒烟,再叠网易云逐字——但对外交付目标就是逐字,不单列"逐行里程碑"。
+归一化使用 Unicode NFKC 和 `casefold()`，安全处理 `feat.`/`ft.` 边界、艺术家分隔符和标题括号。`Live`、`Remix`、`Remaster`、`Acoustic` 等版本标签单独提取，不能因为去掉括号而把不同版本当成同一首歌。
 
----
+高置信度的直观含义：
 
-## 11. 已确认 / 待验证
+- 标题相同或非常接近；
+- 艺术家、专辑或接近的时长至少提供一项独立身份依据；
+- 已知时长差不超过约 3 秒；
+- 没有明确版本冲突。
 
-1. **网易云 cookie** → ✅ 先做**无 cookie**,能拿到多少算多少(逐字可能受限,降级兜底)。
-2. **YTM 来源** → ✅ **浏览器版**(经 Plasma Browser Integration / `playerctld` 暴露 MPRIS)。**M1 必须先验证其 `Position` 真实前进**(浏览器播放器是已知风险点)。
-3. **顺序** → ✅ 不绕逐行,MPRIS 打通后**直奔逐字 + 降级兜底**。
+中置信度可用于当前会话，例如标题精确但播放器暂时缺 artist/duration；它不能写入文件缓存。只有时长接近、标题和艺术家不一致的候选不是匹配。
+
+查询先使用播放器原始 `title + artist`，必要时再使用基础标题和主艺术家。第一轮只有中置信度候选时继续归一化查询，争取高置信度结果。
+
+## 5. Provider artifact 与文件缓存
+
+网易云和 lrclib 网络层返回统一的 `LyricsArtifact`：
+
+- provider 名称；
+- provider 稳定歌曲 ID；
+- provider 返回的 title/artist/album/duration；
+- 原始歌词 payload；
+- 已解析的 `LyricLine`；
+- 本次匹配置信度。
+
+SQLite 主键为：
+
+```text
+(provider, provider_song_id)
+```
+
+数据库不包含 player、MPRIS track ID、原始 query、search key 或 alias 表。播放时只扫描当前 provider 的缓存 artifact，用当前 MPRIS 元数据重新执行同一套匹配逻辑。这样播放器、MPRIS bridge 或查询写法改变时不需要维护额外映射。
+
+缓存默认位于：
+
+```text
+$XDG_CACHE_HOME/kotonoha/lyrics.sqlite3
+```
+
+只持久化高置信度 artifact，默认保留最近使用的 1000 条。JSON 或歌词 payload 损坏时删除该条目，并继续同一 provider 的网络阶段。设置页可禁用或清空缓存。
+
+## 6. Provider 细节
+
+### 网易云
+
+- 搜索结果先经过统一匹配，不再由时长单独决定。
+- 优先解析 YRC；YRC 字段存在但解析不到有效行时回退 LRC。
+- `tlyric` 按时间合并为翻译。
+- provider 稳定歌曲 ID 和原始 YRC/LRC/tlyric 一起进入 artifact。
+
+### lrclib
+
+- `/api/get` 精确请求失败或结果不可信时继续 `/api/search`。
+- 搜索结果整体匹配排序，不再直接选择第一条带 `syncedLyrics` 的记录。
+- 保存 lrclib record ID 和原始 `syncedLyrics`。
+
+### Cider WS
+
+- 完整 frame 即使当前 gate 关闭也会被解析并保留，但不会发布到 HUD。
+- tick 与完整 frame 使用相同连接所有权判断；外部歌词生效时 Cider tick 不再校准时钟。
+- resolver 到达 Cider 位置时，使用当前 MPRIS 元数据匹配 retained snapshot；命中后绑定具体 client ID。
+- 绑定连接断开后，对当前歌曲重新执行完整 provider 顺序。
+
+## 7. MPRIS 切歌稳定化
+
+`PropertiesChanged` 只唤醒采样，不直接发起歌词请求。每次采样：
+
+1. 读取 PlaybackStatus 和 Metadata；
+2. 尝试读取 Position，失败时保留 Metadata 路径；
+3. 再读一次 Metadata；
+4. 两次身份字段不同则丢弃本次样本；
+5. 相同组合保持稳定后才提交新的 track generation。
+
+title 和 artist 都为空的 `""/""` 样本永不提交，也不会搜索、写 miss 或写缓存。完整元数据稳定约 350 ms 后提交；缺 artist 时等待约 800 ms。新 generation 立即取消旧歌词请求，任何异步返回在写状态前再次检查 generation。
+
+当前 Playing player 短暂推空元数据时保留旧内容并等待恢复；播放器消失或停止约 350 ms 后才清空状态。Paused 且元数据有效的播放器仍可保留歌词。Position 不可用不会阻止歌词获取，只是不产生新的 MPRIS 进度校准。
+
+## 8. 模块
+
+```text
+src/kotonoha/providers/mpris_track.py  元数据解析、Observation、稳定器
+src/kotonoha/providers/mpris.py        D-Bus 采样、generation、状态所有权
+src/kotonoha/providers/gate.py         Cider retained snapshots 与连接绑定
+src/kotonoha/lyrics/match.py           归一化、版本冲突、置信度
+src/kotonoha/lyrics/artifact.py        provider-neutral artifact
+src/kotonoha/lyrics/cache.py           provider-scoped SQLite 缓存
+src/kotonoha/lyrics/resolver.py        精确配置顺序与 in-flight 去重
+src/kotonoha/lyrics/netease.py         网易云搜索与 YRC/LRC 解析
+src/kotonoha/lyrics/lrclib.py          lrclib exact/search 与排序
+```
+
+所有网络与磁盘 I/O 保持异步边界；SQLite 操作通过工作线程执行。Qt widget 与 layer-shell 操作仍只在 UI 线程发生。
