@@ -107,7 +107,9 @@ publishes a GitHub Release containing a DEB, an RPM, a Linux x86_64 wheel,
 `kotonoha-cider-lyrics-X.Y.Z.zip`, and `SHA256SUMS`. The DEB is built and tested against Ubuntu 26.04
 and is intended for compatible Debian/Ubuntu systems. The RPM is built and tested against Fedora 43
 and is intended for compatible Fedora systems; neither is a universal Linux package. Both install a
-multilingual desktop entry and the default application icon.
+multilingual desktop entry and the default application icon. Fedora does not currently package
+qasync, so the RPM bundles the pinned qasync 0.28.0 pure-Python wheel from PyPI and includes its BSD
+license; PyQt6 and the remaining native/runtime dependencies still come from Fedora repositories.
 
 Install a downloaded native package with its dependency-resolving package manager:
 
@@ -116,9 +118,10 @@ sudo apt install ./kotonoha_*.deb
 sudo dnf install ./kotonoha-*.rpm
 ```
 
-The wheel is a non-pure Linux x86_64 package containing Kotonoha's native LayerShellQt bridge. It
-requires compatible system Qt 6, Wayland, and LayerShellQt libraries; it is not a Windows, macOS, or
-manylinux portability claim.
+The wheel is a non-pure Linux x86_64 package containing Kotonoha's native LayerShellQt bridge. Its
+PyQt6 runtime is constrained to the same Qt minor ABI used to build the bridge on Ubuntu 26.04; the
+target system must provide compatible Qt, Wayland, and LayerShellQt libraries from that minor series.
+It is not a Windows, macOS, manylinux, or cross-distribution portability claim.
 
 The Cider ZIP contains `dev.locez.kotonoha.cider.lyrics/` as its top-level directory, so it can be
 extracted under Cider's plugins directory. The integration remains experimental; keep external lyric

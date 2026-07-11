@@ -3,9 +3,10 @@ Version:        0.1.0
 Release:        1%{?dist}
 Summary:        Desktop lyrics overlay for Linux
 
-License:        MIT
+License:        MIT AND BSD-2-Clause
 URL:            https://github.com/locez/kotonoha
 Source0:        %{name}-%{version}.tar.gz
+Source1:        qasync-0.28.0-py3-none-any.whl
 
 BuildRequires:  python3-devel
 BuildRequires:  python3-hatchling
@@ -18,11 +19,11 @@ BuildRequires:  layer-shell-qt-devel
 BuildRequires:  wayland-devel
 BuildRequires:  desktop-file-utils
 Requires:       python3
-Requires:       python3-qt6
+Requires:       python3-pyqt6
 Requires:       python3-aiohttp
-Requires:       python3-qasync
 Requires:       python3-dbus-fast
 Requires:       layer-shell-qt
+Provides:       bundled(python3dist(qasync)) = 0.28.0
 
 %description
 Kotonoha displays synchronized lyrics for the currently playing track in a
@@ -40,6 +41,7 @@ USE_SYSTEM_LIBS=1 bash src/kotonoha/build_bridge.sh
 %install
 %pyproject_install
 %pyproject_save_files kotonoha
+python3 -m zipfile -e %{SOURCE1} %{buildroot}%{python3_sitelib}
 install -Dm0644 packaging/kotonoha.desktop \
     %{buildroot}%{_datadir}/applications/kotonoha.desktop
 install -Dm0644 src/kotonoha/assets/icon.png \
@@ -51,6 +53,13 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/kotonoha.desktop
 %files -f %{pyproject_files}
 %doc README.md
 %{_bindir}/kotonoha
+%{python3_sitelib}/qasync/
+%dir %{python3_sitelib}/qasync-0.28.0.dist-info
+%{python3_sitelib}/qasync-0.28.0.dist-info/METADATA
+%{python3_sitelib}/qasync-0.28.0.dist-info/RECORD
+%{python3_sitelib}/qasync-0.28.0.dist-info/WHEEL
+%dir %{python3_sitelib}/qasync-0.28.0.dist-info/licenses
+%license %{python3_sitelib}/qasync-0.28.0.dist-info/licenses/LICENSE
 %{_datadir}/applications/kotonoha.desktop
 %{_datadir}/pixmaps/kotonoha.png
 

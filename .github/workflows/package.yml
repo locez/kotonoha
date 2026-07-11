@@ -109,7 +109,7 @@ jobs:
           shopt -s nullglob
           debs=(dist/deb/kotonoha_*.deb)
           test "${#debs[@]}" -eq 1
-          apt-get install -y "${debs[0]}"
+          apt-get install -y "./${debs[0]}"
           python3 -c "import kotonoha.main"
           command -v kotonoha
           bridge=$(python3 -c "import pathlib, kotonoha; print(pathlib.Path(kotonoha.__file__).with_name('libkoto-layer.so'))")
@@ -148,6 +148,7 @@ jobs:
         run: |
           dnf install -y \
             desktop-file-utils \
+            curl \
             gcc-c++ \
             gzip \
             layer-shell-qt \
@@ -157,8 +158,7 @@ jobs:
             python3-dbus-fast \
             python3-devel \
             python3-hatchling \
-            python3-qt6 \
-            python3-qasync \
+            python3-pyqt6 \
             qt6-qtbase-devel \
             qt6-qtbase-private-devel \
             qt6-qtwayland-devel \
@@ -174,6 +174,13 @@ jobs:
           sed -i -E "0,/^(\* .* - )(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-1$/s//\1${VERSION}-1/" packaging/fedora/kotonoha.spec
           rpm_root=/tmp/kotonoha-rpmbuild
           mkdir -p "$rpm_root"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+          qasync_wheel="$rpm_root/SOURCES/qasync-0.28.0-py3-none-any.whl"
+          curl -L --fail --silent --show-error \
+            --output "$qasync_wheel" \
+            https://files.pythonhosted.org/packages/e5/84/0ce4cd946f6e958428c87d5accac35df70f81607e45ba4919947d0762d63/qasync-0.28.0-py3-none-any.whl
+          qasync_sha256=$(sha256sum "$qasync_wheel")
+          qasync_sha256=${qasync_sha256%% *}
+          test "$qasync_sha256" = 21faba8d047c717008378f5ac29ea58c32a8128528629e4afd57c59b768dba0f
           tar \
             --exclude=.git \
             --exclude=dist \
@@ -191,7 +198,8 @@ jobs:
           shopt -s nullglob
           rpms=(dist/rpm/kotonoha-"${VERSION}"-*.x86_64.rpm)
           test "${#rpms[@]}" -eq 1
-          dnf install -y "${rpms[0]}"
+          dnf install -y "./${rpms[0]}"
+          python3 -c "import qasync"
           python3 -c "import kotonoha.main"
           command -v kotonoha
           bridge=$(python3 -c "import pathlib, kotonoha; print(pathlib.Path(kotonoha.__file__).with_name('libkoto-layer.so'))")
@@ -257,22 +265,8 @@ jobs:
           metadata_files=("${unpacked_dirs[0]}"/*.dist-info/WHEEL)
           test "${#metadata_files[@]}" -eq 1
           test -f "${metadata_files[0]}"
-          python - "${metadata_files[0]}" <<'PY'
-          from pathlib import Path
-          import sys
-
-          metadata_path = Path(sys.argv[1])
-          contents = metadata_path.read_text(encoding="utf-8")
-          lines = contents.splitlines()
-          if lines.count("Root-Is-Purelib: true") != 1:
-              raise SystemExit("expected exactly one Root-Is-Purelib: true field")
-          if "Root-Is-Purelib: false" in lines:
-              raise SystemExit("WHEEL metadata already contains Root-Is-Purelib: false")
-          metadata_path.write_text(
-              contents.replace("Root-Is-Purelib: true", "Root-Is-Purelib: false", 1),
-              encoding="utf-8",
-          )
-          PY
+          qt_version=$(qmake6 -query QT_VERSION)
+          python scripts/patch_linux_wheel_metadata.py "${unpacked_dirs[0]}" "$qt_version"
           rm "${built_wheels[0]}"
           repacked_dir=dist/repacked
           test ! -e "$repacked_dir"
@@ -331,6 +325,8 @@ jobs:
       - name: Install and load wheel in a clean environment
         run: |
           set -euo pipefail
+          BUILD_QT_VERSION=$(qmake6 -query QT_VERSION)
+          export BUILD_QT_VERSION
           shopt -s nullglob
           wheels=(dist/*-linux_x86_64.whl)
           test "${#wheels[@]}" -eq 1
@@ -338,6 +334,7 @@ jobs:
           uv pip install --python /tmp/kotonoha-wheel/bin/python "${wheels[0]}"
           /tmp/kotonoha-wheel/bin/python - <<'PY'
           import ctypes
+          import os
           from pathlib import Path
 
           from PyQt6 import QtCore, QtGui
@@ -346,6 +343,10 @@ jobs:
 
           assert QtCore is not None
           assert QtGui is not None
+          build_qt_minor = tuple(map(int, os.environ["BUILD_QT_VERSION"].split(".")[:2]))
+          runtime_qt_minor = tuple(map(int, QtCore.QT_VERSION_STR.split(".")[:2]))
+          if runtime_qt_minor != build_qt_minor:
+              raise SystemExit(f"wheel Qt {runtime_qt_minor} does not match build Qt {build_qt_minor}")
           package_dir = Path(kotonoha.__file__).parent
           bridge = find_layer_shell_library(package_dir)
           if bridge is None:

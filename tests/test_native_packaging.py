@@ -126,9 +126,10 @@ def test_fedora_spec_declares_metadata_and_dependencies() -> None:
             "Name:           kotonoha",
             "Version:        0.1.0",
             "Release:        1%{?dist}",
-            "License:        MIT",
+            "License:        MIT AND BSD-2-Clause",
             "URL:            https://github.com/locez/kotonoha",
             "Source0:        %{name}-%{version}.tar.gz",
+            "Source1:        qasync-0.28.0-py3-none-any.whl",
             "BuildRequires:  python3-devel",
             "BuildRequires:  python3-hatchling",
             "BuildRequires:  pyproject-rpm-macros",
@@ -139,13 +140,15 @@ def test_fedora_spec_declares_metadata_and_dependencies() -> None:
             "BuildRequires:  wayland-devel",
             "BuildRequires:  desktop-file-utils",
             "Requires:       python3",
-            "Requires:       python3-qt6",
+            "Requires:       python3-pyqt6",
             "Requires:       python3-aiohttp",
-            "Requires:       python3-qasync",
             "Requires:       python3-dbus-fast",
             "Requires:       layer-shell-qt",
+            "Provides:       bundled(python3dist(qasync)) = 0.28.0",
         ),
     )
+    assert "Requires:       python3-qt6" not in spec
+    assert "Requires:       python3-qasync" not in spec
 
 
 def test_fedora_spec_builds_and_installs_native_desktop_assets() -> None:
@@ -163,6 +166,9 @@ def test_fedora_spec_builds_and_installs_native_desktop_assets() -> None:
             "%install",
             "%pyproject_install",
             "%pyproject_save_files kotonoha",
+            "python3 -m zipfile -e %{SOURCE1} %{buildroot}%{python3_sitelib}",
+            "%{python3_sitelib}/qasync/",
+            "%license %{python3_sitelib}/qasync-0.28.0.dist-info/licenses/LICENSE",
             "%{_datadir}/applications/kotonoha.desktop",
             "%{_datadir}/pixmaps/kotonoha.png",
             "%check",
@@ -181,6 +187,9 @@ def test_fedora_spec_only_packages_existing_documentation() -> None:
     )
 
     for documentation_path in documentation_paths:
+        if documentation_path.startswith("%{"):
+            assert documentation_path == "%{python3_sitelib}/qasync-0.28.0.dist-info/licenses/LICENSE"
+            continue
         assert (PROJECT_ROOT / documentation_path).is_file()
 
 
@@ -202,6 +211,28 @@ def test_rpm_workflow_updates_spec_version_and_changelog(tmp_path: Path) -> None
     assert "Version:        2.3.4" in transformed
     assert re.search(r"^\* .* - 2\.3\.4-1$", transformed, re.MULTILINE)
     assert "Source0:        %{name}-%{version}.tar.gz" in transformed
+
+
+def test_package_workflow_installs_local_artifacts_and_stages_qasync() -> None:
+    workflow = read_packaging_file(PACKAGE_WORKFLOW)
+    rpm_job = workflow.split("\n  rpm:\n", maxsplit=1)[1].split("\n  wheel:\n", maxsplit=1)[0]
+
+    assert 'apt-get install -y "./${debs[0]}"' in workflow
+    assert 'dnf install -y "./${rpms[0]}"' in rpm_job
+    assert "python3-pyqt6" in rpm_job
+    assert "python3-qt6" not in rpm_job
+    assert "python3-qasync" not in rpm_job
+    assert "qasync-0.28.0-py3-none-any.whl" in rpm_job
+    assert 'python3 -c "import qasync"' in rpm_job
+    assert (
+        "https://files.pythonhosted.org/packages/e5/84/"
+        "0ce4cd946f6e958428c87d5accac35df70f81607e45ba4919947d0762d63/"
+        "qasync-0.28.0-py3-none-any.whl"
+    ) in rpm_job
+    assert "21faba8d047c717008378f5ac29ea58c32a8128528629e4afd57c59b768dba0f" in rpm_job
+    assert 'qt_version=$(qmake6 -query QT_VERSION)' in workflow
+    assert 'python scripts/patch_linux_wheel_metadata.py "${unpacked_dirs[0]}" "$qt_version"' in workflow
+    assert "BUILD_QT_VERSION" in workflow
 
 
 def apply_packaging_sed_expressions(tmp_path: Path, packaging_path: Path, *, makefile: bool) -> tuple[str, dict]:
