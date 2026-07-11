@@ -117,7 +117,7 @@ packages:
     resolution: {integrity: sha512-ehg3jIkYKulZh+8om/O25vkvSsXXwC+skXmyA87FFx6A/45eqOkZsBltMw/TVteb0mloiGT8oGRTcjRAz66zaA==}
 
   '@ciderapp/pluginkit@file:vendor/ciderapp-pluginkit-1.0.0-pre.1-e7bcba04.tgz':
-    resolution: {integrity: sha512-p30sn6ZyU0t+mk7YsNy6GUu8Z1mUjivvnmXQIcV5hJgM3xlKlziGvuiv+BDxl/omKxL5YsPkS0hsoLXW/DXbCw==, tarball: file:vendor/ciderapp-pluginkit-1.0.0-pre.1-e7bcba04.tgz}
+    resolution: {integrity: sha512-BTsACGJ6alzMK5pBgiapV+dDXjnwZ6oGC7indi1soqBJGbVE7vcv9h2O+V2xvwi5v/OQU/N0G1xIMpPIB08W+g==, tarball: file:vendor/ciderapp-pluginkit-1.0.0-pre.1-e7bcba04.tgz}
     version: 1.0.0-pre.1
 
   '@csstools/color-helpers@6.1.0':

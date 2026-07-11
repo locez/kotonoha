@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc -b && vite build",
+    "build": "vue-tsc -b --force && vite build",
     "test": "vitest run",
     "receive": "node scripts/receive.mjs",
     "preview": "vite preview",
