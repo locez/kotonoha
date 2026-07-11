@@ -124,3 +124,53 @@ Expected: 0 failures. If `actionlint` is unavailable, parse the workflow as YAML
 git add .github/workflows/package.yml packaging/fedora/kotonoha.spec scripts/patch_linux_wheel_metadata.py tests/test_native_packaging.py tests/test_wheel_metadata.py README.md docs/superpowers/plans/2026-07-11-release-package-ci-fixes.md
 git commit -m "fix(release): make native packages installable"
 ```
+
+### Task 5: Fix hosted native package verification failures
+
+**Files:**
+- Modify: `packaging/debian/install`
+- Modify: `packaging/fedora/kotonoha.spec`
+- Modify: `scripts/patch_linux_wheel_metadata.py`
+- Modify: `.github/workflows/package.yml`
+- Test: `tests/test_native_packaging.py`
+- Test: `tests/test_wheel_metadata.py`
+
+- [x] **Step 1: Add failing hosted-CI regression tests**
+
+Require the Debian manifest to install `src/kotonoha/libkoto-layer.so`, require the RPM spec to disable empty debug packages, and require the wheel helper to preserve an existing PyQt6 specifier and environment marker while adding the build Qt minor bounds.
+
+- [x] **Step 2: Run focused tests and verify RED**
+
+Run: `.venv/bin/pytest tests/test_native_packaging.py tests/test_wheel_metadata.py -q`
+
+Expected: failures for the missing Debian bridge install, missing RPM debug-package override, and rejected qualified PyQt6 requirement.
+
+- [x] **Step 3: Install the Debian bridge explicitly**
+
+Add this manifest entry so the library built during `override_dh_auto_configure` is guaranteed to enter the binary package:
+
+```text
+src/kotonoha/libkoto-layer.so usr/lib/python3/dist-packages/kotonoha
+```
+
+- [x] **Step 4: Disable invalid RPM debug subpackages**
+
+Add `%global debug_package %{nil}` before the RPM package metadata. The bridge build does not emit usable debug sources, so Fedora's automatic `-debugsource` package is empty and must not be generated.
+
+- [x] **Step 5: Merge wheel requirements with packaging.Requirement**
+
+Parse the existing PyQt6 requirement, reject URL requirements, combine its specifier with `>=X.Y,<X.(Y+1)`, preserve extras and markers, and give the generated PyQt6-Qt6 requirement the same marker. Invoke the helper with `uv run --no-project --with packaging==26.2` so the release job has the parser explicitly.
+
+- [x] **Step 6: Run full verification and commit**
+
+Run:
+
+```bash
+.venv/bin/pytest
+.venv/bin/ruff check .
+.venv/bin/ty check
+actionlint .github/workflows/package.yml
+git diff --check
+```
+
+Expected: 0 failures, followed by a local `fix(release)` commit without pushing.

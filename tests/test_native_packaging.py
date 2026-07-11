@@ -106,6 +106,7 @@ def test_debian_install_and_changelog_define_desktop_file_and_initial_release() 
     changelog = read_packaging_file(DEBIAN_DIR / "changelog")
 
     assert "packaging/kotonoha.desktop usr/share/applications" in install
+    assert "src/kotonoha/libkoto-layer.so usr/lib/python3/dist-packages/kotonoha" in install
     assert_contains(
         changelog,
         (
@@ -124,6 +125,7 @@ def test_fedora_spec_declares_metadata_and_dependencies() -> None:
         spec,
         (
             "Name:           kotonoha",
+            "%global debug_package %{nil}",
             "Version:        0.1.0",
             "Release:        1%{?dist}",
             "License:        MIT AND BSD-2-Clause",
@@ -231,7 +233,8 @@ def test_package_workflow_installs_local_artifacts_and_stages_qasync() -> None:
     ) in rpm_job
     assert "21faba8d047c717008378f5ac29ea58c32a8128528629e4afd57c59b768dba0f" in rpm_job
     assert 'qt_version=$(qmake6 -query QT_VERSION)' in workflow
-    assert 'python scripts/patch_linux_wheel_metadata.py "${unpacked_dirs[0]}" "$qt_version"' in workflow
+    assert "uv run --no-project --with packaging==26.2 python \\" in workflow
+    assert 'scripts/patch_linux_wheel_metadata.py "${unpacked_dirs[0]}" "$qt_version"' in workflow
     assert "BUILD_QT_VERSION" in workflow
 
 

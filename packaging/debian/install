@@ -1,1 +1,2 @@
 packaging/kotonoha.desktop usr/share/applications
+src/kotonoha/libkoto-layer.so usr/lib/python3/dist-packages/kotonoha

@@ -7,8 +7,11 @@ from email.message import Message
 from email.parser import Parser
 from pathlib import Path
 
+from packaging.requirements import InvalidRequirement, Requirement
+from packaging.specifiers import SpecifierSet
+from packaging.utils import canonicalize_name
+
 QT_VERSION_PATTERN = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
-REQUIREMENT_NAME_PATTERN = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 
 
 def _metadata_path(unpacked_dir: Path, filename: str) -> Path:
@@ -20,11 +23,24 @@ def _metadata_path(unpacked_dir: Path, filename: str) -> Path:
     return matches[0]
 
 
-def _requirement_name(requirement: str) -> str:
-    match = REQUIREMENT_NAME_PATTERN.match(requirement)
-    if match is None:
-        raise ValueError(f"invalid wheel requirement: {requirement!r}")
-    return re.sub(r"[-_.]+", "-", match.group(1)).lower()
+def _parse_requirement(requirement: str) -> Requirement:
+    try:
+        return Requirement(requirement)
+    except InvalidRequirement as error:
+        raise ValueError(f"invalid wheel requirement: {requirement!r}") from error
+
+
+def _pin_pyqt_requirement(requirement: Requirement, qt_lower: str, qt_upper: str) -> tuple[str, str]:
+    if requirement.url is not None:
+        raise ValueError("PyQt6 must use a version requirement, not a direct URL")
+
+    specifiers = ",".join(part for part in (str(requirement.specifier), f">={qt_lower}", f"<{qt_upper}") if part)
+    combined_specifiers = SpecifierSet(specifiers)
+    extras = f"[{','.join(sorted(requirement.extras))}]" if requirement.extras else ""
+    marker = f"; {requirement.marker}" if requirement.marker is not None else ""
+    pyqt = f"{requirement.name}{extras}{combined_specifiers}{marker}"
+    qt_runtime = f"PyQt6-Qt6<{qt_upper},>={qt_lower}{marker}"
+    return pyqt, qt_runtime
 
 
 def _write_message(path: Path, message: Message) -> None:
@@ -51,18 +67,20 @@ def patch_linux_wheel_metadata(unpacked_dir: Path, qt_version: str) -> None:
     metadata_path = _metadata_path(unpacked_dir, "METADATA")
     metadata = Parser().parsestr(metadata_path.read_text(encoding="utf-8"))
     requirements = metadata.get_all("Requires-Dist", [])
+    parsed_requirements = [_parse_requirement(requirement) for requirement in requirements]
     pyqt_indexes = [
-        index for index, requirement in enumerate(requirements) if _requirement_name(requirement) == "pyqt6"
+        index
+        for index, requirement in enumerate(parsed_requirements)
+        if canonicalize_name(requirement.name) == "pyqt6"
     ]
     if len(pyqt_indexes) != 1:
         raise ValueError(f"expected exactly one PyQt6 requirement, found {len(pyqt_indexes)}")
-    if requirements[pyqt_indexes[0]].strip() != "PyQt6":
-        raise ValueError("expected an unqualified PyQt6 requirement without extras, versions, or markers")
-    if any(_requirement_name(requirement) == "pyqt6-qt6" for requirement in requirements):
+    if any(canonicalize_name(requirement.name) == "pyqt6-qt6" for requirement in parsed_requirements):
         raise ValueError("wheel metadata already contains a PyQt6-Qt6 requirement")
 
-    requirements[pyqt_indexes[0]] = f"PyQt6<{qt_upper},>={qt_lower}"
-    requirements.append(f"PyQt6-Qt6<{qt_upper},>={qt_lower}")
+    pyqt, qt_runtime = _pin_pyqt_requirement(parsed_requirements[pyqt_indexes[0]], qt_lower, qt_upper)
+    requirements[pyqt_indexes[0]] = pyqt
+    requirements.append(qt_runtime)
     del metadata["Requires-Dist"]
     for requirement in requirements:
         metadata["Requires-Dist"] = requirement

@@ -1,3 +1,6 @@
+# build_bridge.sh does not emit source mappings for an RPM debugsource package.
+%global debug_package %{nil}
+
 Name:           kotonoha
 Version:        0.1.0
 Release:        1%{?dist}

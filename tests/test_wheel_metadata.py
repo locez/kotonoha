@@ -6,6 +6,8 @@ from email.parser import Parser
 from pathlib import Path
 
 import pytest
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
@@ -70,8 +72,28 @@ def test_patch_linux_wheel_metadata_requires_pyqt_dependency(tmp_path: Path) -> 
         load_patcher()(tmp_path, "6.10.2")
 
 
-def test_patch_linux_wheel_metadata_rejects_qualified_pyqt_dependency(tmp_path: Path) -> None:
-    create_unpacked_wheel(tmp_path, pyqt_requirement='PyQt6; sys_platform == "linux"')
+def test_patch_linux_wheel_metadata_preserves_qualified_pyqt_dependency(tmp_path: Path) -> None:
+    dist_info = create_unpacked_wheel(
+        tmp_path,
+        pyqt_requirement='PyQt6[alpha,beta]>=6.7; python_version >= "3.10"',
+    )
 
-    with pytest.raises(ValueError, match="unqualified PyQt6 requirement"):
+    load_patcher()(tmp_path, "6.10.2")
+
+    metadata = Parser().parsestr((dist_info / "METADATA").read_text(encoding="utf-8"))
+    requirements = [Requirement(value) for value in metadata.get_all("Requires-Dist", [])]
+    by_name = {canonicalize_name(requirement.name): requirement for requirement in requirements}
+    pyqt = by_name[canonicalize_name("pyqt6")]
+    qt_runtime = by_name[canonicalize_name("pyqt6-qt6")]
+    assert {str(specifier) for specifier in pyqt.specifier} == {">=6.7", ">=6.10", "<6.11"}
+    assert {str(specifier) for specifier in qt_runtime.specifier} == {">=6.10", "<6.11"}
+    assert pyqt.extras == {"alpha", "beta"}
+    assert str(pyqt.marker) == 'python_version >= "3.10"'
+    assert str(qt_runtime.marker) == 'python_version >= "3.10"'
+
+
+def test_patch_linux_wheel_metadata_rejects_direct_url_pyqt_dependency(tmp_path: Path) -> None:
+    create_unpacked_wheel(tmp_path, pyqt_requirement="PyQt6 @ https://example.invalid/PyQt6.whl")
+
+    with pytest.raises(ValueError, match="direct URL"):
         load_patcher()(tmp_path, "6.10.2")

@@ -266,7 +266,8 @@ jobs:
           test "${#metadata_files[@]}" -eq 1
           test -f "${metadata_files[0]}"
           qt_version=$(qmake6 -query QT_VERSION)
-          python scripts/patch_linux_wheel_metadata.py "${unpacked_dirs[0]}" "$qt_version"
+          uv run --no-project --with packaging==26.2 python \
+            scripts/patch_linux_wheel_metadata.py "${unpacked_dirs[0]}" "$qt_version"
           rm "${built_wheels[0]}"
           repacked_dir=dist/repacked
           test ! -e "$repacked_dir"
