@@ -381,9 +381,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: plugins/cider/lyrics/pnpm-lock.yaml
       - name: Install dependencies
-        # The root lockfile remains explicitly frozen. CI=false only prevents
-        # pluginkit's nested prepare install from freezing its own stale lockfile.
-        run: CI=false pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
       - name: Test
         run: pnpm test
       - name: Build versioned plugin

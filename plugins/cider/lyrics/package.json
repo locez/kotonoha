@@ -8,8 +8,7 @@
     "test": "vitest run",
     "receive": "node scripts/receive.mjs",
     "preview": "vite preview",
-    "prepare-marketplace": "tsx ./scripts/market-pack.cts",
-    "update-pluginkit": "pnpm up @ciderapp/pluginkit"
+    "prepare-marketplace": "tsx ./scripts/market-pack.cts"
   },
   "dependencies": {
     "@paralleldrive/cuid2": "^2.2.2",
@@ -17,7 +16,7 @@
     "vue": "^3.5.35"
   },
   "devDependencies": {
-    "@ciderapp/pluginkit": "github:ciderapp/pluginkit#cider-4",
+    "@ciderapp/pluginkit": "file:vendor/ciderapp-pluginkit-1.0.0-pre.1-e7bcba04.tgz",
     "@tsconfig/node20": "^20.1.6",
     "@types/lodash": "^4.17.6",
     "@types/node": "^20.14.9",

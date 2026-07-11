@@ -19,8 +19,8 @@ importers:
         version: 3.5.39(typescript@5.9.3)
     devDependencies:
       '@ciderapp/pluginkit':
-        specifier: github:ciderapp/pluginkit#cider-4
-        version: https://codeload.github.com/ciderapp/pluginkit/tar.gz/e7bcba04aeb342470df740878857e4d1805cb48b
+        specifier: file:vendor/ciderapp-pluginkit-1.0.0-pre.1-e7bcba04.tgz
+        version: file:vendor/ciderapp-pluginkit-1.0.0-pre.1-e7bcba04.tgz
       '@tsconfig/node20':
         specifier: ^20.1.6
         version: 20.1.9
@@ -116,8 +116,8 @@ packages:
   '@blazediff/core@1.9.1':
     resolution: {integrity: sha512-ehg3jIkYKulZh+8om/O25vkvSsXXwC+skXmyA87FFx6A/45eqOkZsBltMw/TVteb0mloiGT8oGRTcjRAz66zaA==}
 
-  '@ciderapp/pluginkit@https://codeload.github.com/ciderapp/pluginkit/tar.gz/e7bcba04aeb342470df740878857e4d1805cb48b':
-    resolution: {tarball: https://codeload.github.com/ciderapp/pluginkit/tar.gz/e7bcba04aeb342470df740878857e4d1805cb48b}
+  '@ciderapp/pluginkit@file:vendor/ciderapp-pluginkit-1.0.0-pre.1-e7bcba04.tgz':
+    resolution: {integrity: sha512-p30sn6ZyU0t+mk7YsNy6GUu8Z1mUjivvnmXQIcV5hJgM3xlKlziGvuiv+BDxl/omKxL5YsPkS0hsoLXW/DXbCw==, tarball: file:vendor/ciderapp-pluginkit-1.0.0-pre.1-e7bcba04.tgz}
     version: 1.0.0-pre.1
 
   '@csstools/color-helpers@6.1.0':
@@ -1402,7 +1402,7 @@ snapshots:
 
   '@blazediff/core@1.9.1': {}
 
-  '@ciderapp/pluginkit@https://codeload.github.com/ciderapp/pluginkit/tar.gz/e7bcba04aeb342470df740878857e4d1805cb48b':
+  '@ciderapp/pluginkit@file:vendor/ciderapp-pluginkit-1.0.0-pre.1-e7bcba04.tgz':
     dependencies:
       '@types/musickit': https://codeload.github.com/ciderapp/musickit-types/tar.gz/ee13e00ce4241e61de0712b1b5a103467ddef69d
 
