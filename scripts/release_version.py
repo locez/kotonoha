@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import os
 import re
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-try:
-    import tomllib  # ty: ignore[unresolved-import]
-except ModuleNotFoundError:  # pragma: no cover - exercised by the Python 3.10 CI job
-    import tomli as tomllib  # ty: ignore[unresolved-import]
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    tomllib = importlib.import_module("tomli")
 
 
 CANONICAL_VERSION = r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"

@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import importlib
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
-try:
-    import tomllib  # ty: ignore[unresolved-import]
-except ModuleNotFoundError:  # pragma: no cover - exercised by the Python 3.10 CI job
-    import tomli as tomllib  # ty: ignore[unresolved-import]
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    tomllib = importlib.import_module("tomli")
 
 PROJECT_ROOT = Path(__file__).parents[1]
 DEBIAN_DIR = PROJECT_ROOT / "packaging" / "debian"
