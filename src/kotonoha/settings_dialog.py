@@ -9,6 +9,7 @@ from :mod:`kotonoha.strings`.
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QMouseEvent, QPainter, QPaintEvent, QPen
@@ -125,14 +126,16 @@ _CLOSE_STYLE = (
     "font-size:16px;padding:0;} QPushButton:hover{color:#FFFFFF;}"
 )
 
-# White checkmark (inline SVG data URI) painted over a checked indicator; kept out
-# of the QSS block so the long line can carry its own noqa.
-_CHECKMARK_ICON = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDE2IDE2Ij48cGF0aCBkPSJNMy41IDguNSBMNi41IDExLjUgTDEyLjUgNC41IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIuMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9zdmc+"  # noqa: E501
+# White checkmark painted over a checked indicator. Qt's stylesheet url() does
+# NOT decode data: URIs (it only loads file/resource paths), so this must be a
+# real bundled file — an inline data URI silently renders nothing, leaving a bare
+# filled square. Qt's SVG image plugin renders it.
+_CHECKMARK_PATH = Path(__file__).with_name("assets") / "checkmark.svg"
 
 
 def _skin(accent: str) -> str:
     """Fill the QSS template with the accent colour and the checkmark glyph."""
-    return _STYLE.replace("%ACCENT%", accent).replace("%CHECK%", _CHECKMARK_ICON)
+    return _STYLE.replace("%ACCENT%", accent).replace("%CHECK%", _CHECKMARK_PATH.as_posix())
 
 
 class SettingsDialog(QDialog):

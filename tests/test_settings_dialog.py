@@ -30,13 +30,34 @@ def test_cache_controls_roundtrip_and_clear_signal(qapp):
     dialog.close()
 
 
-def test_checked_indicator_supplies_an_explicit_checkmark_image(qapp):
-    dialog = SettingsDialog(Config())
-    qss = dialog.styleSheet()
-    # Without an explicit image the custom-styled indicator drew a blank square.
-    assert "indicator:checked" in qss
-    assert "image: url(data:image/svg+xml;base64," in qss
-    dialog.close()
+def _indicator_white_pixels(qss: str, *, checked: bool) -> int:
+    from PyQt6.QtWidgets import QCheckBox
+
+    cb = QCheckBox("x")
+    cb.setChecked(checked)
+    # Dark surround so the only near-white pixels in the indicator area come from
+    # the checkmark glyph itself (the checked background is the purple accent).
+    cb.setStyleSheet(qss + "\nQCheckBox { background: #101216; }")
+    cb.resize(120, 24)
+    image = cb.grab().toImage()
+    count = 0
+    for y in range(image.height()):
+        for x in range(min(20, image.width())):
+            colour = image.pixelColor(x, y)
+            if colour.red() > 200 and colour.green() > 200 and colour.blue() > 200:
+                count += 1
+    return count
+
+
+def test_checked_indicator_actually_renders_a_checkmark(qapp):
+    from kotonoha.settings_dialog import _CHECKMARK_PATH, _skin
+
+    # The glyph must be a real bundled file: Qt's stylesheet url() does not decode
+    # data: URIs, so an inline data URI renders nothing (a bare filled square).
+    assert _CHECKMARK_PATH.is_file()
+    qss = _skin(Config().accent_start)
+    # A checked box draws a white tick the unchecked one lacks.
+    assert _indicator_white_pixels(qss, checked=True) > _indicator_white_pixels(qss, checked=False)
 
 
 def test_apply_reskins_dialog_with_new_accent(qapp):
