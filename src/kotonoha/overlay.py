@@ -29,6 +29,7 @@ from .clock import MediaClock
 from .config import Config
 from .icons import lock_icon, settings_icon
 from .karaoke_label import KaraokeLabel
+from .lyrics.hanzi_fold import convert_script
 from .model import EMPTY_SNAPSHOT, LyricLine, LyricsSnapshot
 from .native import LayerShellController, default_package_dir
 from .state import LyricsState
@@ -295,21 +296,38 @@ class LyricsOverlay(QWidget):
             return
 
         self._container.setVisible(True)
-        self._prev_label.setText(snapshot.previous.text if snapshot.previous else "")
-        self._next_label.setText(snapshot.next.text if snapshot.next else "")
-        self._current.set_line(snapshot.current, snapshot.word_karaoke)
+        current = self._convert_line(snapshot.current)
+        previous = self._convert_line(snapshot.previous)
+        next_line = self._convert_line(snapshot.next)
+        self._prev_label.setText(previous.text if previous else "")
+        self._next_label.setText(next_line.text if next_line else "")
+        self._current.set_line(current, snapshot.word_karaoke)
 
-        if self._config.show_translation and snapshot.current.translation:
+        if self._config.show_translation and current.translation:
             # Reuse the current line's time range so the translation sweeps in sync.
-            trans_line = replace(
-                snapshot.current, text=snapshot.current.translation, translation="", words=()
-            )
+            trans_line = replace(current, text=current.translation, translation="", words=())
             self._translation.set_line(trans_line, False)
             self._translation.setVisible(True)
         else:
             self._translation.set_line(None, False)
             self._translation.setVisible(False)
         self._refresh_input_region()
+
+    def _convert_line(self, line: LyricLine | None) -> LyricLine | None:
+        """Convert a line's displayed text to the configured lyric script (簡/繁).
+
+        Display-only: matching and the cache still use the original text. No-op
+        when conversion is off, so playback with conversion disabled is untouched."""
+        target = self._config.lyrics_script
+        if line is None or target == "off":
+            return line
+        words = tuple(replace(word, text=convert_script(word.text, target)) for word in line.words)
+        return replace(
+            line,
+            text=convert_script(line.text, target),
+            translation=convert_script(line.translation, target),
+            words=words,
+        )
 
     def _show_empty(self, snapshot: LyricsSnapshot) -> None:
         self._prev_label.setText("")
@@ -322,9 +340,8 @@ class LyricsOverlay(QWidget):
             # Show the now-playing title in the main line at full size (it used to
             # go in the tiny translation label, which read as uncomfortably small).
             # end far in the future so it stays un-swept (plain) while idle.
-            title_line = LyricLine(
-                index=0, id="title", start=0.0, end=1e9, text=f"♪ {snapshot.title}{artist}", translation="", words=()
-            )
+            text = convert_script(f"♪ {snapshot.title}{artist}", self._config.lyrics_script)
+            title_line = LyricLine(index=0, id="title", start=0.0, end=1e9, text=text, translation="", words=())
             self._current.set_line(title_line, False)
         else:
             self._current.set_line(None, False)

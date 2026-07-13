@@ -23,6 +23,11 @@ def test_panel_accent_tint_roundtrips(tmp_path):
     assert load_config(path).panel_accent_tint is True
 
 
+def test_lyrics_script_clamps_unknown_to_off():
+    assert Config(lyrics_script="zh-Hant").clamped().lyrics_script == "zh-Hant"
+    assert Config(lyrics_script="bogus").clamped().lyrics_script == "off"
+
+
 def test_missing_file_returns_defaults(tmp_path):
     cfg = load_config(tmp_path / "nope.json")
     assert cfg == Config()

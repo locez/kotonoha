@@ -252,6 +252,20 @@ class SettingsDialog(QDialog):
         self._ui_language.setCurrentIndex(idx if idx >= 0 else 0)
         form.addRow(t("set.language"), self._ui_language)
         form.addRow(self._hint(t("set.language_hint")))
+
+        # Display-side 簡/繁 conversion of the shown lyrics (independent of UI language).
+        self._lyrics_script = QComboBox()
+        for value, key in (
+            ("off", "lyricscript.off"),
+            ("zh-Hans", "lyricscript.hans"),
+            ("zh-Hant", "lyricscript.hant"),
+        ):
+            self._lyrics_script.addItem(t(key), value)
+        script_idx = self._lyrics_script.findData(self._config.lyrics_script)
+        self._lyrics_script.setCurrentIndex(script_idx if script_idx >= 0 else 0)
+        form.addRow(t("set.lyrics_script"), self._lyrics_script)
+        form.addRow(self._hint(t("set.lyrics_script_hint")))
+
         # Hidden until the language selection differs from what is running; the UI
         # is only rebuilt on restart, so offer to do it right here.
         self._restart_btn = QPushButton(t("btn.restart"))
@@ -470,6 +484,7 @@ class SettingsDialog(QDialog):
         return replace(
             self._config,
             ui_language=str(self._ui_language.currentData()),
+            lyrics_script=str(self._lyrics_script.currentData()),
             icon_name=icon_name,
             font_size=self._font_size.value(),
             opacity=self._opacity.value() / 100.0,

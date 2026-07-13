@@ -72,6 +72,24 @@ def test_panel_visibility_follows_style_not_lock(qapp):
     qapp.processEvents()
 
 
+def test_lyric_script_converts_displayed_line(qapp):
+    from kotonoha.model import LyricLine, LyricWord
+
+    line = LyricLine(0, "L", 0.0, 3.0, "简体字", translation="翻译", words=(LyricWord(0.0, 1.0, "简"),))
+    converted = LyricsOverlay(
+        LyricsState(), Config(lyrics_script="zh-Hant"), UnavailableController()
+    )
+    out = converted._convert_line(line)
+    assert out.text == "簡體字"  # display converted to Traditional
+    assert out.words[0].text == "簡"  # words converted too (for the karaoke sweep)
+    off = LyricsOverlay(LyricsState(), Config(lyrics_script="off"), UnavailableController())
+    assert off._convert_line(line) is line  # untouched when disabled
+    for overlay in (converted, off):
+        overlay._render_timer.stop()
+        overlay.deleteLater()
+    qapp.processEvents()
+
+
 def test_accent_tinted_black_panel_uses_accent_hue(qapp):
     from PyQt6.QtGui import QColor
 

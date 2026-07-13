@@ -173,6 +173,14 @@ def test_normalize_folds_traditional_to_simplified():
     assert normalize("愛情轉移") == normalize("爱情转移")
 
 
+def test_convert_script_both_directions():
+    from kotonoha.lyrics.hanzi_fold import convert_script
+
+    assert convert_script("李荣浩", "zh-Hant") == "李榮浩"
+    assert convert_script("李榮浩", "zh-Hans") == "李荣浩"
+    assert convert_script("李荣浩", "off") == "李荣浩"  # no-op when disabled
+
+
 def test_traditional_track_matches_simplified_netease_candidate():
     # zh-Hant browser reports 麻雀 / 李榮浩; Netease lists 简体 麻雀 / 李荣浩.
     track = TrackMetadata("麻雀", "李榮浩", "", None)
