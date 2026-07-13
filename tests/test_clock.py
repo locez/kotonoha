@@ -83,11 +83,41 @@ def test_pause_detected_when_time_stops_advancing():
     clock.sync(media_time=30.0, playing=True)
     fake.t += 1.0
     clock.sync(media_time=31.0, playing=True)
-    fake.t += 1.0
-    clock.sync(media_time=31.0, playing=True)  # time did not move -> frozen
+    # A brief stall is tolerated (coarse Position), but once it exceeds the grace
+    # window the clock treats it as a real pause and freezes.
+    fake.t += 2.0
+    clock.sync(media_time=31.0, playing=True)
     assert clock.playing is False
+    frozen = clock.now()
     fake.t += 5.0
-    assert clock.now() == 31.0
+    assert clock.now() == frozen  # stays put once paused
+
+
+def test_coarse_position_stall_keeps_flowing_without_rollback():
+    # PBI updates Position ~0.26s while we poll 0.2s, so some polls repeat the
+    # same value. The sweep must keep moving forward and never jump back to the
+    # stale report or freeze mid-line.
+    fake = FakeMonotonic()
+    clock = MediaClock(monotonic=fake)
+    clock.sync(media_time=10.0, playing=True)
+    previous = clock.now()
+    for _ in range(4):  # ~0.8s of stalled reports
+        fake.t += 0.2
+        clock.sync(media_time=10.0, playing=True)
+        current = clock.now()
+        assert current >= previous  # never rolls backward
+        previous = current
+    assert clock.now() > 10.5  # kept interpolating forward through the stall
+    assert clock.playing is True  # a brief coarse stall is not a pause
+
+
+def test_lagging_report_does_not_roll_the_sweep_back():
+    fake = FakeMonotonic()
+    clock = MediaClock(monotonic=fake)
+    clock.sync(media_time=10.0, playing=True)
+    fake.t += 0.5  # estimate ~10.5
+    clock.sync(media_time=10.2, playing=True)  # advanced, but still behind estimate
+    assert clock.now() >= 10.5  # stayed forward, did not snap back to 10.2
 
 
 def test_sync_without_media_time_is_noop():
