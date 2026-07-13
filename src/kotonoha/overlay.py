@@ -297,6 +297,7 @@ class LyricsOverlay(QWidget):
 
         self._container.setVisible(True)
         current = self._convert_line(snapshot.current)
+        assert current is not None  # snapshot.current is non-None here (checked above)
         previous = self._convert_line(snapshot.previous)
         next_line = self._convert_line(snapshot.next)
         self._prev_label.setText(previous.text if previous else "")
