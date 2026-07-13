@@ -72,6 +72,22 @@ def test_panel_visibility_follows_style_not_lock(qapp):
     qapp.processEvents()
 
 
+def test_accent_tinted_black_panel_uses_accent_hue(qapp):
+    from PyQt6.QtGui import QColor
+
+    overlay = LyricsOverlay(
+        LyricsState(),
+        Config(panel_style="pill", panel_accent_tint=True, accent_start="#FF4FA3"),
+        UnavailableController(),
+    )
+    colour = overlay._panel_base_color()
+    assert colour != QColor(15, 17, 22)  # not the flat near-black
+    assert colour.red() > colour.blue()  # tinted toward the pink accent
+    overlay._render_timer.stop()
+    overlay.deleteLater()
+    qapp.processEvents()
+
+
 def test_frosted_panel_paints_and_keeps_window_opaque(qapp):
     overlay = LyricsOverlay(
         LyricsState(), Config(panel_style="frost", opacity=0.6), UnavailableController()

@@ -28,10 +28,15 @@ DEFAULT_LYRICS_SOURCES = ["netease", "lrclib", "cider"]
 # (see strings.py "accent.*"); the first entry is the default pink.
 ACCENT_PRESETS: tuple[tuple[str, str, str, str], ...] = (
     ("pink", "#FF4FA3", "#FF8FCB", "#FF6EC7"),
-    ("cyan", "#4FACFE", "#00F2FE", "#38E1FF"),
-    ("purple", "#B14FFF", "#E29BFF", "#C97BFF"),
-    ("green", "#34E89E", "#A7F3D0", "#5BF0B0"),
+    ("red", "#FF5A5F", "#FF9AA0", "#FF7B80"),
     ("orange", "#FF8A4F", "#FFC58F", "#FFA56E"),
+    ("yellow", "#F5C542", "#FFE08A", "#FFD166"),
+    ("green", "#34E89E", "#A7F3D0", "#5BF0B0"),
+    ("teal", "#2DD4BF", "#99F6E4", "#5EEAD4"),
+    ("cyan", "#4FACFE", "#00F2FE", "#38E1FF"),
+    ("blue", "#5B8DEF", "#A9C6FF", "#7AA7FF"),
+    ("purple", "#B14FFF", "#E29BFF", "#C97BFF"),
+    ("white", "#EDEFF5", "#FFFFFF", "#F6F8FF"),
 )
 
 DEFAULT_ICON_NAME = "default"
@@ -49,7 +54,8 @@ class Config:
     font_family: str = "Inter, 'Segoe UI', 'Microsoft YaHei', sans-serif"
     font_size: int = 24             # current-line size (px)
     opacity: float = 1.0            # whole-window opacity 0.3..1.0
-    panel_style: str = "pill"        # "pill" (glass) | "frost" (frosted glass) | "text" (no panel)
+    panel_style: str = "pill"        # "pill" (black) | "frost" (frosted glass) | "text" (no panel)
+    panel_accent_tint: bool = False  # tint the black panel toward the accent colour
     icon_name: str = DEFAULT_ICON_NAME
     # Behaviour
     passthrough: bool = False        # start unlocked (interactive) so first-run positioning is easy
@@ -76,6 +82,7 @@ class Config:
             font_size=_clamp_int(self.font_size, 8, 200, 24),
             opacity=_clamp_float(self.opacity, 0.3, 1.0, 1.0),
             panel_style=self.panel_style if self.panel_style in ("pill", "frost", "text") else "pill",
+            panel_accent_tint=bool(self.panel_accent_tint),
             icon_name=_clean_icon_name(self.icon_name),
             passthrough=bool(self.passthrough),
             karaoke=bool(self.karaoke),

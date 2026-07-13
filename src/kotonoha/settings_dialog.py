@@ -16,6 +16,7 @@ from PyQt6.QtGui import QColor, QIcon, QMouseEvent, QPainter, QPaintEvent, QPen,
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
+    QColorDialog,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -316,6 +317,10 @@ class SettingsDialog(QDialog):
         self._panel.setCurrentIndex(panel_index if panel_index >= 0 else 0)
         form.addRow(t("set.panel_style"), self._panel)
 
+        self._panel_tint = QCheckBox(t("set.panel_tint"))
+        self._panel_tint.setChecked(c.panel_accent_tint)
+        form.addRow(self._panel_tint)
+
         self._accent = QComboBox()
         matched = False
         for key, start, end, sweep in ACCENT_PRESETS:
@@ -326,8 +331,27 @@ class SettingsDialog(QDialog):
         if not matched:
             self._accent.addItem(t("set.accent.custom"), (c.accent_start, c.accent_end, c.accent_sweep))
             self._accent.setCurrentIndex(self._accent.count() - 1)
+        # A trailing picker entry (data=None) opens a full colour picker.
+        self._accent.addItem(t("set.accent.pick"), None)
+        self._accent_last_index = self._accent.currentIndex()
+        self._accent.activated.connect(self._on_accent_activated)
         form.addRow(t("set.accent"), self._accent)
         return page
+
+    def _on_accent_activated(self, index: int) -> None:
+        if self._accent.itemData(index) is not None:
+            self._accent_last_index = index  # a preset / existing custom entry
+            return
+        # The "Custom…" entry: pick a colour and derive the gradient + sweep from it.
+        chosen = QColorDialog.getColor(QColor(self._config.accent_start), self, t("set.accent"))
+        if not chosen.isValid():
+            self._accent.setCurrentIndex(self._accent_last_index)  # cancelled -> revert
+            return
+        triple = (chosen.name(), chosen.lighter(140).name(), chosen.lighter(120).name())
+        insert_at = self._accent.count() - 1  # keep the picker entry last
+        self._accent.insertItem(insert_at, t("set.accent.custom"), triple)
+        self._accent.setCurrentIndex(insert_at)
+        self._accent_last_index = insert_at
 
     def _lyrics_tab(self) -> QWidget:
         c = self._config
@@ -433,7 +457,10 @@ class SettingsDialog(QDialog):
         return spin
 
     def current_config(self) -> Config:
-        accent_start, accent_end, accent_sweep = self._accent.currentData()
+        accent_data = self._accent.currentData()
+        if accent_data is None:  # the picker entry left selected — keep the current accent
+            accent_data = (self._config.accent_start, self._config.accent_end, self._config.accent_sweep)
+        accent_start, accent_end, accent_sweep = accent_data
         icon_item = self._icon_list.currentItem()
         icon_name = (
             str(icon_item.data(Qt.ItemDataRole.UserRole))
@@ -447,6 +474,7 @@ class SettingsDialog(QDialog):
             font_size=self._font_size.value(),
             opacity=self._opacity.value() / 100.0,
             panel_style=str(self._panel.currentData()),
+            panel_accent_tint=self._panel_tint.isChecked(),
             accent_start=accent_start,
             accent_end=accent_end,
             accent_sweep=accent_sweep,

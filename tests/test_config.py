@@ -17,6 +17,12 @@ def test_frost_panel_style_survives_clamp():
     assert Config(panel_style="bogus").clamped().panel_style == "pill"
 
 
+def test_panel_accent_tint_roundtrips(tmp_path):
+    path = tmp_path / "c.json"
+    save_config(Config(panel_accent_tint=True), path)
+    assert load_config(path).panel_accent_tint is True
+
+
 def test_missing_file_returns_defaults(tmp_path):
     cfg = load_config(tmp_path / "nope.json")
     assert cfg == Config()

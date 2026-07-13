@@ -73,6 +73,15 @@ def test_apply_reskins_dialog_with_new_accent(qapp):
     dialog.close()
 
 
+def test_accent_has_custom_picker_and_panel_tint_roundtrips(qapp):
+    dialog = SettingsDialog(Config(panel_accent_tint=True))
+    # A trailing "Custom…" picker entry (data None) is present.
+    assert any(dialog._accent.itemData(i) is None for i in range(dialog._accent.count()))
+    assert dialog._panel_tint.isChecked() is True
+    assert dialog.current_config().panel_accent_tint is True
+    dialog.close()
+
+
 def test_panel_style_has_frosted_option_and_roundtrips(qapp):
     dialog = SettingsDialog(Config(panel_style="frost"))
     assert dialog._panel.count() == 3  # glass / frosted / text
