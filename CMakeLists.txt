@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(kotonoha_native_bridge LANGUAGES CXX)
+project(kotonoha_native_bridge LANGUAGES C CXX)
 
 include(GNUInstallDirs)
 find_package(PkgConfig REQUIRED)
@@ -9,6 +9,31 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui)
 find_package(Qt6GuiPrivate REQUIRED)
 find_package(LayerShellQt CONFIG REQUIRED)
 pkg_check_modules(WaylandClient REQUIRED IMPORTED_TARGET wayland-client)
+
+# Optional: generate client bindings for the KWin blur protocol (frosted-glass
+# panel) when wayland-scanner is available. The protocol XML is vendored so no
+# plasma-wayland-protocols dependency is needed; when the tool is absent the
+# bridge still builds and blur is simply a no-op, so packaging never breaks.
+find_program(WAYLAND_SCANNER wayland-scanner)
+set(KOTONOHA_BLUR_SOURCES "")
+if(WAYLAND_SCANNER)
+  set(KOTONOHA_BLUR_XML "${CMAKE_CURRENT_SOURCE_DIR}/src/kotonoha/protocols/blur.xml")
+  set(KOTONOHA_BLUR_HEADER "${CMAKE_CURRENT_BINARY_DIR}/blur-client-protocol.h")
+  set(KOTONOHA_BLUR_CODE "${CMAKE_CURRENT_BINARY_DIR}/blur-protocol.c")
+  add_custom_command(
+    OUTPUT "${KOTONOHA_BLUR_HEADER}"
+    COMMAND "${WAYLAND_SCANNER}" client-header "${KOTONOHA_BLUR_XML}" "${KOTONOHA_BLUR_HEADER}"
+    DEPENDS "${KOTONOHA_BLUR_XML}"
+    VERBATIM
+  )
+  add_custom_command(
+    OUTPUT "${KOTONOHA_BLUR_CODE}"
+    COMMAND "${WAYLAND_SCANNER}" private-code "${KOTONOHA_BLUR_XML}" "${KOTONOHA_BLUR_CODE}"
+    DEPENDS "${KOTONOHA_BLUR_XML}"
+    VERBATIM
+  )
+  set(KOTONOHA_BLUR_SOURCES "${KOTONOHA_BLUR_HEADER}" "${KOTONOHA_BLUR_CODE}")
+endif()
 
 execute_process(
   COMMAND
@@ -36,8 +61,12 @@ option(
   ON
 )
 
-add_library(koto-layer SHARED src/kotonoha/layer_shell_bridge.cpp)
+add_library(koto-layer SHARED src/kotonoha/layer_shell_bridge.cpp ${KOTONOHA_BLUR_SOURCES})
+target_include_directories(koto-layer PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 target_compile_features(koto-layer PRIVATE cxx_std_17)
+if(WAYLAND_SCANNER)
+  target_compile_definitions(koto-layer PRIVATE KOTONOHA_HAVE_BLUR)
+endif()
 set_target_properties(
   koto-layer
   PROPERTIES

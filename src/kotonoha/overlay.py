@@ -229,6 +229,7 @@ class LyricsOverlay(QWidget):
         self._update_chrome()
         self._apply_window_geometry()
         self.update()
+        QTimer.singleShot(0, self._apply_blur)  # panel_style may have changed
 
     # --- geometry (fixed-size, margin-positioned panel) ---
 
@@ -378,6 +379,7 @@ class LyricsOverlay(QWidget):
             self._controller.make_overlay(ptr)
             self._controller.set_anchor_position(ptr, self._layer_pos.x(), self._layer_pos.y())
             self._apply_input_region()
+            self._apply_blur()
         else:
             self._fallback_position()
 
@@ -412,6 +414,18 @@ class LyricsOverlay(QWidget):
         if not self._passthrough:
             QTimer.singleShot(0, self._apply_input_region)
 
+    def _apply_blur(self) -> None:
+        """Blur the compositor content behind the pill for the frosted-glass style
+        (KWin backdrop-blur); no-op elsewhere, where the translucent fill remains."""
+        ptr = self._window_ptr()
+        if ptr is None or not self._controller.available:
+            return
+        if self._config.panel_style == "frost":
+            rect = self._container.geometry()
+            self._controller.set_blur_region(ptr, rect.x(), rect.y(), rect.width(), rect.height())
+        else:
+            self._controller.clear_blur(ptr)
+
     def eventFilter(self, a0: QObject | None, a1: QEvent | None) -> bool:
         # The container resizes as the pill/lyric changes size; keep the input
         # region matched to it. This fixes the initially oversized region before
@@ -424,6 +438,7 @@ class LyricsOverlay(QWidget):
                 self.update()
             if a1.type() == QEvent.Type.Resize:
                 self._refresh_input_region()
+                QTimer.singleShot(0, self._apply_blur)  # keep the blur region on the pill
         return super().eventFilter(a0, a1)
 
     # --- drag to reposition (only while unlocked) ---
@@ -515,7 +530,10 @@ class LyricsOverlay(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         color = self._panel_base_color()
-        color.setAlpha(self._panel_alpha())
+        alpha = self._panel_alpha()
+        if self._config.panel_style == "frost":
+            alpha = min(alpha, 165)  # stay translucent so the KWin backdrop-blur shows through
+        color.setAlpha(alpha)
         painter.setBrush(color)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRoundedRect(self._container.geometry(), PILL_RADIUS, PILL_RADIUS)

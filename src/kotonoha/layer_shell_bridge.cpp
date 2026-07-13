@@ -22,6 +22,49 @@
 #include <qpa/qplatformnativeinterface.h>
 #include <wayland-client.h>
 
+#ifdef KOTONOHA_HAVE_BLUR
+#include <cstring>
+
+#include "blur-client-protocol.h"
+
+
+namespace {
+    // KWin blur ("org_kde_kwin_blur") for the frosted-glass panel. Bound lazily
+    // from the registry; absent on non-KWin compositors, where blur is a no-op.
+    struct org_kde_kwin_blur_manager* g_blur_manager = nullptr;
+    struct org_kde_kwin_blur* g_blur = nullptr;  // one overlay window -> one blur object
+    bool g_blur_probed = false;
+
+    void registry_global(void*, struct wl_registry* registry, uint32_t name,
+                         const char* interface, uint32_t /*version*/) {
+        if (std::strcmp(interface, "org_kde_kwin_blur_manager") == 0) {
+            g_blur_manager = static_cast<struct org_kde_kwin_blur_manager*>(
+                wl_registry_bind(registry, name, &org_kde_kwin_blur_manager_interface, 1));
+        }
+    }
+    void registry_global_remove(void*, struct wl_registry*, uint32_t) {}
+    const struct wl_registry_listener kRegistryListener = {registry_global, registry_global_remove};
+
+    struct wl_compositor* get_compositor(QPlatformNativeInterface* native) {
+        struct wl_compositor* c = (struct wl_compositor*)native->nativeResourceForIntegration("compositor");
+        if (!c) c = (struct wl_compositor*)native->nativeResourceForIntegration("wl_compositor");
+        return c;
+    }
+
+    struct org_kde_kwin_blur_manager* blur_manager(QPlatformNativeInterface* native) {
+        if (g_blur_probed) return g_blur_manager;
+        g_blur_probed = true;
+        struct wl_display* display = (struct wl_display*)native->nativeResourceForIntegration("wl_display");
+        if (!display) display = (struct wl_display*)native->nativeResourceForIntegration("display");
+        if (!display) return nullptr;
+        struct wl_registry* registry = wl_display_get_registry(display);
+        wl_registry_add_listener(registry, &kRegistryListener, nullptr);
+        wl_display_roundtrip(display);  // process global advertisements so the bind lands
+        return g_blur_manager;
+    }
+}  // namespace
+#endif  // KOTONOHA_HAVE_BLUR
+
 
 extern "C" {
     void make_overlay(void* window_ptr) {
@@ -123,6 +166,61 @@ extern "C" {
             wl_region_destroy(region);
             wl_surface_commit(surface);
         }
+    }
+
+    // Ask KWin to blur whatever is behind the pill rectangle (frosted glass).
+    // No-op on compositors without the blur protocol; the translucent fill still
+    // renders, so the panel just isn't blurred there.
+    void set_blur_region(void* window_ptr, int x, int y, int w, int h) {
+#ifndef KOTONOHA_HAVE_BLUR
+        (void)window_ptr; (void)x; (void)y; (void)w; (void)h;  // built without the blur protocol
+#else
+        if (!window_ptr) return;
+        QWindow* window = static_cast<QWindow*>(window_ptr);
+        QPlatformNativeInterface* native = QGuiApplication::platformNativeInterface();
+        if (!native) return;
+        struct wl_surface* surface = (struct wl_surface*)native->nativeResourceForWindow("surface", window);
+        if (!surface) return;
+        struct org_kde_kwin_blur_manager* manager = blur_manager(native);
+        if (!manager) return;
+
+        // Replace any previous blur for this surface before setting the new region.
+        if (g_blur) {
+            org_kde_kwin_blur_release(g_blur);
+            g_blur = nullptr;
+        }
+        g_blur = org_kde_kwin_blur_manager_create(manager, surface);
+        struct wl_compositor* compositor = get_compositor(native);
+        if (compositor) {
+            struct wl_region* region = wl_compositor_create_region(compositor);
+            wl_region_add(region, x, y, w, h);
+            org_kde_kwin_blur_set_region(g_blur, region);
+            wl_region_destroy(region);
+        }
+        org_kde_kwin_blur_commit(g_blur);  // keep g_blur alive so the effect persists
+        wl_surface_commit(surface);
+#endif  // KOTONOHA_HAVE_BLUR
+    }
+
+    void clear_blur(void* window_ptr) {
+#ifndef KOTONOHA_HAVE_BLUR
+        (void)window_ptr;  // built without the blur protocol
+#else
+        if (!window_ptr) return;
+        QWindow* window = static_cast<QWindow*>(window_ptr);
+        QPlatformNativeInterface* native = QGuiApplication::platformNativeInterface();
+        if (!native) return;
+        struct wl_surface* surface = (struct wl_surface*)native->nativeResourceForWindow("surface", window);
+        if (!surface) return;
+        struct org_kde_kwin_blur_manager* manager = blur_manager(native);
+        if (!manager) return;
+        if (g_blur) {
+            org_kde_kwin_blur_release(g_blur);
+            g_blur = nullptr;
+        }
+        org_kde_kwin_blur_manager_unset(manager, surface);
+        wl_surface_commit(surface);
+#endif  // KOTONOHA_HAVE_BLUR
     }
 
     void set_keyboard_interactivity(void* window_ptr, bool enabled) {
