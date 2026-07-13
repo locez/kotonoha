@@ -56,6 +56,22 @@ def test_untimed_word_does_not_freeze_sweep(qapp):
     qapp.processEvents()
 
 
+def test_panel_visibility_follows_style_not_lock(qapp):
+    # Locking must not force-hide the panel; that is the panel-style setting's job.
+    locked_pill = LyricsOverlay(
+        LyricsState(), Config(passthrough=True, panel_style="pill"), UnavailableController()
+    )
+    assert locked_pill._should_paint_panel() is True  # Glass panel stays while locked
+    locked_text = LyricsOverlay(
+        LyricsState(), Config(passthrough=True, panel_style="text"), UnavailableController()
+    )
+    assert locked_text._should_paint_panel() is False  # Text-only is immersive
+    for overlay in (locked_pill, locked_text):
+        overlay._render_timer.stop()
+        overlay.deleteLater()
+    qapp.processEvents()
+
+
 def test_panel_alpha_tracks_opacity(qapp):
     overlay = LyricsOverlay(
         LyricsState(),

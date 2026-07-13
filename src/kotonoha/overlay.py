@@ -176,11 +176,11 @@ class LyricsOverlay(QWidget):
         self._lock_btn.setToolTip(t("overlay.locked") if self._passthrough else t("overlay.unlocked"))
 
     def _update_chrome(self) -> None:
-        """Locked = immersive (text only): hide controls and the pill background.
-
-        Unlocked = editable: show the control bar and pill so it can be grabbed."""
+        """Locking only hides the interactive controls (you can't click them once
+        the surface is click-through). The panel background is governed by the
+        panel-style setting, NOT the lock state — see paintEvent."""
         self._control_bar.setVisible(not self._passthrough)
-        self.update()  # repaint to add/drop the pill background
+        self.update()  # repaint in case the control bar changed the pill size
 
     def _make_context_label(self) -> QLabel:
         label = QLabel("")
@@ -492,8 +492,7 @@ class LyricsOverlay(QWidget):
     # --- painting ---
 
     def paintEvent(self, a0: QPaintEvent | None) -> None:  # noqa: ARG002
-        # Locked -> immersive, no background. Unlocked -> pill so it's grabbable.
-        if self._passthrough or self._config.panel_style != "pill":
+        if not self._should_paint_panel():
             return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -501,6 +500,13 @@ class LyricsOverlay(QWidget):
         painter.setPen(Qt.PenStyle.NoPen)
         rect = self._container.geometry()
         painter.drawRoundedRect(rect, PILL_RADIUS, PILL_RADIUS)
+
+    def _should_paint_panel(self) -> bool:
+        """The background panel follows the panel-style setting, decoupled from the
+        lock state: "Glass panel" stays visible (with its opacity) even when locked;
+        "Text only" is the immersive, text-only mode. Locking only toggles
+        click-through, so it no longer silently drops the panel to nothing."""
+        return self._config.panel_style == "pill"
 
     def _panel_alpha(self) -> int:
         """Pill fill opacity from the Opacity slider: 100% -> solid, 30% -> faint.
