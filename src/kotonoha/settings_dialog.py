@@ -334,6 +334,7 @@ class SettingsDialog(QDialog):
         self._panel_tint = QCheckBox(t("set.panel_tint"))
         self._panel_tint.setChecked(c.panel_accent_tint)
         form.addRow(self._panel_tint)
+        form.addRow(self._hint(t("set.panel_hint")))
 
         self._accent = QComboBox()
         self._custom_index = -1  # single reusable slot for a picked colour

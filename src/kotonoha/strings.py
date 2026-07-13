@@ -63,6 +63,13 @@ STRINGS: dict[str, dict[str, str]] = {
     "set.panel.text": {"en": "No panel", "zh-Hans": "无面板", "zh-Hant": "無面板", "ja": "パネルなし"},
     "set.panel_tint": {"en": "Panel follows accent colour", "zh-Hans": "面板颜色跟随强调色",
                        "zh-Hant": "面板顏色跟隨強調色", "ja": "パネル色をアクセントに追従"},
+    "set.panel_hint": {
+        "en": "Frosted glass needs KWin/KDE; elsewhere it falls back to a translucent panel. "
+              "Below 50% opacity the blur drops so the panel turns see-through.",
+        "zh-Hans": "毛玻璃需要 KWin/KDE 桌面；其他环境回退为半透明面板。低于 50% 不透明度会去掉模糊，面板变透明。",
+        "zh-Hant": "毛玻璃需要 KWin/KDE 桌面；其他環境回退為半透明面板。低於 50% 不透明度會去掉模糊，面板變透明。",
+        "ja": "すりガラスは KWin/KDE が必要（他環境では半透明パネルに）。不透明度 50% 未満でぼかしを外し透明に。",
+    },
     "set.accent": {"en": "Accent color", "zh-Hans": "强调色", "zh-Hant": "強調色", "ja": "アクセント色"},
     "set.accent.custom": {"en": "Custom", "zh-Hans": "自定义", "zh-Hant": "自訂", "ja": "カスタム"},
     "accent.pink": {"en": "Pink", "zh-Hans": "粉", "zh-Hant": "粉紅", "ja": "ピンク"},

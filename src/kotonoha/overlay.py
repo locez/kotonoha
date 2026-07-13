@@ -40,6 +40,10 @@ logger = logging.getLogger(__name__)
 RENDER_INTERVAL_MS = 16  # ~60fps
 CONTROL_ICON_COLOR = "#9AA0A6"  # soft grey so the lock/gear don't glare against the panel
 PILL_RADIUS = 16  # corner radius shared by the pill paint and the input region
+# Below this opacity the frosted panel drops its blur and becomes a plain
+# translucent panel, so the opacity slider visibly opens the panel up (low =
+# see-through, high = frosted) instead of always looking blurred.
+FROST_BLUR_MIN_OPACITY = 0.5
 
 
 CONTROL_BUTTON_STYLE = """
@@ -420,7 +424,7 @@ class LyricsOverlay(QWidget):
         ptr = self._window_ptr()
         if ptr is None or not self._controller.available:
             return
-        if self._config.panel_style == "frost":
+        if self._config.panel_style == "frost" and self._config.opacity >= FROST_BLUR_MIN_OPACITY:
             rect = self._container.geometry()
             self._controller.set_blur_region(ptr, rect.x(), rect.y(), rect.width(), rect.height(), PILL_RADIUS)
         else:

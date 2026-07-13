@@ -111,6 +111,26 @@ def test_coarse_position_stall_keeps_flowing_while_playing():
     assert clock.playing is True  # a stall while Playing is never treated as a pause
 
 
+def test_backward_seek_while_paused_is_followed():
+    # Seeking backward while paused reports the new (smaller) time with
+    # playing=False. The clock must follow it, not stay stuck at the old position.
+    fake = FakeMonotonic()
+    clock = MediaClock(monotonic=fake)
+    clock.sync(media_time=100.0, playing=True)
+    fake.t += 2.0
+    clock.sync(media_time=102.0, playing=True)
+    fake.t += 2.0
+    clock.sync(media_time=102.0, playing=False)  # sustained stall while paused -> paused
+    fake.t += 0.5
+    clock.sync(media_time=20.0, playing=False)  # scrub back to 20s while still paused
+
+    assert clock.now() == 20.0  # followed the seek, not stuck near 104
+    fake.t += 0.2
+    clock.sync(media_time=20.2, playing=True)  # resume
+    fake.t += 0.5
+    assert 20.0 <= clock.now() <= 21.5  # plays forward from the seeked position
+
+
 def test_lagging_report_does_not_roll_the_sweep_back():
     fake = FakeMonotonic()
     clock = MediaClock(monotonic=fake)

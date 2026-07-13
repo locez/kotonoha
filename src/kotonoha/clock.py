@@ -96,15 +96,6 @@ class MediaClock:
         # Where the smooth clock is right now, using the play state before this sync.
         running = estimate_media_time(self._anchor_media, self._anchor_wall, now_wall, not self._paused)
 
-        # A large backward jump the player confirms is a seek: snap to it (the one
-        # case the sweep is allowed to move backward).
-        if advanced <= -SNAP_THRESHOLD and playing:
-            self._anchor_media = media_time
-            self._anchor_wall = now_wall
-            self._last_advance_wall = now_wall
-            self._paused = False
-            return
-
         moved = advanced > ADVANCE_EPSILON
         # Stay "playing" while the reported time advances OR the player asserts it
         # is playing. MPRIS PlaybackStatus is reliable when it says Playing, yet
@@ -115,13 +106,21 @@ class MediaClock:
             self._last_advance_wall = now_wall
         self._paused = (now_wall - self._last_advance_wall) >= STALL_GRACE
 
-        if self._paused:
-            # Freeze where the sweep is; never roll back to a lagging report.
+        if advanced <= -SNAP_THRESHOLD:
+            # The reported time jumped backward: a seek. Follow it regardless of the
+            # play state — a backward seek can arrive while paused, and discarding
+            # it would leave the clock permanently desynced. (A stale/coarse report
+            # merely lagging the estimate has advanced ~= 0, so it is not caught
+            # here and does not roll the sweep back.)
+            self._anchor_media = media_time
+        elif media_time - running >= SNAP_THRESHOLD:
+            # Report well ahead of our estimate: a forward seek / we fell behind.
+            self._anchor_media = media_time
+        elif self._paused:
+            # Frozen: hold position; never roll back to a lagging report.
             self._anchor_media = max(media_time, running)
-        elif moved and media_time - running >= SNAP_THRESHOLD:
-            self._anchor_media = media_time  # a real forward jump: catch up
         else:
-            # Absorb small drift and stale/coarse reports without moving backward.
+            # Coarse/stale report that lags the estimate: keep interpolating forward.
             self._anchor_media = max(running, media_time)
         self._anchor_wall = now_wall
 
