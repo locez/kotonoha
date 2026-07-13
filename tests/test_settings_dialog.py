@@ -73,6 +73,28 @@ def test_apply_reskins_dialog_with_new_accent(qapp):
     dialog.close()
 
 
+def test_all_tabs_fit_without_scroll_arrows(qapp):
+    from PyQt6.QtWidgets import QToolButton
+
+    from kotonoha.strings import current_language, set_language
+
+    previous = current_language()
+    set_language("en")  # widest labels -> worst case for fitting the tab row
+    try:
+        dialog = SettingsDialog(Config(ui_language="en"))
+        dialog.show()
+        qapp.processEvents()
+        qapp.processEvents()
+        tab_bar = dialog._tabs.tabBar()
+        assert dialog._tabs.usesScrollButtons() is False
+        assert tab_bar.sizeHint().width() <= dialog._tabs.width()  # every tab fits
+        assert not any(b.isVisible() for b in tab_bar.findChildren(QToolButton))
+        dialog.close()
+    finally:
+        set_language(previous)
+    qapp.processEvents()
+
+
 def test_language_change_reveals_restart_button_and_persists(qapp):
     dialog = SettingsDialog(Config(ui_language="auto"))
     assert dialog._restart_btn.isHidden() is True  # nothing changed yet

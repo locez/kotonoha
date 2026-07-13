@@ -12,7 +12,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QIcon, QMouseEvent, QPainter, QPaintEvent, QPen
+from PyQt6.QtGui import QColor, QIcon, QMouseEvent, QPainter, QPaintEvent, QPen, QShowEvent
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -57,6 +57,9 @@ QTabBar::tab {
 }
 QTabBar::tab:selected { color: #FFFFFF; border-bottom: 2px solid %ACCENT%; }
 QTabBar::tab:hover { color: #FFFFFF; }
+/* The dialog is sized so all tabs fit; never show the tiny scroll arrows. */
+QTabBar::scroller { width: 0px; }
+QTabBar QToolButton { width: 0px; border: none; }
 QLabel { background: transparent; }
 QCheckBox { background: transparent; spacing: 8px; }
 QCheckBox::indicator, QListWidget::indicator {
@@ -152,15 +155,20 @@ class SettingsDialog(QDialog):
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setStyleSheet(_skin(config.accent_start))
-        self.setMinimumWidth(440)
 
-        tabs = QTabWidget()
+        self._tabs = tabs = QTabWidget()
+        # Never fall back to the tiny, unstyled < > scroll arrows; widen the dialog
+        # instead so every tab fits (below).
+        tabs.setUsesScrollButtons(False)
         tabs.addTab(self._general_tab(), t("tab.general"))
         tabs.addTab(self._appearance_tab(), t("tab.appearance"))
         tabs.addTab(self._lyrics_tab(), t("tab.lyrics"))
         tabs.addTab(self._position_tab(), t("tab.position"))
         tabs.addTab(self._sources_tab(), t("tab.sources"))
         tabs.addTab(self._connection_tab(), t("tab.connection"))
+        # Sensible default; the real fit-to-tabs width is applied in showEvent,
+        # where the inherited stylesheet metrics are finally active.
+        self.setMinimumWidth(520)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok
@@ -220,6 +228,16 @@ class SettingsDialog(QDialog):
                 a0.accept()
                 return
         super().mousePressEvent(a0)
+
+    def showEvent(self, a0: QShowEvent | None) -> None:
+        super().showEvent(a0)
+        # Only now is the tab bar styled and measured, so widen the dialog to fit
+        # every tab (in whatever language) — the tiny < > scroll arrows never appear.
+        needed = self._tabs.tabBar().sizeHint().width() + 52
+        if self.minimumWidth() < needed:
+            self.setMinimumWidth(needed)
+        if self.width() < needed:
+            self.resize(needed, self.height())
 
     # --- tabs ---
 
