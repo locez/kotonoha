@@ -73,6 +73,28 @@ def test_apply_reskins_dialog_with_new_accent(qapp):
     dialog.close()
 
 
+def test_language_change_reveals_restart_button_and_persists(qapp):
+    dialog = SettingsDialog(Config(ui_language="auto"))
+    assert dialog._restart_btn.isHidden() is True  # nothing changed yet
+
+    dialog._ui_language.setCurrentIndex(dialog._ui_language.findData("ja"))
+    assert dialog._restart_btn.isHidden() is False  # a different language -> offer restart
+
+    restarts: list[bool] = []
+    applied: list[Config] = []
+    dialog.restart_requested.connect(lambda: restarts.append(True))
+    dialog.applied.connect(applied.append)
+    dialog._restart_btn.click()
+
+    assert restarts == [True]
+    assert applied and applied[-1].ui_language == "ja"  # persisted before relaunch
+
+    # Reverting to the running language hides it again.
+    dialog._ui_language.setCurrentIndex(dialog._ui_language.findData("auto"))
+    assert dialog._restart_btn.isHidden() is True
+    dialog.close()
+
+
 def test_icon_picker_shows_preview_only_and_updates_config(qapp):
     dialog = SettingsDialog(Config(icon_name="leaf-pink.svg"))
 

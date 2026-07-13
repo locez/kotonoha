@@ -9,7 +9,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import sqlite3
+import sys
 
+from PyQt6.QtCore import QProcess
 from PyQt6.QtWidgets import QApplication
 
 from .config import Config, save_config
@@ -122,12 +124,21 @@ class AppController:
         dialog = SettingsDialog(self._config)
         dialog.applied.connect(self._apply_config)
         dialog.clear_cache_requested.connect(self._clear_lyrics_cache)
+        dialog.restart_requested.connect(self._restart)
         dialog.finished.connect(lambda _: self._clear_dialog())
         self._settings_dialog = dialog
         dialog.show()
 
     def _clear_dialog(self) -> None:
         self._settings_dialog = None
+
+    def _restart(self) -> None:
+        # Relaunch via `python -m kotonoha` so it works whether we were started as
+        # the `kotonoha` console script or with `-m`, preserving the CLI args, then
+        # quit this instance so its shutdown runs cleanly and the port is released.
+        QProcess.startDetached(sys.executable, ["-m", "kotonoha", *sys.argv[1:]])
+        logger.info("Restarting to apply settings")
+        self._app.quit()
 
     def _apply_config(self, config: Config) -> None:
         previous_language = resolve_translation_language(self._config.translation_language)

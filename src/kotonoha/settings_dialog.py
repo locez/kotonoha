@@ -141,10 +141,14 @@ def _skin(accent: str) -> str:
 class SettingsDialog(QDialog):
     applied = pyqtSignal(object)  # emits Config
     clear_cache_requested = pyqtSignal()
+    restart_requested = pyqtSignal()
 
     def __init__(self, config: Config, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._config = config
+        # The UI language only takes effect on restart, so remember what is in
+        # effect now to decide when to offer the restart button.
+        self._initial_ui_language = config.ui_language
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setStyleSheet(_skin(config.accent_start))
@@ -229,7 +233,22 @@ class SettingsDialog(QDialog):
         self._ui_language.setCurrentIndex(idx if idx >= 0 else 0)
         form.addRow(t("set.language"), self._ui_language)
         form.addRow(self._hint(t("set.language_hint")))
+        # Hidden until the language selection differs from what is running; the UI
+        # is only rebuilt on restart, so offer to do it right here.
+        self._restart_btn = QPushButton(t("btn.restart"))
+        self._restart_btn.setVisible(False)
+        self._restart_btn.clicked.connect(self._request_restart)
+        form.addRow(self._restart_btn)
+        # Connect after the button exists so the handler never runs before it.
+        self._ui_language.currentIndexChanged.connect(self._update_restart_hint)
         return page
+
+    def _update_restart_hint(self) -> None:
+        self._restart_btn.setVisible(self._ui_language.currentData() != self._initial_ui_language)
+
+    def _request_restart(self) -> None:
+        self._emit()  # persist the new language before relaunching
+        self.restart_requested.emit()
 
     def _appearance_tab(self) -> QWidget:
         c = self._config

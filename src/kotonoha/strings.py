@@ -127,6 +127,8 @@ STRINGS: dict[str, dict[str, str]] = {
     "set.language": {"en": "Language", "zh-Hans": "语言", "zh-Hant": "語言", "ja": "言語"},
     "set.language_hint": {"en": "Takes effect after restart.", "zh-Hans": "重启后生效。",
                           "zh-Hant": "重啟後生效。", "ja": "再起動後に反映されます。"},
+    "btn.restart": {"en": "Restart now", "zh-Hans": "立即重启",
+                    "zh-Hant": "立即重啟", "ja": "今すぐ再起動"},
     "btn.ok": {"en": "OK", "zh-Hans": "确定", "zh-Hant": "確定", "ja": "OK"},
     "btn.cancel": {"en": "Cancel", "zh-Hans": "取消", "zh-Hant": "取消", "ja": "キャンセル"},
     "btn.apply": {"en": "Apply", "zh-Hans": "应用", "zh-Hant": "套用", "ja": "適用"},
