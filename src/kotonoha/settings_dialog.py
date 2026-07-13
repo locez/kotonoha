@@ -58,13 +58,20 @@ QTabBar::tab:selected { color: #FFFFFF; border-bottom: 2px solid %ACCENT%; }
 QTabBar::tab:hover { color: #FFFFFF; }
 QLabel { background: transparent; }
 QCheckBox { background: transparent; spacing: 8px; }
-QCheckBox::indicator {
+QCheckBox::indicator, QListWidget::indicator {
     width: 16px; height: 16px;
     border: 1px solid rgba(255,255,255,60);
     border-radius: 4px;
     background: rgba(255,255,255,15);
 }
-QCheckBox::indicator:checked { background: %ACCENT%; border-color: %ACCENT%; }
+/* Once the indicator is custom-styled, Qt no longer paints the native tick, so
+   the checkmark must be supplied explicitly — otherwise checked boxes rendered
+   as a bare filled square with no glyph, inconsistently across the dialog. */
+QCheckBox::indicator:checked, QListWidget::indicator:checked {
+    background: %ACCENT%;
+    border-color: %ACCENT%;
+    image: url(%CHECK%);
+}
 QSpinBox, QComboBox {
     background: rgba(255,255,255,18);
     border: 1px solid rgba(255,255,255,30);
@@ -118,6 +125,15 @@ _CLOSE_STYLE = (
     "font-size:16px;padding:0;} QPushButton:hover{color:#FFFFFF;}"
 )
 
+# White checkmark (inline SVG data URI) painted over a checked indicator; kept out
+# of the QSS block so the long line can carry its own noqa.
+_CHECKMARK_ICON = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDE2IDE2Ij48cGF0aCBkPSJNMy41IDguNSBMNi41IDExLjUgTDEyLjUgNC41IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIuMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9zdmc+"  # noqa: E501
+
+
+def _skin(accent: str) -> str:
+    """Fill the QSS template with the accent colour and the checkmark glyph."""
+    return _STYLE.replace("%ACCENT%", accent).replace("%CHECK%", _CHECKMARK_ICON)
+
 
 class SettingsDialog(QDialog):
     applied = pyqtSignal(object)  # emits Config
@@ -128,7 +144,7 @@ class SettingsDialog(QDialog):
         self._config = config
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setStyleSheet(_STYLE.replace("%ACCENT%", config.accent_start))
+        self.setStyleSheet(_skin(config.accent_start))
         self.setMinimumWidth(440)
 
         tabs = QTabWidget()
@@ -406,6 +422,10 @@ class SettingsDialog(QDialog):
 
     def _emit(self) -> None:
         self._config = self.current_config()
+        # Re-skin the dialog itself so an accent change is visible right away
+        # (tab underline, checkbox fill, list selection) rather than only after
+        # Settings is closed and reopened.
+        self.setStyleSheet(_skin(self._config.accent_start))
         self.applied.emit(self._config)
 
     def _accept(self) -> None:

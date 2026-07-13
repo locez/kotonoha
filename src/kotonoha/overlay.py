@@ -220,7 +220,11 @@ class LyricsOverlay(QWidget):
         self._translation.set_max_width(avail)
         self._translation.setVisible(config.show_translation)
 
-        self.setWindowOpacity(config.opacity)
+        # Pill mode: opacity is the panel's fill translucency (see paintEvent), so
+        # keep the window fully opaque or the lyric text would fade too and the
+        # panel would be dimmed twice. Text-only mode has no panel, so the whole
+        # window carries the opacity.
+        self.setWindowOpacity(1.0 if config.panel_style == "pill" else config.opacity)
         self._update_chrome()
         self._apply_window_geometry()
         self.update()
@@ -308,20 +312,22 @@ class LyricsOverlay(QWidget):
         self._refresh_input_region()
 
     def _show_empty(self, snapshot: LyricsSnapshot) -> None:
-        self._current.set_line(None, False)
         self._prev_label.setText("")
         self._next_label.setText("")
+        # No translation line while idle; the title carries the whole message.
+        self._translation.set_line(None, False)
+        self._translation.setVisible(False)
         if snapshot.title:
             artist = f" — {snapshot.artist}" if snapshot.artist else ""
+            # Show the now-playing title in the main line at full size (it used to
+            # go in the tiny translation label, which read as uncomfortably small).
             # end far in the future so it stays un-swept (plain) while idle.
             title_line = LyricLine(
                 index=0, id="title", start=0.0, end=1e9, text=f"♪ {snapshot.title}{artist}", translation="", words=()
             )
-            self._translation.set_line(title_line, False)
-            self._translation.setVisible(True)
+            self._current.set_line(title_line, False)
         else:
-            self._translation.set_line(None, False)
-            self._translation.setVisible(False)
+            self._current.set_line(None, False)
 
     def _render_tick(self) -> None:
         t = self._clock.now()
@@ -491,10 +497,17 @@ class LyricsOverlay(QWidget):
             return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setBrush(QColor(15, 17, 22, 150))
+        painter.setBrush(QColor(15, 17, 22, self._panel_alpha()))
         painter.setPen(Qt.PenStyle.NoPen)
         rect = self._container.geometry()
         painter.drawRoundedRect(rect, PILL_RADIUS, PILL_RADIUS)
+
+    def _panel_alpha(self) -> int:
+        """Pill fill opacity from the Opacity slider: 100% -> solid, 30% -> faint.
+
+        Used to be hardcoded at 150/255, so the slider never touched the pill and
+        "100%" still rendered ~59% see-through."""
+        return max(0, min(255, round(255 * self._config.opacity)))
 
     def reset(self) -> None:
         self._clock.reset()

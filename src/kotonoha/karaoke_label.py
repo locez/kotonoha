@@ -120,16 +120,18 @@ class KaraokeLabel(QWidget):
     reveal = pyqt_property(float, fget=_get_reveal, fset=_set_reveal)
 
     def _start_reveal(self) -> None:
-        if self._anim is not None:
-            self._anim.stop()
+        # Reuse a single animation instance; creating a new one per line change
+        # leaked a stopped QPropertyAnimation (parented to this label) every time.
+        if self._anim is None:
+            anim = QPropertyAnimation(self, b"reveal", self)
+            anim.setDuration(REVEAL_DURATION_MS)
+            anim.setStartValue(0.0)
+            anim.setEndValue(1.0)
+            anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+            self._anim = anim
+        self._anim.stop()
         self._reveal = 0.0
-        anim = QPropertyAnimation(self, b"reveal", self)
-        anim.setDuration(REVEAL_DURATION_MS)
-        anim.setStartValue(0.0)
-        anim.setEndValue(1.0)
-        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-        anim.start()
-        self._anim = anim
+        self._anim.start()
 
     # --- geometry ---
 
@@ -169,19 +171,21 @@ class KaraokeLabel(QWidget):
         sung = text_left
         for i, word in enumerate(line.words):
             w = self._word_widths[i] if i < len(self._word_widths) else 0.0
-            frac = word_fill_fraction(word, t)
-            if 0.0 < frac < 1.0:
-                edge = cursor + w * frac
-                return edge, (cursor, edge)
-            if frac >= 1.0:
-                sung = cursor + w
-            else:
-                return sung, None  # not started -> stop at end of previous sung run
+            if word.start is not None and word.end is not None:
+                frac = word_fill_fraction(word, t)
+                if 0.0 < frac < 1.0:
+                    edge = cursor + w * frac
+                    return edge, (cursor, edge)
+                if frac < 1.0:
+                    return sung, None  # a timed word not yet reached -> stop here
+            # A fully-sung timed word, or an untimed word (transparent to the
+            # sweep, e.g. punctuation), extends the sung run so an untimed word
+            # mid-line does not freeze the sweep for the rest of the line.
+            sung = cursor + w
             cursor += w
             if i < len(line.words) - 1:
                 cursor += space
-                if frac >= 1.0:
-                    sung = cursor  # extend through the trailing space
+                sung = cursor  # extend through the trailing space
         return sung, None
 
     # --- painting ---

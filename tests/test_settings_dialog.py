@@ -30,6 +30,28 @@ def test_cache_controls_roundtrip_and_clear_signal(qapp):
     dialog.close()
 
 
+def test_checked_indicator_supplies_an_explicit_checkmark_image(qapp):
+    dialog = SettingsDialog(Config())
+    qss = dialog.styleSheet()
+    # Without an explicit image the custom-styled indicator drew a blank square.
+    assert "indicator:checked" in qss
+    assert "image: url(data:image/svg+xml;base64," in qss
+    dialog.close()
+
+
+def test_apply_reskins_dialog_with_new_accent(qapp):
+    dialog = SettingsDialog(Config(accent_start="#FF4FA3"))
+    assert "#FF4FA3" in dialog.styleSheet()
+    cyan_index = next(
+        i for i in range(dialog._accent.count())
+        if dialog._accent.itemData(i) == ("#4FACFE", "#00F2FE", "#38E1FF")
+    )
+    dialog._accent.setCurrentIndex(cyan_index)
+    dialog._emit()
+    assert "#4FACFE" in dialog.styleSheet()
+    dialog.close()
+
+
 def test_icon_picker_shows_preview_only_and_updates_config(qapp):
     dialog = SettingsDialog(Config(icon_name="leaf-pink.svg"))
 
