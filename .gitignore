@@ -38,6 +38,7 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+.worktrees/
 
 # Logs and local databases
 *.log
