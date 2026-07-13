@@ -190,9 +190,9 @@ def test_hatch_hook_stages_cmake_bridge_for_wheel() -> None:
     script = pyproject["tool"]["hatch"]["build"]["hooks"]["build-scripts"]["scripts"][0]
 
     assert script["commands"] == [
-        "cmake -S . -B build/cmake -DCMAKE_BUILD_TYPE=Release -DKOTONOHA_INSTALL_DIR=src/kotonoha",
-        "cmake --build build/cmake --config Release",
-        'cmake --install build/cmake --prefix "$PWD" --component KotonohaBridge',
+        "cmake -S . -B build/hatch-cmake -DCMAKE_BUILD_TYPE=Release -DKOTONOHA_INSTALL_DIR=src/kotonoha",
+        "cmake --build build/hatch-cmake --config Release",
+        'cmake --install build/hatch-cmake --prefix "$PWD" --component KotonohaBridge',
     ]
     assert script["artifacts"] == ["src/kotonoha/libkoto-layer.so"]
     assert pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"] == {
@@ -220,9 +220,9 @@ Change the existing build hook in `pyproject.toml` to:
 [tool.hatch.build.hooks.build-scripts]
 [[tool.hatch.build.hooks.build-scripts.scripts]]
 commands = [
-  "cmake -S . -B build/cmake -DCMAKE_BUILD_TYPE=Release -DKOTONOHA_INSTALL_DIR=src/kotonoha",
-  "cmake --build build/cmake --config Release",
-  "cmake --install build/cmake --prefix \"$PWD\" --component KotonohaBridge",
+  "cmake -S . -B build/hatch-cmake -DCMAKE_BUILD_TYPE=Release -DKOTONOHA_INSTALL_DIR=src/kotonoha",
+  "cmake --build build/hatch-cmake --config Release",
+  "cmake --install build/hatch-cmake --prefix \"$PWD\" --component KotonohaBridge",
 ]
 artifacts = ["src/kotonoha/libkoto-layer.so"]
 ```

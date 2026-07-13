@@ -84,12 +84,15 @@ The bridge install belongs to the `KotonohaBridge` component. The project `LICEN
 
 The Hatch build hook replaces its direct shell-script command with three CMake stages:
 
-1. configure `build/cmake` as a Release build with `KOTONOHA_INSTALL_DIR=src/kotonoha`;
-2. build `build/cmake/libkoto-layer.so`;
+1. configure the dedicated `build/hatch-cmake` tree as a Release build with
+   `KOTONOHA_INSTALL_DIR=src/kotonoha`;
+2. build `build/hatch-cmake/libkoto-layer.so`;
 3. install only the `KotonohaBridge` component with the repository root as the install prefix.
 
-The third stage copies the finished library to `src/kotonoha/libkoto-layer.so`. This is a packaging
-staging artifact, not compiler output. The existing Hatch mapping remains:
+Keeping Hatch in its own CMake tree prevents its wheel-specific install-directory cache from affecting
+the standalone `build/cmake` install path. The third stage copies the finished library to
+`src/kotonoha/libkoto-layer.so`. This is a packaging staging artifact, not compiler output. The existing
+Hatch mapping remains:
 
 ```toml
 [tool.hatch.build.targets.wheel.force-include]

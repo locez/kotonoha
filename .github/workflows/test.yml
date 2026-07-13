@@ -55,6 +55,7 @@ jobs:
           apt-get update
           apt-get install -y \
             build-essential \
+            cmake \
             desktop-file-utils \
             libdbus-1-3 \
             libegl1 \
@@ -87,6 +88,24 @@ jobs:
             exit 1
           fi
           uv run python -c "import ctypes; ctypes.CDLL('$bridge')"
+      - name: Verify standalone CMake install
+        run: |
+          set -euo pipefail
+          cmake_build=$(mktemp -d)
+          cmake_prefix=$(mktemp -d)
+          cmake -S . -B "$cmake_build" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPython3_EXECUTABLE="$(command -v python)"
+          cmake --build "$cmake_build"
+          cmake --install "$cmake_build" \
+            --prefix "$cmake_prefix" \
+            --component KotonohaBridge
+          mapfile -t bridges < <(
+            find "$cmake_prefix" -type f \
+              -path '*/site-packages/kotonoha/libkoto-layer.so' -print
+          )
+          test "${#bridges[@]}" -eq 1
+          uv run python -c "import ctypes; ctypes.CDLL('${bridges[0]}')"
       - name: Test
         run: xvfb-run -a uv run pytest
       - name: Lint

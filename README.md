@@ -21,20 +21,23 @@ Design docs: [`docs/SPEC.md`](docs/SPEC.md) (overlay) and [`docs/SPEC-mpris-lyri
 
 ## System dependencies
 
-`uv sync` **compiles a small C++ Wayland bridge** (`libkoto-layer.so`) automatically via a
-hatch build hook (`build_bridge.sh`) — there's nothing to build by hand. But it needs Qt6 +
-layer-shell-qt installed first, otherwise the sync fails and prints exactly what to install:
+`uv sync` **compiles a small C++ Wayland bridge** (`libkoto-layer.so`) automatically through CMake
+and a Hatch build hook. Source builds need CMake, a C++ compiler, Qt6, Wayland, and layer-shell-qt:
 
 ```bash
 # Arch
-sudo pacman -S qt6-base qt6-wayland layer-shell-qt
+sudo pacman -S cmake qt6-base qt6-wayland layer-shell-qt
 # Fedora
-sudo dnf install qt6-qtbase-devel layer-shell-qt-devel wayland-devel gcc-c++
+sudo dnf install cmake qt6-qtbase-devel layer-shell-qt-devel wayland-devel gcc-c++
 # Debian/Ubuntu
-sudo apt install qt6-base-dev qt6-base-private-dev libwayland-dev liblayershellqt-dev build-essential
+sudo apt install cmake qt6-base-dev qt6-base-private-dev libwayland-dev liblayershellqt-dev build-essential
 # Gentoo
-sudo emerge -a kde-plasma/layer-shell-qt dev-qt/qtwayland
+sudo emerge -a dev-build/cmake kde-plasma/layer-shell-qt dev-qt/qtwayland
 ```
+
+A prebuilt Linux wheel does not need CMake, a compiler, or development headers at install time. It
+still requires compatible Qt, Wayland, and LayerShellQt runtime libraries as described under
+[Release packages](#release-packages).
 
 > Floating above fullscreen needs a compositor that implements `wlr-layer-shell`
 > (KDE Plasma/KWin, wlroots-based). GNOME/Mutter does not — Kotonoha falls back to a
@@ -50,9 +53,22 @@ uv sync                  # also compiles the layer-shell bridge (needs the deps 
 uv run kotonoha          # add -v for verbose logs
 ```
 
-> The bridge is built automatically by `uv sync`. If you edit the C++
-> (`src/kotonoha/layer_shell_bridge.cpp`), rebuild it directly with
-> `bash src/kotonoha/build_bridge.sh`.
+The Hatch hook uses a private `build/hatch-cmake` directory for wheel staging. To build and install
+the bridge directly into the project virtual environment with the standalone CMake path:
+
+```bash
+cmake -S . -B build/cmake \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DPython3_EXECUTABLE="$PWD/.venv/bin/python"
+cmake --build build/cmake
+cmake --install build/cmake --prefix "$PWD/.venv" --component KotonohaBridge
+```
+
+Build a wheel with `uv build --wheel`. The existing shell path remains available as a manual fallback:
+
+```bash
+bash src/kotonoha/build_bridge.sh
+```
 
 Then just play something in any MPRIS player. Kotonoha shows a tray icon; left-click it to lock/unlock the overlay, right-click for Settings.
 

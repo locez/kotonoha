@@ -244,6 +244,7 @@ jobs:
           apt-get update
           apt-get install -y \
             build-essential \
+            cmake \
             liblayershellqtinterface-dev \
             libwayland-dev \
             pkg-config \
@@ -302,6 +303,8 @@ jobs:
               metadata_files = [name for name in archive.namelist() if name.endswith(".dist-info/WHEEL")]
               if len(metadata_files) != 1:
                   raise SystemExit(f"expected one WHEEL metadata file, found {len(metadata_files)}")
+              if archive.namelist().count("kotonoha/libkoto-layer.so") != 1:
+                  raise SystemExit("wheel must contain exactly one kotonoha/libkoto-layer.so")
               metadata_text = archive.read(metadata_files[0]).decode("utf-8")
               metadata = Parser().parsestr(metadata_text)
           purelib = metadata.get_all("Root-Is-Purelib", [])

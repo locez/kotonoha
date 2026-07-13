@@ -19,6 +19,7 @@ CMAKE_PROJECT = PROJECT_ROOT / "CMakeLists.txt"
 DEBIAN_DIR = PROJECT_ROOT / "packaging" / "debian"
 FEDORA_SPEC = PROJECT_ROOT / "packaging" / "fedora" / "kotonoha.spec"
 PACKAGE_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "package.yml"
+TEST_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "test.yml"
 NATIVE_PACKAGING_DOCS = (
     PROJECT_ROOT / "docs" / "superpowers" / "specs" / "2026-07-11-github-workflows-design.md",
     PROJECT_ROOT / "docs" / "superpowers" / "plans" / "2026-07-11-github-workflows.md",
@@ -87,6 +88,23 @@ def test_hatch_hook_stages_cmake_bridge_for_wheel() -> None:
         "src/kotonoha/libkoto-layer.so": "kotonoha/libkoto-layer.so"
     }
     assert (PROJECT_ROOT / "src" / "kotonoha" / "build_bridge.sh").is_file()
+
+
+def test_cmake_is_documented_and_verified_by_ci() -> None:
+    readme = read_packaging_file(PROJECT_ROOT / "README.md")
+    test_workflow = read_packaging_file(TEST_WORKFLOW)
+    package_workflow = read_packaging_file(PACKAGE_WORKFLOW)
+
+    assert "cmake -S . -B build/cmake" in readme
+    assert "cmake --build build/cmake" in readme
+    assert "cmake --install build/cmake" in readme
+    assert "build_bridge.sh" in readme
+    assert "Verify standalone CMake install" in test_workflow
+    assert "-DCMAKE_BUILD_TYPE=Release" in test_workflow
+    assert "--component KotonohaBridge" in test_workflow
+    assert test_workflow.count("            cmake \\") >= 1
+    assert package_workflow.count("            cmake \\") >= 1
+    assert 'archive.namelist().count("kotonoha/libkoto-layer.so")' in package_workflow
 
 
 def test_debian_control_declares_package_metadata_and_dependencies() -> None:
