@@ -49,7 +49,7 @@ class Config:
     font_family: str = "Inter, 'Segoe UI', 'Microsoft YaHei', sans-serif"
     font_size: int = 24             # current-line size (px)
     opacity: float = 1.0            # whole-window opacity 0.3..1.0
-    panel_style: str = "pill"        # "pill" (glass panel) | "text" (text only)
+    panel_style: str = "pill"        # "pill" (glass) | "frost" (frosted glass) | "text" (no panel)
     icon_name: str = DEFAULT_ICON_NAME
     # Behaviour
     passthrough: bool = False        # start unlocked (interactive) so first-run positioning is easy
@@ -75,7 +75,7 @@ class Config:
             font_family=str(self.font_family),
             font_size=_clamp_int(self.font_size, 8, 200, 24),
             opacity=_clamp_float(self.opacity, 0.3, 1.0, 1.0),
-            panel_style=self.panel_style if self.panel_style in ("pill", "text") else "pill",
+            panel_style=self.panel_style if self.panel_style in ("pill", "frost", "text") else "pill",
             icon_name=_clean_icon_name(self.icon_name),
             passthrough=bool(self.passthrough),
             karaoke=bool(self.karaoke),

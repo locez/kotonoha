@@ -72,6 +72,17 @@ def test_panel_visibility_follows_style_not_lock(qapp):
     qapp.processEvents()
 
 
+def test_frosted_panel_paints_and_keeps_window_opaque(qapp):
+    overlay = LyricsOverlay(
+        LyricsState(), Config(panel_style="frost", opacity=0.6), UnavailableController()
+    )
+    assert overlay._should_paint_panel() is True  # frosted panel is drawn
+    assert overlay.windowOpacity() == pytest.approx(1.0, abs=0.01)  # text stays crisp
+    overlay._render_timer.stop()
+    overlay.deleteLater()
+    qapp.processEvents()
+
+
 def test_panel_alpha_tracks_opacity(qapp):
     overlay = LyricsOverlay(
         LyricsState(),

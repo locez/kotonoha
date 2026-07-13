@@ -73,6 +73,14 @@ def test_apply_reskins_dialog_with_new_accent(qapp):
     dialog.close()
 
 
+def test_panel_style_has_frosted_option_and_roundtrips(qapp):
+    dialog = SettingsDialog(Config(panel_style="frost"))
+    assert dialog._panel.count() == 3  # glass / frosted / text
+    assert dialog._panel.currentData() == "frost"  # selected by data, not index
+    assert dialog.current_config().panel_style == "frost"
+    dialog.close()
+
+
 def test_all_tabs_fit_without_scroll_arrows(qapp):
     from PyQt6.QtWidgets import QToolButton
 

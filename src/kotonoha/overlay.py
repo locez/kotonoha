@@ -14,7 +14,18 @@ from dataclasses import replace
 
 from PyQt6 import sip
 from PyQt6.QtCore import QEvent, QObject, QPoint, QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QGuiApplication, QMouseEvent, QPainter, QPaintEvent, QShowEvent
+from PyQt6.QtGui import (
+    QBrush,
+    QColor,
+    QFont,
+    QGuiApplication,
+    QLinearGradient,
+    QMouseEvent,
+    QPainter,
+    QPaintEvent,
+    QPen,
+    QShowEvent,
+)
 from PyQt6.QtWidgets import (
     QApplication,
     QGraphicsDropShadowEffect,
@@ -220,11 +231,11 @@ class LyricsOverlay(QWidget):
         self._translation.set_max_width(avail)
         self._translation.setVisible(config.show_translation)
 
-        # Pill mode: opacity is the panel's fill translucency (see paintEvent), so
-        # keep the window fully opaque or the lyric text would fade too and the
-        # panel would be dimmed twice. Text-only mode has no panel, so the whole
-        # window carries the opacity.
-        self.setWindowOpacity(1.0 if config.panel_style == "pill" else config.opacity)
+        # Panelled modes (glass / frosted): opacity is the panel's fill translucency
+        # (see paintEvent), so keep the window fully opaque or the lyric text would
+        # fade too and the panel would be dimmed twice. Text-only mode has no panel,
+        # so the whole window carries the opacity.
+        self.setWindowOpacity(1.0 if config.panel_style in ("pill", "frost") else config.opacity)
         self._update_chrome()
         self._apply_window_geometry()
         self.update()
@@ -496,17 +507,31 @@ class LyricsOverlay(QWidget):
             return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setBrush(QColor(15, 17, 22, self._panel_alpha()))
-        painter.setPen(Qt.PenStyle.NoPen)
         rect = self._container.geometry()
+        alpha = self._panel_alpha()
+        if self._config.panel_style == "frost":
+            # Frosted look without a real compositor backdrop-blur: a cool vertical
+            # sheen with a bright top edge so it reads as frosted glass, not a flat
+            # slab. (True KWin backdrop-blur would need the Wayland blur protocol in
+            # the C++ bridge — a possible follow-up.)
+            gradient = QLinearGradient(
+                float(rect.left()), float(rect.top()), float(rect.left()), float(rect.bottom())
+            )
+            gradient.setColorAt(0.0, QColor(72, 78, 94, alpha))
+            gradient.setColorAt(1.0, QColor(28, 31, 40, alpha))
+            painter.setBrush(QBrush(gradient))
+            painter.setPen(QPen(QColor(255, 255, 255, min(90, alpha)), 1.0))
+        else:
+            painter.setBrush(QColor(15, 17, 22, alpha))
+            painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRoundedRect(rect, PILL_RADIUS, PILL_RADIUS)
 
     def _should_paint_panel(self) -> bool:
         """The background panel follows the panel-style setting, decoupled from the
-        lock state: "Glass panel" stays visible (with its opacity) even when locked;
-        "Text only" is the immersive, text-only mode. Locking only toggles
+        lock state: a glass/frosted panel stays visible (with its opacity) even when
+        locked; "Text only" is the immersive, text-only mode. Locking only toggles
         click-through, so it no longer silently drops the panel to nothing."""
-        return self._config.panel_style == "pill"
+        return self._config.panel_style in ("pill", "frost")
 
     def _panel_alpha(self) -> int:
         """Pill fill opacity from the Opacity slider: 100% -> solid, 30% -> faint.

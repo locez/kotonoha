@@ -12,6 +12,11 @@ def test_roundtrip(tmp_path):
     assert loaded.show_translation is False
 
 
+def test_frost_panel_style_survives_clamp():
+    assert Config(panel_style="frost").clamped().panel_style == "frost"
+    assert Config(panel_style="bogus").clamped().panel_style == "pill"
+
+
 def test_missing_file_returns_defaults(tmp_path):
     cfg = load_config(tmp_path / "nope.json")
     assert cfg == Config()

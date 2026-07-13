@@ -310,8 +310,10 @@ class SettingsDialog(QDialog):
 
         self._panel = QComboBox()
         self._panel.addItem(t("set.panel.pill"), "pill")
+        self._panel.addItem(t("set.panel.frost"), "frost")
         self._panel.addItem(t("set.panel.text"), "text")
-        self._panel.setCurrentIndex(0 if c.panel_style == "pill" else 1)
+        panel_index = self._panel.findData(c.panel_style)
+        self._panel.setCurrentIndex(panel_index if panel_index >= 0 else 0)
         form.addRow(t("set.panel_style"), self._panel)
 
         self._accent = QComboBox()
