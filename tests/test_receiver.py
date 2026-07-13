@@ -124,6 +124,41 @@ def test_build_app_registers_route():
     assert any(getattr(r.resource, "canonical", "") == WS_PATH for r in app.router.routes())
 
 
+async def test_start_bind_failure_resets_runner_and_reraises(monkeypatch):
+    from aiohttp import web
+
+    async def boom(self):
+        raise OSError(98, "Address already in use")
+
+    monkeypatch.setattr(web.TCPSite, "start", boom)
+    receiver = LyricsReceiver(LyricsState())
+
+    with pytest.raises(OSError):
+        await receiver.start()
+
+    # The half-created runner must be torn down so state stays consistent.
+    assert receiver._runner is None
+
+
+async def test_broadcast_retains_task_and_survives_closed_socket():
+    import asyncio
+
+    class FakeWS:
+        closed = False
+
+        async def send_str(self, _text):
+            raise ConnectionResetError("socket closed mid-send")
+
+    receiver = LyricsReceiver(LyricsState())
+    receiver._clients.add(FakeWS())
+
+    receiver.update_translation_language("ja")  # must not raise
+    # The send task is retained (RUF006), not fire-and-forget.
+    assert len(receiver._pending_sends) == 1
+    # It completes without propagating the connection error (suppressed).
+    await asyncio.gather(*receiver._pending_sends)
+
+
 def test_closed_gate_retains_tick_without_publishing_cider_content():
     state = LyricsState()
     ticks = []

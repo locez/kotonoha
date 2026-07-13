@@ -17,6 +17,7 @@ server: it keeps listening so the probe can reconnect at any time.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 
@@ -62,6 +63,7 @@ class LyricsReceiver:
         self._gate = gate
         self._clients: set[web.WebSocketResponse] = set()
         self._runner: web.AppRunner | None = None
+        self._pending_sends: set[asyncio.Task[None]] = set()
 
     def _config_frame(self) -> str:
         return json.dumps({"type": CONFIG_FRAME_TYPE, "translationLanguage": self._translation_language})
@@ -69,9 +71,22 @@ class LyricsReceiver:
     def update_translation_language(self, language: str) -> None:
         """Change the preferred language and push it to connected probes."""
         self._translation_language = language
+        frame = self._config_frame()
         for ws in list(self._clients):
             if not ws.closed:
-                asyncio.create_task(ws.send_str(self._config_frame()))
+                self._spawn(self._safe_send(ws, frame))
+
+    async def _safe_send(self, ws: web.WebSocketResponse, text: str) -> None:
+        # The socket may close between the not-closed check and the send.
+        with contextlib.suppress(ConnectionError, RuntimeError):
+            await ws.send_str(text)
+
+    def _spawn(self, coro) -> None:
+        # Retain the task and discard it on completion (RUF006) so it cannot be
+        # garbage-collected mid-flight and its exceptions are surfaced, not lost.
+        task = asyncio.create_task(coro)
+        self._pending_sends.add(task)
+        task.add_done_callback(self._pending_sends.discard)
 
     def build_app(self) -> web.Application:
         app = web.Application()
@@ -83,13 +98,22 @@ class LyricsReceiver:
     async def start(self) -> None:
         if self._runner is not None:
             return
-        self._runner = web.AppRunner(self.build_app())
-        await self._runner.setup()
-        site = web.TCPSite(self._runner, self._host, self._port)
-        await site.start()
+        runner = web.AppRunner(self.build_app())
+        await runner.setup()
+        site = web.TCPSite(runner, self._host, self._port)
+        try:
+            await site.start()
+        except OSError:
+            # Bind failed (e.g. Errno 98, address in use). Tear the runner back
+            # down so state stays consistent and a later start() can retry.
+            await runner.cleanup()
+            raise
+        self._runner = runner
         logger.info("Lyrics receiver listening on ws://%s:%d%s", self._host, self._port, WS_PATH)
 
     async def stop(self) -> None:
+        for task in list(self._pending_sends):
+            task.cancel()
         if self._runner is not None:
             await self._runner.cleanup()
             self._runner = None

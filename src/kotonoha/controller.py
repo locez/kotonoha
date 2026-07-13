@@ -30,9 +30,16 @@ class AppController:
     def __init__(self, app: QApplication, config: Config) -> None:
         self._app = app
         cli_port = app.property("cli_port")
+        config = config.clamped()
         if isinstance(cli_port, int):
-            config = config.clamped()
-            config.port = cli_port
+            # Clamp the CLI port too: argparse accepts any int, and an out-of-range
+            # value (e.g. --port 70000 or -1) would otherwise reach socket.bind()
+            # and raise OverflowError — which is not an OSError, so the receiver's
+            # and controller's `except OSError` would miss it and startup crashes.
+            clamped_port = max(1, min(65535, cli_port))
+            if clamped_port != cli_port:
+                logger.warning("CLI --port %d is out of range 1..65535; using %d", cli_port, clamped_port)
+            config.port = clamped_port
         self._config = config
         set_language(config.ui_language)  # before any UI strings are created
         self._app.setWindowIcon(load_icon(config.icon_name))
@@ -68,7 +75,13 @@ class AppController:
         self._overlay.activate_layer_shell()
         self._overlay.show()
         self._tray.show()
-        await self._receiver.start()
+        # The Cider receiver is optional (see README): a port bind failure — a
+        # stale instance or double-launch already holding 28745 — must only
+        # disable the probe, not take down the overlay/tray that are already up.
+        try:
+            await self._receiver.start()
+        except OSError as exc:
+            logger.warning("Lyrics receiver unavailable: %s", exc)
         # MPRIS is best-effort: a missing session bus / dbus must not stop the app.
         try:
             await self._mpris.start()
