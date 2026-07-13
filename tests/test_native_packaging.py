@@ -15,6 +15,7 @@ else:
     tomllib = importlib.import_module("tomli")
 
 PROJECT_ROOT = Path(__file__).parents[1]
+CMAKE_PROJECT = PROJECT_ROOT / "CMakeLists.txt"
 DEBIAN_DIR = PROJECT_ROOT / "packaging" / "debian"
 FEDORA_SPEC = PROJECT_ROOT / "packaging" / "fedora" / "kotonoha.spec"
 PACKAGE_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "package.yml"
@@ -41,6 +42,35 @@ def assert_contains(content: str, expected_values: tuple[str, ...]) -> None:
 def write_executable(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
     path.chmod(0o755)
+
+
+def test_cmake_builds_and_installs_native_bridge() -> None:
+    cmake = read_packaging_file(CMAKE_PROJECT)
+
+    assert_contains(
+        cmake,
+        (
+            "project(kotonoha_native_bridge LANGUAGES CXX)",
+            "find_package(Python3 REQUIRED COMPONENTS Interpreter)",
+            "find_package(Qt6 REQUIRED COMPONENTS Core Gui)",
+            "find_package(Qt6GuiPrivate REQUIRED)",
+            "find_package(LayerShellQt CONFIG REQUIRED)",
+            "pkg_check_modules(WaylandClient REQUIRED IMPORTED_TARGET wayland-client)",
+            "add_library(koto-layer SHARED src/kotonoha/layer_shell_bridge.cpp)",
+            "Qt6::GuiPrivate",
+            "LayerShellQt::Interface",
+            "PkgConfig::WaylandClient",
+            'OUTPUT_NAME "koto-layer"',
+            "KOTONOHA_STATIC_GNU_RUNTIME",
+            "KOTONOHA_INSTALL_DIR",
+            '"${KOTONOHA_PYTHON_PLATLIB}/kotonoha"',
+            "CACHE STRING",
+            "  ON\n)",
+            "COMPONENT KotonohaBridge",
+            "COMPONENT KotonohaDocumentation",
+        ),
+    )
+    assert "src/kotonoha/build_bridge.sh" not in cmake
 
 
 def test_debian_control_declares_package_metadata_and_dependencies() -> None:
