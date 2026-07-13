@@ -8,6 +8,8 @@ from difflib import SequenceMatcher
 from enum import Enum
 from unicodedata import normalize as unicode_normalize
 
+from .hanzi_fold import fold_to_simplified
+
 _PARENS = re.compile(r"[\(（\[【](.*?)[\)）\]】]")
 _DASH_SUFFIX = re.compile(r"\s+[-–—]\s+(.+)$")
 _FEAT_SUFFIX = re.compile(r"\b(?:feat(?:uring)?|ft)\b\.?.*$", re.IGNORECASE)
@@ -15,6 +17,11 @@ _ARTIST_SEPARATOR = re.compile(
     r"\s*(?:,|/|&|;|、|，|\band\b|\bwith\b|\bfeat(?:uring)?\b\.?|\bft\b\.?)\s*",
     re.IGNORECASE,
 )
+# "和" is the Chinese "and" and a common artist-list separator in CJK metadata
+# ("初音ミク和鏡音リン"). CJK has no word boundaries, so split on it only when it sits
+# between two runs of >=2 non-space characters — that separates a genuinely fused
+# list without fragmenting a single name that merely contains 和 (山田和樹, 大和).
+_AND_SEPARATOR = re.compile(r"(?<=\S\S)和(?=\S\S)")
 _KEEP = re.compile(r"[^\w一-鿿]+")
 _VERSION_TAGS = {
     "acoustic": ("acoustic", "unplugged"),
@@ -66,8 +73,13 @@ class MatchEvidence:
 
 
 def normalize(text: str) -> str:
-    """Return a comparison form without changing version semantics elsewhere."""
-    value = unicode_normalize("NFKC", text).casefold()
+    """Return a comparison form without changing version semantics elsewhere.
+
+    Traditional Chinese is folded to Simplified so a traditional-tagged track
+    (李榮浩 / 麻雀 from a zh-Hant browser) compares equal to Netease's simplified
+    catalogue (李荣浩). The fold is applied to both the track and the candidate,
+    so it is symmetric and only ever affects this comparison key."""
+    value = fold_to_simplified(unicode_normalize("NFKC", text).casefold())
     value = _PARENS.sub("", value)
     value = _FEAT_SUFFIX.sub("", value)
     return _KEEP.sub("", value).strip()
@@ -104,7 +116,10 @@ def base_title(title: str) -> str:
 
 def _artist_parts(artist: str) -> tuple[str, ...]:
     value = unicode_normalize("NFKC", artist).strip()
-    return tuple(part for part in _ARTIST_SEPARATOR.split(value) if part)
+    parts: list[str] = []
+    for chunk in _ARTIST_SEPARATOR.split(value):
+        parts.extend(_AND_SEPARATOR.split(chunk))
+    return tuple(part.strip() for part in parts if part.strip())
 
 
 def artist_tokens(artist: str) -> frozenset[str]:
@@ -122,7 +137,14 @@ def evaluate_match(candidate: Candidate, track: TrackMetadata) -> MatchEvidence:
     normalized_track = normalize(track_base)
     normalized_candidate = normalize(candidate_base)
     title_exact = bool(normalized_track) and normalized_track == normalized_candidate
-    title_ratio = SequenceMatcher(None, normalized_track, normalized_candidate).ratio()
+    # SequenceMatcher("", "") is 1.0, so two titles that normalize to empty (all
+    # punctuation / parenthetical like "(intro)") would score a perfect fuzzy
+    # ratio and wrongly match. Only trust the ratio when both sides are non-empty.
+    title_ratio = (
+        SequenceMatcher(None, normalized_track, normalized_candidate).ratio()
+        if normalized_track and normalized_candidate
+        else 0.0
+    )
     title_strong = title_exact or (
         min(len(normalized_track), len(normalized_candidate)) >= 4 and title_ratio >= 0.88
     )
@@ -199,4 +221,7 @@ def best_match(candidates: list[Candidate], track: TrackMetadata) -> MatchEviden
 def query_variants(track: TrackMetadata) -> tuple[str, ...]:
     raw = f"{track.title} {track.artist}".strip()
     fallback = f"{base_title(track.title)} {primary_artist(track.artist)}".strip()
-    return tuple(dict.fromkeys(value for value in (raw, fallback) if value))
+    # A simplified-folded query is a fallback for any endpoint whose search is
+    # script-sensitive; deduped away when the text is already simplified.
+    folded = fold_to_simplified(raw)
+    return tuple(dict.fromkeys(value for value in (raw, fallback, folded) if value))

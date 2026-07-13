@@ -3,6 +3,7 @@ from kotonoha.lyrics.match import (
     Candidate,
     MatchConfidence,
     TrackMetadata,
+    artist_tokens,
     best_match,
     evaluate_match,
     normalize,
@@ -134,6 +135,55 @@ def test_missing_artist_and_duration_is_not_persistent_confidence():
     assert evaluate_match(candidate, track).confidence is MatchConfidence.MEDIUM
 
 
+def test_artist_tokens_split_on_chinese_and():
+    assert artist_tokens("初音ミク和鏡音リン") == artist_tokens("初音ミク / 鏡音リン")
+
+
+def test_fused_chinese_and_list_matches_separated_candidate():
+    # MPRIS reports a fused "A、B和C"; Netease lists the same artists separately.
+    track = TrackMetadata("Song", "とあ、初音ミク和鏡音リン", "", 180.0)
+    candidate = Candidate("1", "Song", "初音ミク / 鏡音リン", 180.0)
+    assert evaluate_match(candidate, track).confidence is MatchConfidence.HIGH
+
+
+def test_artist_name_containing_and_still_matches_itself():
+    # 大和 is a single name; 和 must not split it (only >=2 chars each side split).
+    track = TrackMetadata("Song", "大和", "", 180.0)
+    candidate = Candidate("1", "Song", "大和", 180.0)
+    assert evaluate_match(candidate, track).confidence is MatchConfidence.HIGH
+
+
+def test_and_does_not_fragment_a_multi_char_single_name():
+    # 山田和樹 (Yamada Kazuki) is ONE person: 和 has only a single char after it,
+    # so it must stay whole instead of fragmenting into 山田 + 樹.
+    assert artist_tokens("山田和樹") == artist_tokens("山田和树")
+    assert len(artist_tokens("山田和樹")) == 1
+
+
+def test_empty_normalized_titles_do_not_match():
+    # Both titles normalize to "" (all parenthetical); SequenceMatcher("","") is
+    # 1.0, which previously let unrelated interludes match on a shared artist.
+    track = TrackMetadata("(intro)", "A", "", 100.0)
+    candidate = Candidate("1", "(outro)", "A", 101.0)
+    assert evaluate_match(candidate, track).confidence is MatchConfidence.NONE
+
+
+def test_normalize_folds_traditional_to_simplified():
+    assert normalize("李榮浩") == normalize("李荣浩")
+    assert normalize("愛情轉移") == normalize("爱情转移")
+
+
+def test_traditional_track_matches_simplified_netease_candidate():
+    # zh-Hant browser reports 麻雀 / 李榮浩; Netease lists 简体 麻雀 / 李荣浩.
+    track = TrackMetadata("麻雀", "李榮浩", "", None)
+    candidate = Candidate("1", "麻雀", "李荣浩", None)
+    assert evaluate_match(candidate, track).confidence is MatchConfidence.HIGH
+
+
+def test_query_variants_add_simplified_fold_for_traditional_input():
+    assert "麻雀 李荣浩" in query_variants(TrackMetadata("麻雀", "李榮浩"))
+
+
 def test_query_variants_are_raw_then_base_title_primary_artist():
     track = TrackMetadata("Song (Remastered 2011)", "A feat. B", "Album", 180.0)
     assert query_variants(track) == (
@@ -150,7 +200,9 @@ def test_best_match_prefers_duration():
     best = best_match(cands, TrackMetadata("曖昧", "王菲", duration_s=281.0))
     assert best is not None
     assert best.candidate.song_id == "1"
-    assert best.confidence is MatchConfidence.MEDIUM
+    # The traditional 曖昧 folds to the simplified 暧昧, so the title is an exact
+    # match and the close duration lifts it to HIGH.
+    assert best.confidence is MatchConfidence.HIGH
 
 
 def test_best_match_rejects_when_nothing_close():
