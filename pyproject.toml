@@ -10,7 +10,7 @@ build-backend = "hatchling.build"
 commands = [
   "cmake -S . -B build/hatch-cmake -DCMAKE_BUILD_TYPE=Release -DKOTONOHA_INSTALL_DIR=src/kotonoha",
   "cmake --build build/hatch-cmake --config Release",
-  "cmake --install build/hatch-cmake --prefix \"$PWD\" --component KotonohaBridge",
+  "cmake --install build/hatch-cmake --config Release --prefix \"$PWD\" --component KotonohaBridge",
 ]
 artifacts = ["src/kotonoha/libkoto-layer.so"]
 

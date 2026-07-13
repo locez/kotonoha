@@ -62,6 +62,7 @@ def test_cmake_builds_and_installs_native_bridge() -> None:
             "LayerShellQt::Interface",
             "PkgConfig::WaylandClient",
             'OUTPUT_NAME "koto-layer"',
+            'LIBRARY_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}"',
             "KOTONOHA_STATIC_GNU_RUNTIME",
             "KOTONOHA_INSTALL_DIR",
             '"${KOTONOHA_PYTHON_PLATLIB}/kotonoha"',
@@ -81,7 +82,7 @@ def test_hatch_hook_stages_cmake_bridge_for_wheel() -> None:
     assert script["commands"] == [
         "cmake -S . -B build/hatch-cmake -DCMAKE_BUILD_TYPE=Release -DKOTONOHA_INSTALL_DIR=src/kotonoha",
         "cmake --build build/hatch-cmake --config Release",
-        'cmake --install build/hatch-cmake --prefix "$PWD" --component KotonohaBridge',
+        'cmake --install build/hatch-cmake --config Release --prefix "$PWD" --component KotonohaBridge',
     ]
     assert script["artifacts"] == ["src/kotonoha/libkoto-layer.so"]
     assert pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"] == {
@@ -97,10 +98,12 @@ def test_cmake_is_documented_and_verified_by_ci() -> None:
 
     assert "cmake -S . -B build/cmake" in readme
     assert "cmake --build build/cmake" in readme
-    assert "cmake --install build/cmake" in readme
+    assert "cmake --install build/cmake --config Release" in readme
     assert "build_bridge.sh" in readme
     assert "Verify standalone CMake install" in test_workflow
     assert "-DCMAKE_BUILD_TYPE=Release" in test_workflow
+    assert 'cmake --build "$cmake_build" --config Release' in test_workflow
+    assert 'cmake --install "$cmake_build" --config Release' in test_workflow
     assert "--component KotonohaBridge" in test_workflow
     assert test_workflow.count("            cmake \\") >= 1
     assert package_workflow.count("            cmake \\") >= 1

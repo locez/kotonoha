@@ -51,7 +51,7 @@ The normal CMake build is out of source:
 
 ```bash
 cmake -S . -B build/cmake
-cmake --build build/cmake
+cmake --build build/cmake --config Release
 ```
 
 The compiled artifact remains at `build/cmake/libkoto-layer.so`. CMake does not place compiler output
@@ -73,8 +73,8 @@ environment's interpreter:
 
 ```bash
 cmake -S . -B build/cmake -DPython3_EXECUTABLE="$PWD/.venv/bin/python"
-cmake --build build/cmake
-cmake --install build/cmake --prefix "$PWD/.venv"
+cmake --build build/cmake --config Release
+cmake --install build/cmake --config Release --prefix "$PWD/.venv"
 ```
 
 The bridge install belongs to the `KotonohaBridge` component. The project `LICENSE` installs under

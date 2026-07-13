@@ -96,8 +96,8 @@ jobs:
           cmake -S . -B "$cmake_build" \
             -DCMAKE_BUILD_TYPE=Release \
             -DPython3_EXECUTABLE="$(command -v python)"
-          cmake --build "$cmake_build"
-          cmake --install "$cmake_build" \
+          cmake --build "$cmake_build" --config Release
+          cmake --install "$cmake_build" --config Release \
             --prefix "$cmake_prefix" \
             --component KotonohaBridge
           mapfile -t bridges < <(

@@ -60,8 +60,8 @@ the bridge directly into the project virtual environment with the standalone CMa
 cmake -S . -B build/cmake \
   -DCMAKE_BUILD_TYPE=Release \
   -DPython3_EXECUTABLE="$PWD/.venv/bin/python"
-cmake --build build/cmake
-cmake --install build/cmake --prefix "$PWD/.venv" --component KotonohaBridge
+cmake --build build/cmake --config Release
+cmake --install build/cmake --config Release --prefix "$PWD/.venv" --component KotonohaBridge
 ```
 
 Build a wheel with `uv build --wheel`. The existing shell path remains available as a manual fallback:

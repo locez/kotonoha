@@ -42,6 +42,7 @@ def test_cmake_builds_and_installs_native_bridge() -> None:
             "LayerShellQt::Interface",
             "PkgConfig::WaylandClient",
             'OUTPUT_NAME "koto-layer"',
+            'LIBRARY_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}"',
             'option(KOTONOHA_STATIC_GNU_RUNTIME',
             "KOTONOHA_INSTALL_DIR",
             '"${KOTONOHA_PYTHON_PLATLIB}/kotonoha"',
@@ -114,6 +115,10 @@ set_target_properties(
   PROPERTIES
     CXX_EXTENSIONS OFF
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+    LIBRARY_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}"
+    LIBRARY_OUTPUT_DIRECTORY_MINSIZEREL "${CMAKE_BINARY_DIR}"
+    LIBRARY_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}"
+    LIBRARY_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_BINARY_DIR}"
     OUTPUT_NAME "koto-layer"
 )
 target_link_libraries(
@@ -158,9 +163,9 @@ cmake_prefix=$(mktemp -d)
 cmake -S . -B "$cmake_build" \
   -DCMAKE_BUILD_TYPE=Release \
   -DPython3_EXECUTABLE="$(command -v python3)"
-cmake --build "$cmake_build"
+cmake --build "$cmake_build" --config Release
 test -f "$cmake_build/libkoto-layer.so"
-cmake --install "$cmake_build" --prefix "$cmake_prefix" --component KotonohaBridge
+cmake --install "$cmake_build" --config Release --prefix "$cmake_prefix" --component KotonohaBridge
 find "$cmake_prefix" -type f -path '*/site-packages/kotonoha/libkoto-layer.so' | grep -q .
 ```
 
@@ -192,7 +197,7 @@ def test_hatch_hook_stages_cmake_bridge_for_wheel() -> None:
     assert script["commands"] == [
         "cmake -S . -B build/hatch-cmake -DCMAKE_BUILD_TYPE=Release -DKOTONOHA_INSTALL_DIR=src/kotonoha",
         "cmake --build build/hatch-cmake --config Release",
-        'cmake --install build/hatch-cmake --prefix "$PWD" --component KotonohaBridge',
+        'cmake --install build/hatch-cmake --config Release --prefix "$PWD" --component KotonohaBridge',
     ]
     assert script["artifacts"] == ["src/kotonoha/libkoto-layer.so"]
     assert pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"] == {
@@ -222,7 +227,7 @@ Change the existing build hook in `pyproject.toml` to:
 commands = [
   "cmake -S . -B build/hatch-cmake -DCMAKE_BUILD_TYPE=Release -DKOTONOHA_INSTALL_DIR=src/kotonoha",
   "cmake --build build/hatch-cmake --config Release",
-  "cmake --install build/hatch-cmake --prefix \"$PWD\" --component KotonohaBridge",
+  "cmake --install build/hatch-cmake --config Release --prefix \"$PWD\" --component KotonohaBridge",
 ]
 artifacts = ["src/kotonoha/libkoto-layer.so"]
 ```
@@ -292,10 +297,12 @@ def test_cmake_is_documented_and_verified_by_ci() -> None:
 
     assert "cmake -S . -B build/cmake" in readme
     assert "cmake --build build/cmake" in readme
-    assert "cmake --install build/cmake" in readme
+    assert "cmake --install build/cmake --config Release" in readme
     assert "build_bridge.sh" in readme
     assert "Verify standalone CMake install" in test_workflow
     assert "-DCMAKE_BUILD_TYPE=Release" in test_workflow
+    assert 'cmake --build "$cmake_build" --config Release' in test_workflow
+    assert 'cmake --install "$cmake_build" --config Release' in test_workflow
     assert "--component KotonohaBridge" in test_workflow
     assert test_workflow.count("            cmake \\") >= 1
     assert package_workflow.count("            cmake \\") >= 1
@@ -338,8 +345,8 @@ that prebuilt wheels do not require build tools. Include:
 cmake -S . -B build/cmake \
   -DCMAKE_BUILD_TYPE=Release \
   -DPython3_EXECUTABLE="$PWD/.venv/bin/python"
-cmake --build build/cmake
-cmake --install build/cmake --prefix "$PWD/.venv" --component KotonohaBridge
+cmake --build build/cmake --config Release
+cmake --install build/cmake --config Release --prefix "$PWD/.venv" --component KotonohaBridge
 uv build --wheel
 ```
 
@@ -358,8 +365,8 @@ After the existing native linkage check in `.github/workflows/test.yml`, add:
           cmake -S . -B "$cmake_build" \
             -DCMAKE_BUILD_TYPE=Release \
             -DPython3_EXECUTABLE="$(command -v python)"
-          cmake --build "$cmake_build"
-          cmake --install "$cmake_build" \
+          cmake --build "$cmake_build" --config Release
+          cmake --install "$cmake_build" --config Release \
             --prefix "$cmake_prefix" \
             --component KotonohaBridge
           mapfile -t bridges < <(
