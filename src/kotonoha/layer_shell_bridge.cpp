@@ -23,6 +23,7 @@
 #include <wayland-client.h>
 
 #ifdef KOTONOHA_HAVE_BLUR
+#include <cmath>
 #include <cstring>
 
 #include "blur-client-protocol.h"
@@ -49,6 +50,29 @@ namespace {
         struct wl_compositor* c = (struct wl_compositor*)native->nativeResourceForIntegration("compositor");
         if (!c) c = (struct wl_compositor*)native->nativeResourceForIntegration("wl_compositor");
         return c;
+    }
+
+    // Approximate a rounded rectangle as a wl_region: a full-width middle band
+    // plus one 1px strip per corner row inset to the arc. Without this the blur
+    // is a sharp rectangle that overhangs the pill's rounded corners.
+    void add_rounded_rect(struct wl_region* region, int x, int y, int w, int h, int radius) {
+        int r = radius;
+        if (r < 0) r = 0;
+        if (r * 2 > w) r = w / 2;
+        if (r * 2 > h) r = h / 2;
+        if (r == 0) {
+            wl_region_add(region, x, y, w, h);
+            return;
+        }
+        wl_region_add(region, x, y + r, w, h - 2 * r);  // middle band, full width
+        for (int i = 0; i < r; ++i) {
+            int dy = r - i;  // vertical distance from the arc centre for this row
+            int dx = r - static_cast<int>(std::sqrt(static_cast<double>(r * r - dy * dy)) + 0.5);
+            int rw = w - 2 * dx;
+            if (rw <= 0) continue;
+            wl_region_add(region, x + dx, y + i, rw, 1);            // top row
+            wl_region_add(region, x + dx, y + h - 1 - i, rw, 1);   // mirrored bottom row
+        }
     }
 
     struct org_kde_kwin_blur_manager* blur_manager(QPlatformNativeInterface* native) {
@@ -171,9 +195,9 @@ extern "C" {
     // Ask KWin to blur whatever is behind the pill rectangle (frosted glass).
     // No-op on compositors without the blur protocol; the translucent fill still
     // renders, so the panel just isn't blurred there.
-    void set_blur_region(void* window_ptr, int x, int y, int w, int h) {
+    void set_blur_region(void* window_ptr, int x, int y, int w, int h, int radius) {
 #ifndef KOTONOHA_HAVE_BLUR
-        (void)window_ptr; (void)x; (void)y; (void)w; (void)h;  // built without the blur protocol
+        (void)window_ptr; (void)x; (void)y; (void)w; (void)h; (void)radius;  // built without blur
 #else
         if (!window_ptr) return;
         QWindow* window = static_cast<QWindow*>(window_ptr);
@@ -193,7 +217,7 @@ extern "C" {
         struct wl_compositor* compositor = get_compositor(native);
         if (compositor) {
             struct wl_region* region = wl_compositor_create_region(compositor);
-            wl_region_add(region, x, y, w, h);
+            add_rounded_rect(region, x, y, w, h, radius);  // match the pill's rounded corners
             org_kde_kwin_blur_set_region(g_blur, region);
             wl_region_destroy(region);
         }

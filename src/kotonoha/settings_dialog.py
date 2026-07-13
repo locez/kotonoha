@@ -336,15 +336,15 @@ class SettingsDialog(QDialog):
         form.addRow(self._panel_tint)
 
         self._accent = QComboBox()
+        self._custom_index = -1  # single reusable slot for a picked colour
         matched = False
         for key, start, end, sweep in ACCENT_PRESETS:
             self._accent.addItem(t(f"accent.{key}"), (start, end, sweep))
             if start.lower() == c.accent_start.lower():
                 self._accent.setCurrentIndex(self._accent.count() - 1)
                 matched = True
-        if not matched:
-            self._accent.addItem(t("set.accent.custom"), (c.accent_start, c.accent_end, c.accent_sweep))
-            self._accent.setCurrentIndex(self._accent.count() - 1)
+        if not matched:  # a saved custom colour -> one labelled slot
+            self._set_custom_accent((c.accent_start, c.accent_end, c.accent_sweep))
         # A trailing picker entry (data=None) opens a full colour picker.
         self._accent.addItem(t("set.accent.pick"), None)
         self._accent_last_index = self._accent.currentIndex()
@@ -352,20 +352,31 @@ class SettingsDialog(QDialog):
         form.addRow(t("set.accent"), self._accent)
         return page
 
+    def _set_custom_accent(self, triple: tuple[str, str, str]) -> None:
+        """Show the picked colour in a single reusable slot, labelled with its hex
+        (so different customs are distinguishable) instead of piling up entries."""
+        label = f"{t('set.accent.custom')} {triple[0].upper()}"
+        if self._custom_index >= 0:
+            self._accent.setItemText(self._custom_index, label)
+            self._accent.setItemData(self._custom_index, triple)
+        else:
+            picker = self._accent.findData(None)  # insert before the trailing picker, if present
+            insert_at = picker if picker >= 0 else self._accent.count()
+            self._accent.insertItem(insert_at, label, triple)
+            self._custom_index = insert_at
+        self._accent.setCurrentIndex(self._custom_index)
+
     def _on_accent_activated(self, index: int) -> None:
         if self._accent.itemData(index) is not None:
-            self._accent_last_index = index  # a preset / existing custom entry
+            self._accent_last_index = index  # a preset / the custom slot
             return
         # The "Custom…" entry: pick a colour and derive the gradient + sweep from it.
         chosen = QColorDialog.getColor(QColor(self._config.accent_start), self, t("set.accent"))
         if not chosen.isValid():
             self._accent.setCurrentIndex(self._accent_last_index)  # cancelled -> revert
             return
-        triple = (chosen.name(), chosen.lighter(140).name(), chosen.lighter(120).name())
-        insert_at = self._accent.count() - 1  # keep the picker entry last
-        self._accent.insertItem(insert_at, t("set.accent.custom"), triple)
-        self._accent.setCurrentIndex(insert_at)
-        self._accent_last_index = insert_at
+        self._set_custom_accent((chosen.name(), chosen.lighter(140).name(), chosen.lighter(120).name()))
+        self._accent_last_index = self._accent.currentIndex()
 
     def _lyrics_tab(self) -> QWidget:
         c = self._config

@@ -53,7 +53,7 @@ class LayerShellController:
         lib.set_keyboard_interactivity.argtypes = [ctypes.c_void_p, ctypes.c_bool]
         # Blur is newer than the other symbols; tolerate an older .so without it.
         if hasattr(lib, "set_blur_region"):
-            lib.set_blur_region.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+            lib.set_blur_region.argtypes = [ctypes.c_void_p] + [ctypes.c_int] * 5
         if hasattr(lib, "clear_blur"):
             lib.clear_blur.argtypes = [ctypes.c_void_p]
         return lib
@@ -93,9 +93,9 @@ class LayerShellController:
         if self._lib:
             self._lib.set_keyboard_interactivity(ctypes.c_void_p(window_ptr), enabled)
 
-    def set_blur_region(self, window_ptr: int, x: int, y: int, w: int, h: int) -> None:
+    def set_blur_region(self, window_ptr: int, x: int, y: int, w: int, h: int, radius: int) -> None:
         if self._lib and hasattr(self._lib, "set_blur_region"):
-            self._lib.set_blur_region(ctypes.c_void_p(window_ptr), x, y, w, h)
+            self._lib.set_blur_region(ctypes.c_void_p(window_ptr), x, y, w, h, radius)
 
     def clear_blur(self, window_ptr: int) -> None:
         if self._lib and hasattr(self._lib, "clear_blur"):

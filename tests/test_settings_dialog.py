@@ -82,6 +82,19 @@ def test_accent_has_custom_picker_and_panel_tint_roundtrips(qapp):
     dialog.close()
 
 
+def test_custom_accent_slot_is_reused_not_accumulated(qapp):
+    dialog = SettingsDialog(Config())
+    before = dialog._accent.count()
+    dialog._set_custom_accent(("#123456", "#223344", "#334455"))
+    after_first = dialog._accent.count()
+    dialog._set_custom_accent(("#654321", "#556677", "#778899"))
+    assert after_first == before + 1  # one slot added
+    assert dialog._accent.count() == after_first  # reused, not piling up "自訂" entries
+    assert dialog._accent.currentData() == ("#654321", "#556677", "#778899")
+    assert "#654321".upper() in dialog._accent.currentText()  # labelled with its hex
+    dialog.close()
+
+
 def test_panel_style_has_frosted_option_and_roundtrips(qapp):
     dialog = SettingsDialog(Config(panel_style="frost"))
     assert dialog._panel.count() == 3  # glass / frosted / text

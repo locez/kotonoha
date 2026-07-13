@@ -105,16 +105,21 @@ class MediaClock:
             self._paused = False
             return
 
-        if advanced > ADVANCE_EPSILON:
+        moved = advanced > ADVANCE_EPSILON
+        # Stay "playing" while the reported time advances OR the player asserts it
+        # is playing. MPRIS PlaybackStatus is reliable when it says Playing, yet
+        # Position can sit still for several seconds between coarse updates — so a
+        # stall alone must NOT pause the sweep. Only a stall sustained past the
+        # grace window while the player is NOT reporting playback is a real pause.
+        if moved or playing:
             self._last_advance_wall = now_wall
-        # Only a stall longer than the grace window counts as a real pause.
         self._paused = (now_wall - self._last_advance_wall) >= STALL_GRACE
 
         if self._paused:
             # Freeze where the sweep is; never roll back to a lagging report.
             self._anchor_media = max(media_time, running)
-        elif media_time - running >= SNAP_THRESHOLD:
-            self._anchor_media = media_time  # we fell behind: catch up forward
+        elif moved and media_time - running >= SNAP_THRESHOLD:
+            self._anchor_media = media_time  # a real forward jump: catch up
         else:
             # Absorb small drift and stale/coarse reports without moving backward.
             self._anchor_media = max(running, media_time)

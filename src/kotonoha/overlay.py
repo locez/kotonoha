@@ -422,7 +422,7 @@ class LyricsOverlay(QWidget):
             return
         if self._config.panel_style == "frost":
             rect = self._container.geometry()
-            self._controller.set_blur_region(ptr, rect.x(), rect.y(), rect.width(), rect.height())
+            self._controller.set_blur_region(ptr, rect.x(), rect.y(), rect.width(), rect.height(), PILL_RADIUS)
         else:
             self._controller.clear_blur(ptr)
 
@@ -530,10 +530,11 @@ class LyricsOverlay(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         color = self._panel_base_color()
-        alpha = self._panel_alpha()
-        if self._config.panel_style == "frost":
-            alpha = min(alpha, 165)  # stay translucent so the KWin backdrop-blur shows through
-        color.setAlpha(alpha)
+        # Opacity slider drives the fill for every style, including frosted: lower
+        # it to let more of the KWin backdrop-blur show through, raise it for a
+        # heavier tint. (It used to be capped for frost, so the slider did nothing
+        # over its upper range.)
+        color.setAlpha(self._panel_alpha())
         painter.setBrush(color)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRoundedRect(self._container.geometry(), PILL_RADIUS, PILL_RADIUS)

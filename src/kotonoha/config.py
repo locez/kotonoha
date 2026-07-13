@@ -26,17 +26,14 @@ DEFAULT_LYRICS_SOURCES = ["netease", "lrclib", "cider"]
 
 # Accent presets: (key, start, end, sweep). The key is translated in the UI
 # (see strings.py "accent.*"); the first entry is the default pink.
+# A few representative examples; anything else is picked via the custom colour
+# picker in Settings (keeps the dropdown short).
 ACCENT_PRESETS: tuple[tuple[str, str, str, str], ...] = (
     ("pink", "#FF4FA3", "#FF8FCB", "#FF6EC7"),
-    ("red", "#FF5A5F", "#FF9AA0", "#FF7B80"),
     ("orange", "#FF8A4F", "#FFC58F", "#FFA56E"),
-    ("yellow", "#F5C542", "#FFE08A", "#FFD166"),
     ("green", "#34E89E", "#A7F3D0", "#5BF0B0"),
-    ("teal", "#2DD4BF", "#99F6E4", "#5EEAD4"),
     ("cyan", "#4FACFE", "#00F2FE", "#38E1FF"),
-    ("blue", "#5B8DEF", "#A9C6FF", "#7AA7FF"),
     ("purple", "#B14FFF", "#E29BFF", "#C97BFF"),
-    ("white", "#EDEFF5", "#FFFFFF", "#F6F8FF"),
 )
 
 DEFAULT_ICON_NAME = "default"

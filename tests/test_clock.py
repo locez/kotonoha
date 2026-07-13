@@ -83,32 +83,32 @@ def test_pause_detected_when_time_stops_advancing():
     clock.sync(media_time=30.0, playing=True)
     fake.t += 1.0
     clock.sync(media_time=31.0, playing=True)
-    # A brief stall is tolerated (coarse Position), but once it exceeds the grace
-    # window the clock treats it as a real pause and freezes.
+    # A real pause reports Paused; the clock freezes once the stall (while not
+    # playing) exceeds the grace window.
     fake.t += 2.0
-    clock.sync(media_time=31.0, playing=True)
+    clock.sync(media_time=31.0, playing=False)
     assert clock.playing is False
     frozen = clock.now()
     fake.t += 5.0
     assert clock.now() == frozen  # stays put once paused
 
 
-def test_coarse_position_stall_keeps_flowing_without_rollback():
-    # PBI updates Position ~0.26s while we poll 0.2s, so some polls repeat the
-    # same value. The sweep must keep moving forward and never jump back to the
-    # stale report or freeze mid-line.
+def test_coarse_position_stall_keeps_flowing_while_playing():
+    # Browser MPRIS repeats the same Position value for several polls — sometimes
+    # for seconds — while PlaybackStatus stays "Playing". The sweep must keep
+    # advancing forward the whole time and never freeze or jump back.
     fake = FakeMonotonic()
     clock = MediaClock(monotonic=fake)
     clock.sync(media_time=10.0, playing=True)
     previous = clock.now()
-    for _ in range(4):  # ~0.8s of stalled reports
+    for _ in range(15):  # ~3s of a stalled Position report, well past the grace window
         fake.t += 0.2
         clock.sync(media_time=10.0, playing=True)
         current = clock.now()
         assert current >= previous  # never rolls backward
         previous = current
-    assert clock.now() > 10.5  # kept interpolating forward through the stall
-    assert clock.playing is True  # a brief coarse stall is not a pause
+    assert clock.now() > 12.0  # kept interpolating forward the whole stall
+    assert clock.playing is True  # a stall while Playing is never treated as a pause
 
 
 def test_lagging_report_does_not_roll_the_sweep_back():
