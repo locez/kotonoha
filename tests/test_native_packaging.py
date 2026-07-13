@@ -73,6 +73,22 @@ def test_cmake_builds_and_installs_native_bridge() -> None:
     assert "src/kotonoha/build_bridge.sh" not in cmake
 
 
+def test_hatch_hook_stages_cmake_bridge_for_wheel() -> None:
+    pyproject = tomllib.loads(read_packaging_file(PROJECT_ROOT / "pyproject.toml"))
+    script = pyproject["tool"]["hatch"]["build"]["hooks"]["build-scripts"]["scripts"][0]
+
+    assert script["commands"] == [
+        "cmake -S . -B build/hatch-cmake -DCMAKE_BUILD_TYPE=Release -DKOTONOHA_INSTALL_DIR=src/kotonoha",
+        "cmake --build build/hatch-cmake --config Release",
+        'cmake --install build/hatch-cmake --prefix "$PWD" --component KotonohaBridge',
+    ]
+    assert script["artifacts"] == ["src/kotonoha/libkoto-layer.so"]
+    assert pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"] == {
+        "src/kotonoha/libkoto-layer.so": "kotonoha/libkoto-layer.so"
+    }
+    assert (PROJECT_ROOT / "src" / "kotonoha" / "build_bridge.sh").is_file()
+
+
 def test_debian_control_declares_package_metadata_and_dependencies() -> None:
     control = read_packaging_file(DEBIAN_DIR / "control")
 
