@@ -158,7 +158,11 @@ class MprisProvider:
 
     async def start(self) -> None:
         self._bus = await _connect()
-        timeout = aiohttp.ClientTimeout(total=3.0, connect=1.5)
+        # Generous session-wide safety net only. Each provider sets its own tighter
+        # per-request timeout (netease is fast, lrclib is routinely slow), because a
+        # single short shared budget killed every lrclib fetch — its backend often
+        # takes 7-9s to answer — leaving that whole fallback source silently dead.
+        timeout = aiohttp.ClientTimeout(total=20.0, connect=5.0)
         self._session = aiohttp.ClientSession(timeout=timeout)
         self._task = asyncio.create_task(self._run())
         logger.info("MPRIS provider started")
@@ -227,6 +231,15 @@ class MprisProvider:
             logger.debug("metadata read failed while selecting player: %s", exc)
             return None
 
+    def _selection_score(self, record: tuple[Any, str, str, TrackInfo]) -> tuple[int, int, int]:
+        """Rank a Playing candidate: fuller metadata first, then stay put."""
+        _player, name, _status, info = record
+        return (
+            1 if info.artist else 0,  # a real artist beats a title-only source
+            1 if info.title else 0,
+            1 if name == self._current_name else 0,  # break ties toward the current source
+        )
+
     async def _active_player(self) -> tuple[Any, str] | None:
         names = await list_players(self._bus)
         ordered = list(names)
@@ -236,6 +249,7 @@ class MprisProvider:
 
         current_record: tuple[Any, str, str, TrackInfo] | None = None
         paused_fallback: tuple[Any, str, str, TrackInfo] | None = None
+        playing_candidates: list[tuple[Any, str, str, TrackInfo]] = []
         playing_empty_fallback: tuple[Any, str, str, TrackInfo] | None = None
         for name in ordered:
             player = await self._safe_iface(name)
@@ -252,19 +266,28 @@ class MprisProvider:
                 current_record = record
             has_identity = bool(info.title or info.artist)
             if status == "Playing" and has_identity:
-                self._current_name = name
-                return player, name
-            if status == "Paused" and has_identity and paused_fallback is None:
+                playing_candidates.append(record)
+            elif status == "Paused" and has_identity and paused_fallback is None:
                 paused_fallback = record
-            if status == "Playing" and not has_identity and playing_empty_fallback is None:
+            elif status == "Playing" and not has_identity and playing_empty_fallback is None:
                 playing_empty_fallback = record
+
+        if playing_candidates:
+            # Two players can expose the *same* track: Chrome's own MPRIS and the
+            # Plasma Browser Integration bridge both appear for YouTube Music.
+            # Chrome sorts first alphabetically and reports a title polluted with
+            # " - YouTube" plus an empty artist, so returning the first Playing
+            # source picked it every time and matching silently failed. Choose the
+            # source with the most complete metadata instead; ties keep the
+            # current/first source for stability.
+            best = max(playing_candidates, key=self._selection_score)
+            self._current_name = best[1]
+            return best[0], best[1]
 
         selected: tuple[Any, str, str, TrackInfo] | None = None
         if current_record is not None and current_record[2] == "Paused" and (
             current_record[3].title or current_record[3].artist
         ):
-            selected = current_record
-        elif current_record is not None and current_record[2] == "Playing":
             selected = current_record
         elif paused_fallback is not None:
             selected = paused_fallback

@@ -2,6 +2,7 @@ import asyncio
 
 from kotonoha.lyrics.resolver import ResolvedLyrics
 from kotonoha.model import LyricLine, LyricsSnapshot
+from kotonoha.providers import mpris as mpris_module
 from kotonoha.providers.gate import SourceGate
 from kotonoha.providers.mpris import PLAYER_IFACE, MprisProvider, TrackCommit, TrackInfo
 from kotonoha.state import LyricsState
@@ -109,6 +110,58 @@ def prepare_poll(provider, player):
 
     provider._active_player = active_player
     provider._ensure_subscribed = subscribed
+
+
+def _wire_players(provider, players, monkeypatch):
+    """players: {bus_name: (player_obj, status, TrackInfo)}."""
+
+    async def fake_list(_bus):
+        return sorted(players)
+
+    async def safe_iface(name):
+        return players[name][0]
+
+    async def safe_status(player):
+        return next(status for _p, status, _i in players.values() if _p is player)
+
+    async def safe_info(player):
+        return next(info for _p, _s, info in players.values() if _p is player)
+
+    monkeypatch.setattr(mpris_module, "list_players", fake_list)
+    provider._bus = object()
+    provider._safe_iface = safe_iface
+    provider._safe_status = safe_status
+    provider._safe_info = safe_info
+
+
+async def test_active_player_prefers_complete_metadata_over_alphabetical(monkeypatch):
+    # Chrome sorts first but reports an empty artist; PBI has the real artist.
+    chromium = ("chrome", "Playing", TrackInfo("Song - YouTube", "", "", 180.0, "/c"))
+    pbi = ("pbi", "Playing", TrackInfo("Song", "Artist", "Album", 180.0, "/p"))
+    players = {
+        "org.mpris.MediaPlayer2.chromium.instance1": chromium,
+        "org.mpris.MediaPlayer2.plasma-browser-integration": pbi,
+    }
+    provider = MprisProvider(LyricsState(), resolver=RecordingResolver())
+    _wire_players(provider, players, monkeypatch)
+
+    result = await provider._active_player()
+
+    assert result is not None
+    assert result[1] == "org.mpris.MediaPlayer2.plasma-browser-integration"
+    assert provider._current_name == "org.mpris.MediaPlayer2.plasma-browser-integration"
+
+
+async def test_active_player_falls_back_to_only_source(monkeypatch):
+    only = ("chrome", "Playing", TrackInfo("Song - YouTube", "", "", 180.0, "/c"))
+    players = {"org.mpris.MediaPlayer2.chromium.instance1": only}
+    provider = MprisProvider(LyricsState(), resolver=RecordingResolver())
+    _wire_players(provider, players, monkeypatch)
+
+    result = await provider._active_player()
+
+    assert result is not None
+    assert result[1] == "org.mpris.MediaPlayer2.chromium.instance1"
 
 
 async def test_position_failure_does_not_block_lyric_resolution():

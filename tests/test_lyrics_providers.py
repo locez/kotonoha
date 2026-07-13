@@ -16,6 +16,55 @@ def async_return(value):
     return result
 
 
+class _Resp:
+    def __init__(self, data):
+        self._data = data
+        self.status = 200
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_a):
+        return False
+
+    def raise_for_status(self):
+        return None
+
+    async def json(self, content_type=None):
+        return self._data
+
+
+class _RecordingSession:
+    """Captures the per-request timeout each provider passes to session.get."""
+
+    def __init__(self, data):
+        self._data = data
+        self.timeouts = []
+
+    def get(self, _url, params=None, headers=None, timeout=None):
+        self.timeouts.append(timeout)
+        return _Resp(self._data)
+
+
+def test_provider_timeouts_are_per_provider_and_generous_enough():
+    # The old shared 3s budget killed every lrclib fetch (its backend takes 7-9s).
+    assert netease.TIMEOUT.total is not None and netease.TIMEOUT.total >= 5.0
+    assert lrclib.TIMEOUT.total is not None and lrclib.TIMEOUT.total >= 10.0
+    assert lrclib.TIMEOUT.total > netease.TIMEOUT.total
+
+
+async def test_netease_search_uses_provider_timeout():
+    session = _RecordingSession({"result": {"songs": []}})
+    await netease.search(cast(aiohttp.ClientSession, session), "query")
+    assert session.timeouts == [netease.TIMEOUT]
+
+
+async def test_lrclib_search_uses_provider_timeout():
+    session = _RecordingSession([])
+    await lrclib.search_records(cast(aiohttp.ClientSession, session), TrackMetadata("Song", "Artist"))
+    assert session.timeouts == [lrclib.TIMEOUT]
+
+
 async def test_netease_empty_parsed_yrc_falls_back_to_lrc(monkeypatch):
     async def fake_search(_session, _query, limit=10):
         return [Candidate("42", "Song", "Artist", 180.0, album="Album")]

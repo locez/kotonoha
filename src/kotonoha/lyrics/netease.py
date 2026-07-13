@@ -19,11 +19,14 @@ logger = logging.getLogger(__name__)
 SEARCH_URL = "https://music.163.com/api/search/get"
 LYRIC_URL = "https://music.163.com/api/song/lyric/v1"
 HEADERS = {"Referer": "https://music.163.com", "User-Agent": "Mozilla/5.0"}
+# Netease answers quickly; a short per-request budget keeps the fallback chain
+# moving on to the next source promptly when it does not.
+TIMEOUT = aiohttp.ClientTimeout(total=6.0, connect=3.0)
 
 
 async def search(session: aiohttp.ClientSession, query: str, limit: int = 10) -> list[Candidate]:
     params = {"s": query, "type": "1", "limit": str(limit)}
-    async with session.get(SEARCH_URL, params=params, headers=HEADERS) as response:
+    async with session.get(SEARCH_URL, params=params, headers=HEADERS, timeout=TIMEOUT) as response:
         response.raise_for_status()
         data = await response.json(content_type=None)
     if not isinstance(data, dict):
@@ -68,7 +71,7 @@ def lyric_text(data: Mapping[str, object], key: str) -> str:
 
 async def fetch_payload(session: aiohttp.ClientSession, song_id: str) -> dict[str, str]:
     params = {"id": song_id, "lv": "1", "kv": "0", "tv": "1", "yv": "1"}
-    async with session.get(LYRIC_URL, params=params, headers=HEADERS) as response:
+    async with session.get(LYRIC_URL, params=params, headers=HEADERS, timeout=TIMEOUT) as response:
         response.raise_for_status()
         data = await response.json(content_type=None)
     if not isinstance(data, dict):

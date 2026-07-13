@@ -19,6 +19,11 @@ logger = logging.getLogger(__name__)
 GET_URL = "https://lrclib.net/api/get"
 SEARCH_URL = "https://lrclib.net/api/search"
 HEADERS = {"User-Agent": "kotonoha/0.1 (https://github.com/locez/kotonoha)"}
+# lrclib's backend is routinely slow (measured 7-12s round trips, occasional
+# 502s), so it needs a much longer budget than netease or it times out on every
+# request and the whole source looks dead. This runs off the UI thread, so
+# waiting is fine; the session-wide safety net (20s) still bounds a true hang.
+TIMEOUT = aiohttp.ClientTimeout(total=15.0, connect=5.0)
 
 
 @dataclass(frozen=True)
@@ -55,7 +60,7 @@ async def get_exact(session: aiohttp.ClientSession, track: TrackMetadata) -> Rec
     params = {"track_name": track.title, "artist_name": track.artist}
     if track.duration_s is not None:
         params["duration"] = str(int(round(track.duration_s)))
-    async with session.get(GET_URL, params=params, headers=HEADERS) as response:
+    async with session.get(GET_URL, params=params, headers=HEADERS, timeout=TIMEOUT) as response:
         if response.status == 404:
             return None
         response.raise_for_status()
@@ -70,7 +75,7 @@ async def search_records(session: aiohttp.ClientSession, track: TrackMetadata) -
         "track_name": base_title(track.title),
         "artist_name": primary_artist(track.artist),
     }
-    async with session.get(SEARCH_URL, params=params, headers=HEADERS) as response:
+    async with session.get(SEARCH_URL, params=params, headers=HEADERS, timeout=TIMEOUT) as response:
         response.raise_for_status()
         data = await response.json(content_type=None)
     if not isinstance(data, list):

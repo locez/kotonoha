@@ -3,12 +3,29 @@
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from typing import Any
 
 from ..lyrics.match import TrackMetadata
 
 _MAX_TRACK_LENGTH_S = 24 * 60 * 60
+
+# Chrome's own MPRIS bridge prefixes the tab's unread-notification count and
+# appends the site name to the page title, e.g. "(3) Song - YouTube". Both are
+# player noise, not part of the song: the count churns the identity key (forcing
+# needless re-resolution) and the suffix wrecks title matching. Strip them so a
+# browser-sourced title lines up with the clean one Plasma Browser Integration
+# reports for the same track.
+_TITLE_BADGE_PREFIX = re.compile(r"^\(\d+\)\s+")
+_TITLE_SITE_SUFFIX = re.compile(r"\s*[-|–—]\s*YouTube(?:\s+Music)?\s*$", re.IGNORECASE)
+
+
+def _clean_title(title: str) -> str:
+    cleaned = _TITLE_BADGE_PREFIX.sub("", title)
+    cleaned = _TITLE_SITE_SUFFIX.sub("", cleaned)
+    # Never strip a title down to nothing (a page literally titled "YouTube").
+    return cleaned.strip() or title.strip()
 
 
 def _as_text(value: Any) -> str:
@@ -50,7 +67,7 @@ class TrackInfo:
 def parse_metadata(raw: dict[str, Any]) -> TrackInfo:
     length_s = _length_seconds(raw.get("mpris:length"))
     return TrackInfo(
-        title=_as_text(raw.get("xesam:title")),
+        title=_clean_title(_as_text(raw.get("xesam:title"))),
         artist=_as_text(raw.get("xesam:artist")),
         album=_as_text(raw.get("xesam:album")),
         length_s=length_s,

@@ -42,6 +42,21 @@ def test_parse_artist_as_plain_string():
     assert parse_metadata({"xesam:artist": "Solo"}).artist == "Solo"
 
 
+def test_parse_strips_chrome_badge_and_youtube_suffix():
+    info = parse_metadata({"xesam:title": "(309) 志铭 | YouTube Music", "xesam:artist": [""]})
+    assert info.title == "志铭"
+
+
+def test_parse_strips_trailing_dash_youtube():
+    assert parse_metadata({"xesam:title": "Song - YouTube"}).title == "Song"
+
+
+def test_parse_keeps_clean_title_and_never_empties():
+    assert parse_metadata({"xesam:title": "Normal Song"}).title == "Normal Song"
+    # "YouTube" alone has no separator to strip, so it must survive intact.
+    assert parse_metadata({"xesam:title": "YouTube"}).title == "YouTube"
+
+
 def test_parse_missing_fields():
     info = parse_metadata({"xesam:title": "T"})
     assert info.title == "T"
