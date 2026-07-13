@@ -26,8 +26,8 @@ from .model import LyricLine
 UNSUNG_COLOR = QColor(255, 255, 255, 95)
 SHADOW_COLOR = QColor(0, 0, 0, 170)
 SHADOW_OFFSET = 1.5
-REVEAL_RISE_PX = 6.0
-REVEAL_DURATION_MS = 180
+REVEAL_RISE_PX = 9.0
+REVEAL_DURATION_MS = 320
 
 class _PyqtPropertyFactory(Protocol):
     def __call__(self, type_: object, *, fget: object, fset: object) -> Any: ...
@@ -127,7 +127,9 @@ class KaraokeLabel(QWidget):
             anim.setDuration(REVEAL_DURATION_MS)
             anim.setStartValue(0.0)
             anim.setEndValue(1.0)
-            anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+            # OutQuint eases in fast then settles very gently, so the new line
+            # glides into place instead of snapping — softer than OutCubic.
+            anim.setEasingCurve(QEasingCurve.Type.OutQuint)
             self._anim = anim
         self._anim.stop()
         self._reveal = 0.0
