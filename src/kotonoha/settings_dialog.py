@@ -320,16 +320,23 @@ class SettingsDialog(QDialog):
         self._font_size = self._spin(8, 120, c.font_size, " px")
         form.addRow(t("set.font_size"), self._font_size)
 
-        self._opacity = self._spin(30, 100, int(round(c.opacity * 100)), " %")
-        form.addRow(t("set.opacity"), self._opacity)
-
+        # Panel style decides which opacity the single slider edits.
         self._panel = QComboBox()
         self._panel.addItem(t("set.panel.pill"), "pill")
         self._panel.addItem(t("set.panel.frost"), "frost")
         self._panel.addItem(t("set.panel.text"), "text")
         panel_index = self._panel.findData(c.panel_style)
         self._panel.setCurrentIndex(panel_index if panel_index >= 0 else 0)
+
+        # Each panel style keeps its own opacity (0..100%); the black panel can go
+        # fully transparent, the frosted one to pure blur.
+        self._panel_opacity = {"opacity": c.opacity, "frost_opacity": c.frost_opacity}
+        self._opacity_active_key = self._opacity_key()
+        self._opacity = self._spin(0, 100, round(self._panel_opacity[self._opacity_active_key] * 100), " %")
+
+        form.addRow(t("set.opacity"), self._opacity)
         form.addRow(t("set.panel_style"), self._panel)
+        self._panel.currentIndexChanged.connect(self._on_panel_style_changed)
 
         self._panel_tint = QCheckBox(t("set.panel_tint"))
         self._panel_tint.setChecked(c.panel_accent_tint)
@@ -366,6 +373,16 @@ class SettingsDialog(QDialog):
             self._accent.insertItem(insert_at, label, triple)
             self._custom_index = insert_at
         self._accent.setCurrentIndex(self._custom_index)
+
+    def _opacity_key(self) -> str:
+        return "frost_opacity" if str(self._panel.currentData()) == "frost" else "opacity"
+
+    def _on_panel_style_changed(self) -> None:
+        # Remember the outgoing style's opacity, then load the incoming style's, so
+        # the black panel and the frosted panel keep independent opacity values.
+        self._panel_opacity[self._opacity_active_key] = self._opacity.value() / 100.0
+        self._opacity_active_key = self._opacity_key()
+        self._opacity.setValue(round(self._panel_opacity[self._opacity_active_key] * 100))
 
     def _on_accent_activated(self, index: int) -> None:
         if self._accent.itemData(index) is not None:
@@ -487,6 +504,7 @@ class SettingsDialog(QDialog):
         if accent_data is None:  # the picker entry left selected — keep the current accent
             accent_data = (self._config.accent_start, self._config.accent_end, self._config.accent_sweep)
         accent_start, accent_end, accent_sweep = accent_data
+        self._panel_opacity[self._opacity_active_key] = self._opacity.value() / 100.0  # save the active slider
         icon_item = self._icon_list.currentItem()
         icon_name = (
             str(icon_item.data(Qt.ItemDataRole.UserRole))
@@ -499,7 +517,8 @@ class SettingsDialog(QDialog):
             lyrics_script=str(self._lyrics_script.currentData()),
             icon_name=icon_name,
             font_size=self._font_size.value(),
-            opacity=self._opacity.value() / 100.0,
+            opacity=self._panel_opacity["opacity"],
+            frost_opacity=self._panel_opacity["frost_opacity"],
             panel_style=str(self._panel.currentData()),
             panel_accent_tint=self._panel_tint.isChecked(),
             accent_start=accent_start,

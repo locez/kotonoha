@@ -50,7 +50,8 @@ class Config:
     # Typography / appearance
     font_family: str = "Inter, 'Segoe UI', 'Microsoft YaHei', sans-serif"
     font_size: int = 24             # current-line size (px)
-    opacity: float = 1.0            # whole-window opacity 0.3..1.0
+    opacity: float = 1.0            # black-panel fill opacity 0.0..1.0
+    frost_opacity: float = 0.6       # frosted-panel fill opacity 0.0..1.0 (0 = pure blur)
     panel_style: str = "pill"        # "pill" (black) | "frost" (frosted glass) | "text" (no panel)
     panel_accent_tint: bool = False  # tint the black panel toward the accent colour
     icon_name: str = DEFAULT_ICON_NAME
@@ -78,7 +79,8 @@ class Config:
             margin_x=_clamp_int(self.margin_x, -4000, 4000, 0),
             font_family=str(self.font_family),
             font_size=_clamp_int(self.font_size, 8, 200, 24),
-            opacity=_clamp_float(self.opacity, 0.3, 1.0, 1.0),
+            opacity=_clamp_float(self.opacity, 0.0, 1.0, 1.0),
+            frost_opacity=_clamp_float(self.frost_opacity, 0.0, 1.0, 0.6),
             panel_style=self.panel_style if self.panel_style in ("pill", "frost", "text") else "pill",
             panel_accent_tint=bool(self.panel_accent_tint),
             icon_name=_clean_icon_name(self.icon_name),

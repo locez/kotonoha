@@ -131,15 +131,20 @@ def test_panel_alpha_tracks_opacity(qapp):
     qapp.processEvents()
 
 
-def test_window_opacity_split_between_pill_and_text(qapp):
-    # Pill mode: opacity is the panel's fill, so the window stays fully opaque
-    # (text crisp). Text-only mode: the whole window carries the opacity.
-    pill = LyricsOverlay(LyricsState(), Config(panel_style="pill", opacity=0.5), UnavailableController())
-    assert pill.windowOpacity() == pytest.approx(1.0, abs=0.01)
-    text = LyricsOverlay(LyricsState(), Config(panel_style="text", opacity=0.5), UnavailableController())
-    # Qt quantizes window opacity to a /255 step, so allow a small tolerance.
-    assert text.windowOpacity() == pytest.approx(0.5, abs=0.01)
-    for overlay in (pill, text):
+def test_window_stays_opaque_and_frost_uses_its_own_opacity(qapp):
+    # Opacity is the panel's own fill (window always opaque so text stays crisp),
+    # and the black and frosted panels keep independent opacity values.
+    black = LyricsOverlay(
+        LyricsState(), Config(panel_style="pill", opacity=0.0, frost_opacity=0.6), UnavailableController()
+    )
+    assert black.windowOpacity() == pytest.approx(1.0, abs=0.01)
+    assert black._panel_alpha() == 0  # black panel can go fully transparent
+    frost = LyricsOverlay(
+        LyricsState(), Config(panel_style="frost", opacity=0.0, frost_opacity=0.6), UnavailableController()
+    )
+    assert frost.windowOpacity() == pytest.approx(1.0, abs=0.01)
+    assert frost._panel_alpha() == round(255 * 0.6)  # frost uses frost_opacity, not opacity
+    for overlay in (black, frost):
         overlay._render_timer.stop()
         overlay.deleteLater()
     qapp.processEvents()

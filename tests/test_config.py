@@ -28,6 +28,14 @@ def test_lyrics_script_clamps_unknown_to_off():
     assert Config(lyrics_script="bogus").clamped().lyrics_script == "off"
 
 
+def test_frost_opacity_and_full_transparency(tmp_path):
+    path = tmp_path / "c.json"
+    save_config(Config(opacity=0.0, frost_opacity=0.35), path)
+    loaded = load_config(path)
+    assert loaded.opacity == 0.0  # black panel may now be fully transparent
+    assert loaded.frost_opacity == 0.35
+
+
 def test_missing_file_returns_defaults(tmp_path):
     cfg = load_config(tmp_path / "nope.json")
     assert cfg == Config()
@@ -48,7 +56,8 @@ def test_unknown_keys_ignored_and_defaults_filled():
 def test_clamping():
     assert Config(port=99999).clamped().port == 65535  # clamped to max, not reset
     assert Config(opacity=5.0).clamped().opacity == 1.0
-    assert Config(opacity=0.0).clamped().opacity == 0.3
+    assert Config(opacity=-1.0).clamped().opacity == 0.0  # 0..1 now (fully transparent allowed)
+    assert Config(opacity=0.0).clamped().opacity == 0.0
     assert Config(font_size=1).clamped().font_size == 8
     assert Config(panel_style="weird").clamped().panel_style == "pill"
 

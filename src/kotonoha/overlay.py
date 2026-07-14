@@ -40,10 +40,6 @@ logger = logging.getLogger(__name__)
 RENDER_INTERVAL_MS = 16  # ~60fps
 CONTROL_ICON_COLOR = "#9AA0A6"  # soft grey so the lock/gear don't glare against the panel
 PILL_RADIUS = 16  # corner radius shared by the pill paint and the input region
-# Below this opacity the frosted panel drops its blur and becomes a plain
-# translucent panel, so the opacity slider visibly opens the panel up (low =
-# see-through, high = frosted) instead of always looking blurred.
-FROST_BLUR_MIN_OPACITY = 0.5
 
 
 CONTROL_BUTTON_STYLE = """
@@ -225,11 +221,10 @@ class LyricsOverlay(QWidget):
         self._translation.set_max_width(avail)
         self._translation.setVisible(config.show_translation)
 
-        # Panelled modes (glass / frosted): opacity is the panel's fill translucency
-        # (see paintEvent), so keep the window fully opaque or the lyric text would
-        # fade too and the panel would be dimmed twice. Text-only mode has no panel,
-        # so the whole window carries the opacity.
-        self.setWindowOpacity(1.0 if config.panel_style in ("pill", "frost") else config.opacity)
+        # Opacity is the panel's own fill translucency (see paintEvent / _panel_alpha),
+        # so the window itself is always fully opaque — the lyric text stays crisp,
+        # and lowering opacity (even to 0) only fades the panel, never the text.
+        self.setWindowOpacity(1.0)
         self._update_chrome()
         self._apply_window_geometry()
         self.update()
@@ -424,7 +419,7 @@ class LyricsOverlay(QWidget):
         ptr = self._window_ptr()
         if ptr is None or not self._controller.available:
             return
-        if self._config.panel_style == "frost" and self._config.opacity >= FROST_BLUR_MIN_OPACITY:
+        if self._config.panel_style == "frost":
             rect = self._container.geometry()
             self._controller.set_blur_region(ptr, rect.x(), rect.y(), rect.width(), rect.height(), PILL_RADIUS)
         else:
@@ -564,11 +559,11 @@ class LyricsOverlay(QWidget):
         return self._config.panel_style in ("pill", "frost")
 
     def _panel_alpha(self) -> int:
-        """Pill fill opacity from the Opacity slider: 100% -> solid, 30% -> faint.
-
-        Used to be hardcoded at 150/255, so the slider never touched the pill and
-        "100%" still rendered ~59% see-through."""
-        return max(0, min(255, round(255 * self._config.opacity)))
+        """Panel fill alpha from the opacity slider. The frosted panel has its own
+        opacity (0 = pure blur, 100% = solid); the black panel uses the main one
+        (0% = fully transparent). 0..100% maps to 0..255."""
+        opacity = self._config.frost_opacity if self._config.panel_style == "frost" else self._config.opacity
+        return max(0, min(255, round(255 * opacity)))
 
     def reset(self) -> None:
         self._clock.reset()

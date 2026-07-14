@@ -95,6 +95,20 @@ def test_custom_accent_slot_is_reused_not_accumulated(qapp):
     dialog.close()
 
 
+def test_opacity_is_independent_per_panel_style(qapp):
+    dialog = SettingsDialog(Config(panel_style="pill", opacity=1.0, frost_opacity=0.4))
+    assert dialog._opacity.value() == 100  # shows the black panel's opacity
+    dialog._panel.setCurrentIndex(dialog._panel.findData("frost"))
+    assert dialog._opacity.value() == 40  # switches to the frosted panel's opacity
+    dialog._opacity.setValue(70)
+    dialog._panel.setCurrentIndex(dialog._panel.findData("pill"))
+    assert dialog._opacity.value() == 100  # black opacity preserved across the switch
+    cfg = dialog.current_config()
+    assert cfg.opacity == 1.0
+    assert cfg.frost_opacity == 0.70  # the frosted change was kept separately
+    dialog.close()
+
+
 def test_panel_style_has_frosted_option_and_roundtrips(qapp):
     dialog = SettingsDialog(Config(panel_style="frost"))
     assert dialog._panel.count() == 3  # glass / frosted / text

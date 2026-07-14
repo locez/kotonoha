@@ -65,10 +65,13 @@ STRINGS: dict[str, dict[str, str]] = {
                        "zh-Hant": "面板顏色跟隨強調色", "ja": "パネル色をアクセントに追従"},
     "set.panel_hint": {
         "en": "Frosted glass needs KWin/KDE; elsewhere it falls back to a translucent panel. "
-              "Below 50% opacity the blur drops so the panel turns see-through.",
-        "zh-Hans": "毛玻璃需要 KWin/KDE 桌面；其他环境回退为半透明面板。低于 50% 不透明度会去掉模糊，面板变透明。",
-        "zh-Hant": "毛玻璃需要 KWin/KDE 桌面；其他環境回退為半透明面板。低於 50% 不透明度會去掉模糊，面板變透明。",
-        "ja": "すりガラスは KWin/KDE が必要（他環境では半透明パネルに）。不透明度 50% 未満でぼかしを外し透明に。",
+              "Each panel style keeps its own opacity (black can go fully transparent, frosted to pure blur).",
+        "zh-Hans": "毛玻璃需要 KWin/KDE 桌面；其他环境回退为半透明面板。每种面板样式各自记住不透明度"
+                   "（黑色可全透明，毛玻璃可纯模糊）。",
+        "zh-Hant": "毛玻璃需要 KWin/KDE 桌面；其他環境回退為半透明面板。每種面板樣式各自記住不透明度"
+                   "（黑色可全透明，毛玻璃可純模糊）。",
+        "ja": "すりガラスは KWin/KDE が必要（他環境では半透明パネルに）。不透明度はスタイルごとに保持"
+              "（黒は完全透明、すりガラスは純ぼかしまで）。",
     },
     "set.accent": {"en": "Accent color", "zh-Hans": "强调色", "zh-Hant": "強調色", "ja": "アクセント色"},
     "set.accent.custom": {"en": "Custom", "zh-Hans": "自定义", "zh-Hant": "自訂", "ja": "カスタム"},
