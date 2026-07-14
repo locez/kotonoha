@@ -1,6 +1,8 @@
 import json
+from typing import cast
 
 import pytest
+from aiohttp import web
 
 pytest.importorskip("PyQt6.QtCore")
 pytest.importorskip("aiohttp")
@@ -150,7 +152,7 @@ async def test_broadcast_retains_task_and_survives_closed_socket():
             raise ConnectionResetError("socket closed mid-send")
 
     receiver = LyricsReceiver(LyricsState())
-    receiver._clients.add(FakeWS())
+    receiver._clients.add(cast(web.WebSocketResponse, FakeWS()))
 
     receiver.update_translation_language("ja")  # must not raise
     # The send task is retained (RUF006), not fire-and-forget.

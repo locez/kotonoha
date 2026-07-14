@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import cast
 
 from PyQt6.QtCore import QByteArray, QPointF, QRectF, Qt
 from PyQt6.QtGui import (
@@ -71,7 +72,7 @@ def is_generated(key: str) -> bool:
 def system_is_dark() -> bool:
     """True when the system colour scheme is dark (so a light tray icon suits the
     panel). Defaults to dark when the scheme is unknown or before the app exists."""
-    app = QGuiApplication.instance()
+    app = cast(QGuiApplication | None, QGuiApplication.instance())
     hints = app.styleHints() if app is not None else None
     scheme = hints.colorScheme() if hints is not None else None
     return scheme != Qt.ColorScheme.Light

@@ -101,13 +101,17 @@ def test_coarse_position_stall_keeps_flowing_while_playing():
     clock = MediaClock(monotonic=fake)
     clock.sync(media_time=10.0, playing=True)
     previous = clock.now()
+    assert previous is not None
     for _ in range(15):  # ~3s of a stalled Position report, well past the grace window
         fake.t += 0.2
         clock.sync(media_time=10.0, playing=True)
         current = clock.now()
+        assert current is not None
         assert current >= previous  # never rolls backward
         previous = current
-    assert clock.now() > 12.0  # kept interpolating forward the whole stall
+    current = clock.now()
+    assert current is not None
+    assert current > 12.0  # kept interpolating forward the whole stall
     assert clock.playing is True  # a stall while Playing is never treated as a pause
 
 
@@ -128,7 +132,9 @@ def test_backward_seek_while_paused_is_followed():
     fake.t += 0.2
     clock.sync(media_time=20.2, playing=True)  # resume
     fake.t += 0.5
-    assert 20.0 <= clock.now() <= 21.5  # plays forward from the seeked position
+    current = clock.now()
+    assert current is not None
+    assert 20.0 <= current <= 21.5  # plays forward from the seeked position
 
 
 def test_lagging_report_does_not_roll_the_sweep_back():
@@ -137,7 +143,9 @@ def test_lagging_report_does_not_roll_the_sweep_back():
     clock.sync(media_time=10.0, playing=True)
     fake.t += 0.5  # estimate ~10.5
     clock.sync(media_time=10.2, playing=True)  # advanced, but still behind estimate
-    assert clock.now() >= 10.5  # stayed forward, did not snap back to 10.2
+    current = clock.now()
+    assert current is not None
+    assert current >= 10.5  # stayed forward, did not snap back to 10.2
 
 
 def test_sync_without_media_time_is_noop():

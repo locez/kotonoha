@@ -1,4 +1,5 @@
 import os
+from typing import cast
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -7,6 +8,8 @@ from PyQt6.QtWidgets import QApplication
 
 from kotonoha.config import Config
 from kotonoha.controller import AppController
+from kotonoha.providers.mpris import MprisProvider
+from kotonoha.receiver import LyricsReceiver
 
 
 @pytest.fixture(scope="module")
@@ -38,9 +41,9 @@ async def test_start_survives_optional_receiver_bind_failure(qapp):
     # A stale instance / double-launch holding port 28745 must only disable the
     # optional Cider receiver, not take down the already-shown overlay and tray.
     controller = AppController(qapp, Config())
-    controller._receiver = _FakeReceiver()
+    controller._receiver = cast(LyricsReceiver, _FakeReceiver())
     fake_mpris = _FakeMpris()
-    controller._mpris = fake_mpris
+    controller._mpris = cast(MprisProvider, fake_mpris)
 
     await controller.start()  # must not raise
 
