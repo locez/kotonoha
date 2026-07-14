@@ -238,6 +238,12 @@ class LyricsOverlay(QWidget):
                 f"font-family: {family_stack};"
             )
             label.setMaximumWidth(avail)
+            # Keep the context halo consistent with the main line: a light halo on
+            # the white panel (dark text), a dark halo elsewhere — otherwise the
+            # black shadow smudges dark-on-white and vanishes at low white opacity.
+            effect = label.graphicsEffect()
+            if isinstance(effect, QGraphicsDropShadowEffect):
+                effect.setColor(shadow)
 
         trans_font = QFont()
         trans_font.setFamilies(families)

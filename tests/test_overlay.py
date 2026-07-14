@@ -59,6 +59,24 @@ def test_font_fallback_chain_keeps_cjk_after_a_latin_family(qapp):
     qapp.processEvents()
 
 
+def test_white_panel_flips_text_and_context_shadow_to_light(qapp):
+    from PyQt6.QtWidgets import QGraphicsDropShadowEffect
+
+    overlay = LyricsOverlay(LyricsState(), Config(panel_style="white"), UnavailableController())
+    base, shadow, context_css = overlay._text_colors()
+    assert base.lightness() < 90  # dark lyric text on the near-white slab
+    assert shadow.lightness() > 160  # light halo, not a black smudge
+    effect = overlay._prev_label.graphicsEffect()
+    assert isinstance(effect, QGraphicsDropShadowEffect)
+    assert effect.color().lightness() > 160  # context halo follows the panel too
+    # A dark panel keeps light text with a dark halo.
+    overlay.apply_config(Config(panel_style="pill"))
+    assert overlay._text_colors()[0].lightness() > 160
+    assert overlay._prev_label.graphicsEffect().color().lightness() < 100
+    overlay.deleteLater()
+    qapp.processEvents()
+
+
 def test_untimed_word_does_not_freeze_sweep(qapp):
     from PyQt6.QtGui import QFont
 

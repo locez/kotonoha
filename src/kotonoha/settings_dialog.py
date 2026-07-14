@@ -410,9 +410,9 @@ class SettingsDialog(QDialog):
 
         self._font_size = self._spin(8, 120, c.font_size, " px")
         form.addRow(t("set.font_size"), self._font_size)
-        self._context_font_size = self._spin(8, 100, c.context_font_size, " px")
+        self._context_font_size = self._spin(8, 120, c.context_font_size, " px")
         form.addRow(t("set.context_font_size"), self._context_font_size)
-        self._translation_font_size = self._spin(8, 100, c.translation_font_size, " px")
+        self._translation_font_size = self._spin(8, 120, c.translation_font_size, " px")
         form.addRow(t("set.translation_font_size"), self._translation_font_size)
 
         # --- Panel: style, size mode, opacity, tint, then the accent colour. ---
@@ -653,9 +653,16 @@ class SettingsDialog(QDialog):
         selected_item: QListWidgetItem | None = None
         default_item: QListWidgetItem | None = None
         for choice in discover_icon_paths():
-            icon = QIcon(str(choice.path))
-            if icon.isNull():
+            source = QIcon(str(choice.path))
+            if source.isNull():
                 continue
+            # Reuse the normal pixmap for the Selected/Active modes so Qt does not
+            # tint the chosen icon blue; the accent ring alone marks the selection.
+            pixmap = source.pixmap(QSize(64, 64))
+            icon = QIcon()
+            icon.addPixmap(pixmap, QIcon.Mode.Normal)
+            icon.addPixmap(pixmap, QIcon.Mode.Selected)
+            icon.addPixmap(pixmap, QIcon.Mode.Active)
             item = QListWidgetItem(icon, "")
             item.setData(Qt.ItemDataRole.UserRole, choice.key)
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)

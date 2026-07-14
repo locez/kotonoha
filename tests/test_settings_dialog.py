@@ -259,6 +259,33 @@ def test_language_change_reveals_restart_button_and_persists(qapp):
     dialog.close()
 
 
+def test_selected_icon_is_not_blue_tinted(qapp):
+    from PyQt6.QtCore import QSize
+    from PyQt6.QtGui import QIcon
+
+    dialog = SettingsDialog(Config())
+    item = dialog._icon_list.item(0)
+    assert item is not None
+    icon = item.icon()
+    size = QSize(48, 48)
+    normal = icon.pixmap(size, QIcon.Mode.Normal).toImage()
+    selected = icon.pixmap(size, QIcon.Mode.Selected).toImage()
+    # The Selected mode reuses the Normal pixmap, so Qt applies no blue highlight
+    # tint over the chosen icon — the accent ring alone marks the selection.
+    assert not normal.isNull()
+    assert selected == normal
+    dialog.close()
+
+
+def test_max_font_sizes_survive_opening_settings(qapp):
+    # With the spin range aligned to the config clamp, a config already at the max
+    # is not truncated merely by opening the dialog and reading it back.
+    dialog = SettingsDialog(Config(font_size=120, context_font_size=120, translation_font_size=120))
+    cfg = dialog.current_config()
+    assert (cfg.font_size, cfg.context_font_size, cfg.translation_font_size) == (120, 120, 120)
+    dialog.close()
+
+
 def test_icon_picker_shows_preview_only_and_updates_config(qapp):
     dialog = SettingsDialog(Config(icon_name="leaf-pink.svg"))
 

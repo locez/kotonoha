@@ -56,6 +56,26 @@ def test_typography_and_panel_size_defaults_and_clamps():
     assert Config(panel_width_mode="bogus").clamped().panel_width_mode == "fit"
 
 
+def test_all_font_sizes_clamp_to_the_spin_box_range():
+    # All three sizes clamp to 8..120 — the same range the Appearance spin boxes
+    # offer — so opening Settings and pressing Apply can never truncate them.
+    assert Config(font_size=999).clamped().font_size == 120
+    assert Config(context_font_size=200).clamped().context_font_size == 120
+    assert Config(translation_font_size=200).clamped().translation_font_size == 120
+
+
+def test_theme_and_white_panel_clamp_and_roundtrip(tmp_path):
+    assert Config().theme == "auto"
+    assert Config(theme="light").clamped().theme == "light"
+    assert Config(theme="bogus").clamped().theme == "auto"
+    assert Config(panel_style="white").clamped().panel_style == "white"
+    path = tmp_path / "c.json"
+    save_config(Config(theme="dark", panel_style="white"), path)
+    loaded = load_config(path)
+    assert loaded.theme == "dark"
+    assert loaded.panel_style == "white"
+
+
 def test_frost_opacity_and_full_transparency(tmp_path):
     path = tmp_path / "c.json"
     save_config(Config(opacity=0.0, frost_opacity=0.35), path)

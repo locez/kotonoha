@@ -86,7 +86,9 @@ class Config:
             margin_x=_clamp_int(self.margin_x, -4000, 4000, 0),
             font_family=str(self.font_family),
             font_weight=_clamp_int(self.font_weight, 100, 900, 800),
-            font_size=_clamp_int(self.font_size, 8, 200, 24),
+            # All three ranges match the Appearance spin boxes (8..120), so opening
+            # Settings and pressing Apply can never silently truncate a saved size.
+            font_size=_clamp_int(self.font_size, 8, 120, 24),
             context_font_size=_clamp_int(self.context_font_size, 8, 120, 14),
             translation_font_size=_clamp_int(self.translation_font_size, 8, 120, 13),
             opacity=_clamp_float(self.opacity, 0.0, 1.0, 1.0),
