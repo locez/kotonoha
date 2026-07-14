@@ -53,6 +53,10 @@ class KaraokeLabel(QWidget):
         self._accent_start = QColor("#FF4FA3")
         self._accent_end = QColor("#FF8FCB")
         self._accent_sweep = QColor("#FF6EC7")
+        # Base (unsung) and shadow colours — overridable so a light panel can use
+        # dark text with a soft light halo instead of white text on a dark shadow.
+        self._base_color = QColor(UNSUNG_COLOR)
+        self._shadow_color = QColor(SHADOW_COLOR)
         self._reveal = 1.0
         self._anim: QPropertyAnimation | None = None
         # Cached text measurements (rebuilt only when font/line changes, never per
@@ -67,11 +71,23 @@ class KaraokeLabel(QWidget):
 
     # --- configuration ---
 
-    def set_style(self, font: QFont, accent_start: str, accent_end: str, accent_sweep: str) -> None:
+    def set_style(
+        self,
+        font: QFont,
+        accent_start: str,
+        accent_end: str,
+        accent_sweep: str,
+        base_color: QColor | None = None,
+        shadow_color: QColor | None = None,
+    ) -> None:
         self._font = font
         self._accent_start = QColor(accent_start)
         self._accent_end = QColor(accent_end)
         self._accent_sweep = QColor(accent_sweep)
+        if base_color is not None:
+            self._base_color = QColor(base_color)
+        if shadow_color is not None:
+            self._shadow_color = QColor(shadow_color)
         self._fm = QFontMetrics(self._font)
         self._rebuild_layout()
         self.updateGeometry()
@@ -221,15 +237,15 @@ class KaraokeLabel(QWidget):
         rect = QRectF(text_left, 0.0, total_width, height)
         align = int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
-        # 0) Cheap drop shadow (single offset dark pass) for readability.
+        # 0) Cheap drop shadow (single offset pass) for readability.
         painter.save()
         painter.translate(SHADOW_OFFSET, SHADOW_OFFSET)
-        painter.setPen(QPen(_scale_alpha(SHADOW_COLOR, a)))
+        painter.setPen(QPen(_scale_alpha(self._shadow_color, a)))
         painter.drawText(rect, align, self.text)
         painter.restore()
 
         # 1) Base (unsung) text.
-        painter.setPen(QPen(_scale_alpha(UNSUNG_COLOR, a)))
+        painter.setPen(QPen(_scale_alpha(self._base_color, a)))
         painter.drawText(rect, align, self.text)
 
         # 2) Sung text, clipped to the sweep boundary, filled with the accent gradient.

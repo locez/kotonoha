@@ -10,9 +10,21 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+from typing import cast
 
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QIcon, QMouseEvent, QPainter, QPaintEvent, QPen, QShowEvent
+from PyQt6.QtGui import (
+    QColor,
+    QFont,
+    QFontDatabase,
+    QGuiApplication,
+    QIcon,
+    QMouseEvent,
+    QPainter,
+    QPaintEvent,
+    QPen,
+    QShowEvent,
+)
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -38,37 +50,43 @@ from .config import ACCENT_PRESETS, DEFAULT_ICON_NAME, VALID_LYRICS_SOURCES, Con
 from .strings import UI_LANGUAGES, t
 from .tray import discover_icon_paths
 
-_STYLE = """
-QWidget {
-    color: #E6E6E8;
-    font-family: 'Inter', 'Segoe UI', 'Microsoft YaHei', sans-serif;
-    font-size: 13px;
-}
+# One QSS template, filled from a light or dark palette below. Spacing and radii
+# are generous and the inner borders are soft so the panels don't read as boxes
+# stacked inside boxes.
+_QSS = """
+QWidget { color: %TEXT%; font-family: 'Inter', 'Segoe UI', 'Microsoft YaHei', sans-serif; font-size: 13px; }
+QLabel { background: transparent; }
+QLabel#hint { color: %HINT%; }
+QLabel#section { color: %TEXT_DIM%; font-size: 11px; font-weight: 700; padding-top: 6px; }
+QLabel#dialogTitle { color: %TEXT_STRONG%; font-size: 15px; font-weight: 600; }
+QPushButton#closeButton { background: transparent; border: none; color: %TEXT_DIM%; font-size: 16px; padding: 0; }
+QPushButton#closeButton:hover { color: %TEXT_STRONG%; }
 QTabWidget::pane {
-    border: 1px solid rgba(255,255,255,25);
-    border-radius: 10px;
-    background: rgba(255,255,255,10);
+    border: 1px solid %PANE_BORDER%;
+    border-radius: 12px;
+    background: %PANE_BG%;
     top: -1px;
 }
+QTabBar { qproperty-drawBase: 0; }
 QTabBar::tab {
     background: transparent;
-    color: rgba(255,255,255,140);
-    padding: 6px 16px;
-    margin-right: 2px;
+    color: %TEXT_DIM%;
+    padding: 7px 4px 9px 4px;
+    margin-right: 20px;
     border: none;
+    border-bottom: 2px solid transparent;
 }
-QTabBar::tab:selected { color: #FFFFFF; border-bottom: 2px solid %ACCENT%; }
-QTabBar::tab:hover { color: #FFFFFF; }
+QTabBar::tab:selected { color: %TEXT_STRONG%; border-bottom: 2px solid %ACCENT%; }
+QTabBar::tab:hover:!selected { color: %TEXT_STRONG%; }
 /* The dialog is sized so all tabs fit; never show the tiny scroll arrows. */
 QTabBar::scroller { width: 0px; }
 QTabBar QToolButton { width: 0px; border: none; }
-QLabel { background: transparent; }
 QCheckBox { background: transparent; spacing: 8px; }
 QCheckBox::indicator, QListWidget::indicator {
     width: 16px; height: 16px;
-    border: 1px solid rgba(255,255,255,60);
-    border-radius: 4px;
-    background: rgba(255,255,255,15);
+    border: 1px solid %IND_BORDER%;
+    border-radius: 5px;
+    background: %IND_BG%;
 }
 /* Once the indicator is custom-styled, Qt no longer paints the native tick, so
    the checkmark must be supplied explicitly — otherwise checked boxes rendered
@@ -78,80 +96,156 @@ QCheckBox::indicator:checked, QListWidget::indicator:checked {
     border-color: %ACCENT%;
     image: url(%CHECK%);
 }
-QSpinBox, QComboBox {
-    background: rgba(255,255,255,18);
-    border: 1px solid rgba(255,255,255,30);
-    border-radius: 6px;
-    padding: 4px 8px;
-    color: #FFFFFF;
-    min-height: 20px;
+/* One field style for every input so combos, spin boxes and the font picker are
+   the same height and look uniform. */
+QSpinBox, QComboBox, QFontComboBox {
+    background: %FIELD_BG%;
+    border: 1px solid %FIELD_BORDER%;
+    border-radius: 7px;
+    padding: 4px 9px;
+    color: %TEXT%;
+    min-height: 24px;
 }
-QSpinBox:hover, QComboBox:hover { border-color: rgba(255,255,255,70); }
-QComboBox::drop-down { border: none; width: 18px; }
+QSpinBox:hover, QComboBox:hover, QFontComboBox:hover,
+QSpinBox:focus, QComboBox:focus, QFontComboBox:focus { border-color: %FIELD_BORDER_HOVER%; }
+QSpinBox:disabled, QComboBox:disabled { color: %TEXT_DIM%; }
+QComboBox::drop-down, QFontComboBox::drop-down {
+    subcontrol-origin: padding; subcontrol-position: center right;
+    border: none; width: 22px;
+}
+QComboBox::down-arrow, QFontComboBox::down-arrow { image: url(%CHEV_DOWN%); width: 12px; height: 12px; }
+/* Compact, borderless spin buttons with the same chevrons, so a spin box is the
+   same height as a combo instead of a tall two-button control. */
+QSpinBox::up-button, QSpinBox::down-button {
+    subcontrol-origin: border; border: none; background: transparent; width: 20px;
+}
+QSpinBox::up-button { subcontrol-position: top right; }
+QSpinBox::down-button { subcontrol-position: bottom right; }
+QSpinBox::up-arrow { image: url(%CHEV_UP%); width: 11px; height: 11px; }
+QSpinBox::down-arrow { image: url(%CHEV_DOWN%); width: 11px; height: 11px; }
 QComboBox QAbstractItemView {
-    background: #1a1c22;
-    color: #E6E6E8;
-    border: 1px solid rgba(255,255,255,30);
+    background: %POPUP_BG%;
+    color: %TEXT%;
+    border: 1px solid %FIELD_BORDER%;
+    border-radius: 8px;
+    padding: 4px;
     selection-background-color: %ACCENT%;
+    selection-color: #FFFFFF;
     outline: none;
 }
 QListWidget {
-    background: rgba(255,255,255,12);
-    border: 1px solid rgba(255,255,255,25);
-    border-radius: 8px;
+    background: %LIST_BG%;
+    border: 1px solid %LIST_BORDER%;
+    border-radius: 10px;
     outline: none;
-    padding: 4px;
+    padding: 6px;
 }
-QListWidget::item { padding: 7px 8px; border-radius: 5px; }
-QListWidget::item:selected { background: rgba(255,255,255,28); color: #FFFFFF; }
-QListWidget#iconPicker { padding: 3px; }
+QListWidget::item { padding: 8px 10px; border-radius: 7px; }
+QListWidget::item:selected { background: %ITEM_SEL%; color: %TEXT_STRONG%; }
+/* De-boxed: no list border/background so the icons don't read as a nested panel.
+   Selection is a clean accent ring around the chosen icon, not a grey slab. */
+QListWidget#iconPicker { background: transparent; border: none; padding: 2px; }
 QListWidget#iconPicker::item {
     padding: 0;
-    margin: 2px;
-    border: 1px solid transparent;
-    border-radius: 6px;
+    margin: 4px;
+    border: 2px solid transparent;
+    border-radius: 12px;
 }
-QListWidget#iconPicker::item:selected {
-    background: rgba(255,255,255,26);
-    border-color: %ACCENT%;
-}
+QListWidget#iconPicker::item:hover { border-color: %FIELD_BORDER_HOVER%; }
+QListWidget#iconPicker::item:selected { background: transparent; border: 2px solid %ACCENT%; }
 QPushButton {
-    background: rgba(255,255,255,22);
-    border: 1px solid rgba(255,255,255,40);
-    border-radius: 6px;
-    padding: 5px 16px;
-    color: #FFFFFF;
+    background: %BTN_BG%;
+    border: 1px solid %FIELD_BORDER%;
+    border-radius: 7px;
+    padding: 6px 18px;
+    color: %TEXT_STRONG%;
 }
-QPushButton:hover { background: rgba(255,255,255,42); }
-QPushButton:pressed { background: rgba(255,255,255,60); }
+QPushButton:hover { background: %BTN_HOVER%; }
+QPushButton:pressed { background: %BTN_PRESSED%; }
 """
 
-_CLOSE_STYLE = (
-    "QPushButton{background:transparent;border:none;color:rgba(255,255,255,140);"
-    "font-size:16px;padding:0;} QPushButton:hover{color:#FFFFFF;}"
-)
+# Colour tokens per theme. String values fill %TOKEN% in the QSS; the window_* RGBA
+# tuples paint the frameless dialog background in paintEvent.
+_PALETTES: dict[str, dict[str, object]] = {
+    "dark": {
+        "TEXT": "#E6E6E8", "TEXT_STRONG": "#FFFFFF", "TEXT_DIM": "rgba(255,255,255,140)",
+        "HINT": "rgba(255,255,255,120)",
+        "PANE_BG": "rgba(255,255,255,8)", "PANE_BORDER": "rgba(255,255,255,20)",
+        "FIELD_BG": "rgba(255,255,255,18)", "FIELD_BORDER": "rgba(255,255,255,32)",
+        "FIELD_BORDER_HOVER": "rgba(255,255,255,80)", "POPUP_BG": "#1e2027",
+        "IND_BORDER": "rgba(255,255,255,60)", "IND_BG": "rgba(255,255,255,15)",
+        "LIST_BG": "rgba(255,255,255,10)", "LIST_BORDER": "rgba(255,255,255,18)",
+        "ITEM_SEL": "rgba(255,255,255,26)",
+        "BTN_BG": "rgba(255,255,255,20)", "BTN_HOVER": "rgba(255,255,255,40)",
+        "BTN_PRESSED": "rgba(255,255,255,60)",
+        "window_bg": (20, 22, 28, 240), "window_border": (255, 255, 255, 30),
+    },
+    "light": {
+        "TEXT": "#24272B", "TEXT_STRONG": "#0E1013", "TEXT_DIM": "rgba(0,0,0,135)",
+        "HINT": "rgba(0,0,0,115)",
+        "PANE_BG": "rgba(0,0,0,4)", "PANE_BORDER": "rgba(0,0,0,14)",
+        "FIELD_BG": "rgba(0,0,0,6)", "FIELD_BORDER": "rgba(0,0,0,28)",
+        "FIELD_BORDER_HOVER": "rgba(0,0,0,65)", "POPUP_BG": "#FFFFFF",
+        "IND_BORDER": "rgba(0,0,0,50)", "IND_BG": "rgba(0,0,0,6)",
+        "LIST_BG": "rgba(0,0,0,4)", "LIST_BORDER": "rgba(0,0,0,14)",
+        "ITEM_SEL": "rgba(0,0,0,12)",
+        "BTN_BG": "rgba(0,0,0,7)", "BTN_HOVER": "rgba(0,0,0,14)",
+        "BTN_PRESSED": "rgba(0,0,0,22)",
+        "window_bg": (245, 246, 249, 243), "window_border": (0, 0, 0, 32),
+    },
+}
 
 # White checkmark painted over a checked indicator. Qt's stylesheet url() does
 # NOT decode data: URIs (it only loads file/resource paths), so this must be a
 # real bundled file — an inline data URI silently renders nothing, leaving a bare
-# filled square. Qt's SVG image plugin renders it.
+# filled square. Qt's SVG image plugin renders it. (White reads fine on every
+# accent colour, in both themes, since the checked box is filled with the accent.)
 _CHECKMARK_PATH = Path(__file__).with_name("assets") / "checkmark.svg"
+# Mid-grey chevrons for combo/spin arrows — one asset reads fine on both themes.
+_CHEVRON_DOWN_PATH = Path(__file__).with_name("assets") / "chevron-down.svg"
+_CHEVRON_UP_PATH = Path(__file__).with_name("assets") / "chevron-up.svg"
 
-# (QFont weight 100..900, string key) offered by the weight picker, light to heavy.
-_FONT_WEIGHTS: tuple[tuple[int, str], ...] = (
-    (300, "weight.light"),
-    (400, "weight.regular"),
-    (500, "weight.medium"),
-    (600, "weight.semibold"),
-    (700, "weight.bold"),
-    (800, "weight.extrabold"),
-    (900, "weight.black"),
-)
+# Standard QFont weights (100..900) mapped to a label key, used to name whatever
+# weights a font actually reports. When a family exposes no style info at all, the
+# picker falls back to this full ladder so the user still has choices.
+_WEIGHT_KEYS: dict[int, str] = {
+    100: "weight.thin",
+    200: "weight.extralight",
+    300: "weight.light",
+    400: "weight.regular",
+    500: "weight.medium",
+    600: "weight.semibold",
+    700: "weight.bold",
+    800: "weight.extrabold",
+    900: "weight.black",
+}
+_FALLBACK_WEIGHTS: tuple[int, ...] = (300, 400, 500, 600, 700, 800, 900)
 
 
-def _skin(accent: str) -> str:
-    """Fill the QSS template with the accent colour and the checkmark glyph."""
-    return _STYLE.replace("%ACCENT%", accent).replace("%CHECK%", _CHECKMARK_PATH.as_posix())
+def _resolve_theme(value: str) -> str:
+    """Map the config theme ("auto"/"light"/"dark") to a concrete "light"/"dark".
+    "auto" follows the system colour scheme (Qt 6.5+), defaulting to dark."""
+    if value in ("light", "dark"):
+        return value
+    app = QGuiApplication.instance()
+    hints = app.styleHints() if app is not None else None
+    scheme = hints.colorScheme() if hints is not None else None
+    return "light" if scheme == Qt.ColorScheme.Light else "dark"
+
+
+def _skin(accent: str, theme: str = "dark") -> str:
+    """Fill the QSS template from the theme palette, accent colour and checkmark."""
+    palette = _PALETTES.get(theme, _PALETTES["dark"])
+    qss = _QSS
+    for token, value in palette.items():
+        if isinstance(value, str):
+            qss = qss.replace(f"%{token}%", value)
+    return (
+        qss.replace("%ACCENT%", accent)
+        .replace("%CHECK%", _CHECKMARK_PATH.as_posix())
+        .replace("%CHEV_DOWN%", _CHEVRON_DOWN_PATH.as_posix())
+        .replace("%CHEV_UP%", _CHEVRON_UP_PATH.as_posix())
+    )
 
 
 class SettingsDialog(QDialog):
@@ -165,9 +259,10 @@ class SettingsDialog(QDialog):
         # The UI language only takes effect on restart, so remember what is in
         # effect now to decide when to offer the restart button.
         self._initial_ui_language = config.ui_language
+        self._theme = _resolve_theme(config.theme)
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setStyleSheet(_skin(config.accent_start))
+        self.setStyleSheet(_skin(config.accent_start, self._theme))
 
         self._tabs = tabs = QTabWidget()
         # Never fall back to the tiny, unstyled < > scroll arrows; widen the dialog
@@ -178,7 +273,6 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._lyrics_tab(), t("tab.lyrics"))
         tabs.addTab(self._position_tab(), t("tab.position"))
         tabs.addTab(self._sources_tab(), t("tab.sources"))
-        tabs.addTab(self._connection_tab(), t("tab.connection"))
         # Sensible default; the real fit-to-tabs width is applied in showEvent,
         # where the inherited stylesheet metrics are finally active.
         self.setMinimumWidth(520)
@@ -198,6 +292,7 @@ class SettingsDialog(QDialog):
             btn = buttons.button(std)
             if btn is not None:
                 btn.setText(t(key))
+                btn.setIcon(QIcon())  # drop the platform ✓/✕ glyphs; text-only, theme-safe
         apply_button = buttons.button(QDialogButtonBox.StandardButton.Apply)
         if apply_button is not None:
             apply_button.clicked.connect(self._emit)
@@ -214,11 +309,11 @@ class SettingsDialog(QDialog):
     def _title_bar(self) -> QHBoxLayout:
         bar = QHBoxLayout()
         title = QLabel(t("settings.title"))
-        title.setStyleSheet("font-size: 15px; font-weight: 600; color: #FFFFFF;")
+        title.setObjectName("dialogTitle")  # styled by the theme QSS
         close_btn = QPushButton("✕")
+        close_btn.setObjectName("closeButton")
         close_btn.setFixedSize(24, 24)
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_btn.setStyleSheet(_CLOSE_STYLE)
         close_btn.clicked.connect(self.reject)
         bar.addWidget(title)
         bar.addStretch(1)
@@ -226,10 +321,12 @@ class SettingsDialog(QDialog):
         return bar
 
     def paintEvent(self, a0: QPaintEvent | None) -> None:  # noqa: ARG002
+        palette = _PALETTES[self._theme]
+        rgba = cast("dict[str, tuple[int, int, int, int]]", palette)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setBrush(QColor(18, 20, 26, 236))
-        painter.setPen(QPen(QColor(255, 255, 255, 28)))
+        painter.setBrush(QColor(*rgba["window_bg"]))
+        painter.setPen(QPen(QColor(*rgba["window_border"])))
         rect = self.rect().adjusted(0, 0, -1, -1)
         painter.drawRoundedRect(rect, 14.0, 14.0)
 
@@ -255,8 +352,7 @@ class SettingsDialog(QDialog):
     # --- tabs ---
 
     def _general_tab(self) -> QWidget:
-        page = QWidget()
-        form = QFormLayout(page)
+        page, form = self._form_page()
         self._ui_language = QComboBox()
         for value, label in UI_LANGUAGES:
             self._ui_language.addItem(label, value)
@@ -265,18 +361,17 @@ class SettingsDialog(QDialog):
         form.addRow(t("set.language"), self._ui_language)
         form.addRow(self._hint(t("set.language_hint")))
 
-        # Display-side 簡/繁 conversion of the shown lyrics (independent of UI language).
-        self._lyrics_script = QComboBox()
-        for value, key in (
-            ("off", "lyricscript.off"),
-            ("zh-Hans", "lyricscript.hans"),
-            ("zh-Hant", "lyricscript.hant"),
-        ):
-            self._lyrics_script.addItem(t(key), value)
-        script_idx = self._lyrics_script.findData(self._config.lyrics_script)
-        self._lyrics_script.setCurrentIndex(script_idx if script_idx >= 0 else 0)
-        form.addRow(t("set.lyrics_script"), self._lyrics_script)
-        form.addRow(self._hint(t("set.lyrics_script_hint")))
+        # Settings-window theme: follow the system light/dark scheme, or force one.
+        self._theme_combo = QComboBox()
+        for value, key in (("auto", "theme.auto"), ("light", "theme.light"), ("dark", "theme.dark")):
+            self._theme_combo.addItem(t(key), value)
+        theme_idx = self._theme_combo.findData(self._config.theme)
+        self._theme_combo.setCurrentIndex(theme_idx if theme_idx >= 0 else 0)
+        form.addRow(t("set.theme"), self._theme_combo)
+
+        # App identity lives with the other app-wide options, not with the lyric look.
+        self._icon_list = self._build_icon_picker()
+        form.addRow(t("set.app_icon"), self._icon_list)
 
         # Hidden until the language selection differs from what is running; the UI
         # is only rebuilt on restart, so offer to do it right here.
@@ -297,48 +392,20 @@ class SettingsDialog(QDialog):
 
     def _appearance_tab(self) -> QWidget:
         c = self._config
-        page = QWidget()
-        form = QFormLayout(page)
+        page, form = self._form_page()
 
-        self._icon_list = QListWidget()
-        self._icon_list.setObjectName("iconPicker")
-        self._icon_list.setViewMode(QListView.ViewMode.IconMode)
-        self._icon_list.setFlow(QListView.Flow.LeftToRight)
-        self._icon_list.setMovement(QListView.Movement.Static)
-        self._icon_list.setResizeMode(QListView.ResizeMode.Adjust)
-        self._icon_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self._icon_list.setWrapping(True)
-        self._icon_list.setIconSize(QSize(42, 42))
-        self._icon_list.setGridSize(QSize(56, 56))
-        self._icon_list.setFixedHeight(68)
-        self._icon_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        selected_item: QListWidgetItem | None = None
-        default_item: QListWidgetItem | None = None
-        for choice in discover_icon_paths():
-            icon = QIcon(str(choice.path))
-            if icon.isNull():
-                continue
-            item = QListWidgetItem(icon, "")
-            item.setData(Qt.ItemDataRole.UserRole, choice.key)
-            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self._icon_list.addItem(item)
-            if choice.key == c.icon_name:
-                selected_item = item
-            if choice.key == DEFAULT_ICON_NAME:
-                default_item = item
-        self._icon_list.setCurrentItem(selected_item or default_item)
-        form.addRow(t("set.app_icon"), self._icon_list)
-
-        # --- Typography: family, weight, and an independent size per line role. ---
+        # --- Text: family, weight (limited to the font's real weights), sizes. ---
+        form.addRow(self._section("section.text"))
         self._font_family = QFontComboBox()
+        # A small preview glyph keeps the field the same height as the other inputs;
+        # it stays a dropdown you can also type into to filter the (long) font list.
+        self._font_family.setIconSize(QSize(0, 0))
         self._font_family.setCurrentFont(QFont(c.font_family.split(",")[0].strip().strip("'\"")))
         form.addRow(t("set.font_family"), self._font_family)
 
         self._font_weight = QComboBox()
-        for value, key in _FONT_WEIGHTS:
-            self._font_weight.addItem(t(key), value)
-        weight_index = self._font_weight.findData(c.font_weight)
-        self._font_weight.setCurrentIndex(weight_index if weight_index >= 0 else self._font_weight.count() - 1)
+        self._rebuild_weight_options(self._font_family.currentFont().family(), prefer=c.font_weight)
+        self._font_family.currentFontChanged.connect(lambda font: self._rebuild_weight_options(font.family()))
         form.addRow(t("set.font_weight"), self._font_weight)
 
         self._font_size = self._spin(8, 120, c.font_size, " px")
@@ -348,9 +415,11 @@ class SettingsDialog(QDialog):
         self._translation_font_size = self._spin(8, 100, c.translation_font_size, " px")
         form.addRow(t("set.translation_font_size"), self._translation_font_size)
 
-        # --- Panel: style, size mode, then the shared opacity + tint. ---
+        # --- Panel: style, size mode, opacity, tint, then the accent colour. ---
+        form.addRow(self._section("section.panel"))
         self._panel = QComboBox()
         self._panel.addItem(t("set.panel.pill"), "pill")
+        self._panel.addItem(t("set.panel.white"), "white")
         self._panel.addItem(t("set.panel.frost"), "frost")
         self._panel.addItem(t("set.panel.text"), "text")
         panel_index = self._panel.findData(c.panel_style)
@@ -384,6 +453,7 @@ class SettingsDialog(QDialog):
         form.addRow(self._panel_tint)
         form.addRow(self._hint(t("set.panel_hint")))
 
+        form.addRow(self._section("section.accent"))
         self._accent = QComboBox()
         self._custom_index = -1  # single reusable slot for a picked colour
         matched = False
@@ -443,8 +513,7 @@ class SettingsDialog(QDialog):
 
     def _lyrics_tab(self) -> QWidget:
         c = self._config
-        page = QWidget()
-        form = QFormLayout(page)
+        page, form = self._form_page()
 
         self._karaoke = QCheckBox(t("set.karaoke"))
         self._karaoke.setChecked(c.karaoke)
@@ -458,12 +527,25 @@ class SettingsDialog(QDialog):
         self._translation = QCheckBox(t("set.show_translation"))
         self._translation.setChecked(c.show_translation)
         form.addRow(self._translation)
+
+        # Display-side 簡/繁 conversion of the shown lyrics (belongs with the lyrics,
+        # not with the app-wide General options where it used to sit).
+        self._lyrics_script = QComboBox()
+        for value, key in (
+            ("off", "lyricscript.off"),
+            ("zh-Hans", "lyricscript.hans"),
+            ("zh-Hant", "lyricscript.hant"),
+        ):
+            self._lyrics_script.addItem(t(key), value)
+        script_idx = self._lyrics_script.findData(c.lyrics_script)
+        self._lyrics_script.setCurrentIndex(script_idx if script_idx >= 0 else 0)
+        form.addRow(t("set.lyrics_script"), self._lyrics_script)
+        form.addRow(self._hint(t("set.lyrics_script_hint")))
         return page
 
     def _position_tab(self) -> QWidget:
         c = self._config
-        page = QWidget()
-        form = QFormLayout(page)
+        page, form = self._form_page()
 
         self._anchor = QComboBox()
         self._anchor.addItem(t("set.top"), True)
@@ -486,6 +568,8 @@ class SettingsDialog(QDialog):
     def _sources_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(10)
         layout.addWidget(self._hint(t("set.sources_hint")))
 
         self._sources_list = QListWidget()
@@ -522,24 +606,97 @@ class SettingsDialog(QDialog):
                 sources.append(str(item.data(Qt.ItemDataRole.UserRole)))
         return sources
 
-    def _connection_tab(self) -> QWidget:
-        c = self._config
-        page = QWidget()
-        form = QFormLayout(page)
-
-        self._port = self._spin(1, 65535, c.port, "")
-        self._port.setGroupSeparatorShown(False)
-        form.addRow(t("set.port"), self._port)
-        form.addRow(self._hint(t("set.port_hint")))
-        return page
-
     # --- helpers ---
+
+    def _form_page(self) -> tuple[QWidget, QFormLayout]:
+        """A tab page whose form has roomy, consistent spacing. A trailing stretch
+        pins the rows to the top so a sparse tab (or a wrapping hint) never spreads
+        its rows down the whole panel."""
+        page = QWidget()
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(20, 18, 20, 18)
+        outer.setSpacing(0)
+        form = QFormLayout()
+        form.setHorizontalSpacing(16)
+        form.setVerticalSpacing(12)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        outer.addLayout(form)
+        outer.addStretch(1)
+        return page, form
 
     def _hint(self, text: str) -> QLabel:
         label = QLabel(text)
+        label.setObjectName("hint")  # dimmed by the theme QSS
         label.setWordWrap(True)
-        label.setStyleSheet("color: rgba(255,255,255,120);")
         return label
+
+    def _section(self, key: str) -> QLabel:
+        """A small, bold group heading placed on its own form row."""
+        label = QLabel(t(key))
+        label.setObjectName("section")
+        return label
+
+    def _build_icon_picker(self) -> QListWidget:
+        icon_list = QListWidget()
+        icon_list.setObjectName("iconPicker")
+        icon_list.setViewMode(QListView.ViewMode.IconMode)
+        icon_list.setFlow(QListView.Flow.LeftToRight)
+        icon_list.setMovement(QListView.Movement.Static)
+        icon_list.setResizeMode(QListView.ResizeMode.Adjust)
+        icon_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        icon_list.setWrapping(True)
+        icon_list.setIconSize(QSize(42, 42))
+        icon_list.setGridSize(QSize(60, 60))
+        icon_list.setFixedHeight(72)
+        icon_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        selected_item: QListWidgetItem | None = None
+        default_item: QListWidgetItem | None = None
+        for choice in discover_icon_paths():
+            icon = QIcon(str(choice.path))
+            if icon.isNull():
+                continue
+            item = QListWidgetItem(icon, "")
+            item.setData(Qt.ItemDataRole.UserRole, choice.key)
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            icon_list.addItem(item)
+            if choice.key == self._config.icon_name:
+                selected_item = item
+            if choice.key == DEFAULT_ICON_NAME:
+                default_item = item
+        icon_list.setCurrentItem(selected_item or default_item)
+        return icon_list
+
+    def _available_weights(self, family: str) -> list[int]:
+        """The distinct weights the family actually ships (so the picker never
+        offers a weight Qt would have to fake). Falls back to the standard ladder
+        when a family reports no style metadata."""
+        weights = sorted(
+            {int(QFontDatabase.weight(family, style)) for style in QFontDatabase.styles(family)}
+            - {0}
+        )
+        return weights or list(_FALLBACK_WEIGHTS)
+
+    def _weight_label(self, weight: int) -> str:
+        key = _WEIGHT_KEYS.get(weight)
+        if key is not None:
+            return t(key)
+        nearest = min(_WEIGHT_KEYS, key=lambda standard: abs(standard - weight))
+        return f"{t(_WEIGHT_KEYS[nearest])} ({weight})"
+
+    def _rebuild_weight_options(self, family: str, prefer: int | None = None) -> None:
+        """Repopulate the weight picker with the family's real weights, keeping the
+        selection (or `prefer`) by snapping to the nearest available weight."""
+        target = prefer if prefer is not None else self._font_weight.currentData()
+        target = int(target) if target is not None else self._config.font_weight
+        weights = self._available_weights(family)
+        self._font_weight.blockSignals(True)
+        self._font_weight.clear()
+        for weight in weights:
+            self._font_weight.addItem(self._weight_label(weight), weight)
+        nearest = min(weights, key=lambda weight: abs(weight - target))
+        self._font_weight.setCurrentIndex(weights.index(nearest))
+        self._font_weight.blockSignals(False)
 
     def _spin(self, low: int, high: int, value: int, suffix: str) -> QSpinBox:
         spin = QSpinBox()
@@ -564,6 +721,7 @@ class SettingsDialog(QDialog):
         return replace(
             self._config,
             ui_language=str(self._ui_language.currentData()),
+            theme=str(self._theme_combo.currentData()),
             lyrics_script=str(self._lyrics_script.currentData()),
             icon_name=icon_name,
             font_family=self._font_family.currentFont().family(),
@@ -587,7 +745,6 @@ class SettingsDialog(QDialog):
             margin_edge=self._margin_edge.value(),
             margin_x=self._margin_x.value(),
             passthrough=self._passthrough.isChecked(),
-            port=self._port.value(),
             lyrics_sources=self._selected_sources(),
             prefer_best_lyrics=self._prefer_best.isChecked(),
             cache_enabled=self._cache_enabled.isChecked(),
@@ -595,10 +752,12 @@ class SettingsDialog(QDialog):
 
     def _emit(self) -> None:
         self._config = self.current_config()
-        # Re-skin the dialog itself so an accent change is visible right away
-        # (tab underline, checkbox fill, list selection) rather than only after
-        # Settings is closed and reopened.
-        self.setStyleSheet(_skin(self._config.accent_start))
+        # Re-skin the dialog itself so an accent OR theme change is visible right
+        # away (tab underline, checkbox fill, light/dark palette) rather than only
+        # after Settings is closed and reopened.
+        self._theme = _resolve_theme(self._config.theme)
+        self.setStyleSheet(_skin(self._config.accent_start, self._theme))
+        self.update()  # repaint the frameless background in the new theme
         self.applied.emit(self._config)
 
     def _accept(self) -> None:

@@ -111,9 +111,48 @@ def test_opacity_is_independent_per_panel_style(qapp):
 
 def test_panel_style_has_frosted_option_and_roundtrips(qapp):
     dialog = SettingsDialog(Config(panel_style="frost"))
-    assert dialog._panel.count() == 3  # glass / frosted / text
+    assert dialog._panel.count() == 4  # black / white / frosted / text
     assert dialog._panel.currentData() == "frost"  # selected by data, not index
     assert dialog.current_config().panel_style == "frost"
+    dialog.close()
+
+
+def test_white_panel_option_present_and_roundtrips(qapp):
+    dialog = SettingsDialog(Config(panel_style="white"))
+    assert dialog._panel.findData("white") >= 0
+    assert dialog._panel.currentData() == "white"
+    assert dialog.current_config().panel_style == "white"
+    dialog.close()
+
+
+def test_theme_selector_roundtrips_and_switches_palette(qapp):
+    from kotonoha.settings_dialog import _PALETTES
+
+    dark = SettingsDialog(Config(theme="dark"))
+    assert dark._theme == "dark"
+    assert _PALETTES["dark"]["TEXT"] in dark.styleSheet()
+    assert dark.current_config().theme == "dark"
+
+    light = SettingsDialog(Config(theme="light"))
+    assert light._theme == "light"
+    assert _PALETTES["light"]["TEXT"] in light.styleSheet()
+    # Switching theme on Apply re-skins the dialog live.
+    light._theme_combo.setCurrentIndex(light._theme_combo.findData("dark"))
+    light._emit()
+    assert light._theme == "dark"
+    assert _PALETTES["dark"]["TEXT"] in light.styleSheet()
+    dark.close()
+    light.close()
+
+
+def test_connection_tab_removed_but_port_preserved(qapp):
+    # The WS-port control was dropped; the tab set no longer includes Connection,
+    # and current_config keeps the config's port untouched (still used by the CLI).
+    dialog = SettingsDialog(Config(port=41234))
+    labels = [dialog._tabs.tabText(i) for i in range(dialog._tabs.count())]
+    assert not any("onnect" in label or "连接" in label or "連接" in label or "接続" in label for label in labels)
+    assert not hasattr(dialog, "_port")
+    assert dialog.current_config().port == 41234  # preserved from the config
     dialog.close()
 
 
@@ -122,15 +161,46 @@ def test_typography_controls_roundtrip(qapp):
         font_family="DejaVu Sans", font_weight=600,
         context_font_size=17, translation_font_size=11,
     ))
-    assert dialog._font_weight.currentData() == 600
     assert dialog._context_font_size.value() == 17
     assert dialog._translation_font_size.value() == 11
-    dialog._font_weight.setCurrentIndex(dialog._font_weight.findData(900))
+    # The weight picker offers at least one weight; selecting one round-trips.
+    assert dialog._font_weight.count() >= 1
+    last = dialog._font_weight.count() - 1
+    dialog._font_weight.setCurrentIndex(last)
+    chosen = dialog._font_weight.itemData(last)
     cfg = dialog.current_config()
-    assert cfg.font_weight == 900
+    assert cfg.font_weight == chosen
     assert cfg.context_font_size == 17
     assert cfg.translation_font_size == 11
     assert cfg.font_family  # a concrete family is stored (QFontComboBox resolves it)
+    dialog.close()
+
+
+def test_weight_picker_lists_only_the_fonts_real_weights(qapp):
+    from PyQt6.QtGui import QFontDatabase
+
+    from kotonoha.settings_dialog import _FALLBACK_WEIGHTS
+
+    dialog = SettingsDialog(Config())
+    # A family with no reported styles falls back to the standard weight ladder,
+    # so the user is never left with an empty picker.
+    assert dialog._available_weights("___no_such_font___") == list(_FALLBACK_WEIGHTS)
+    # A family that DOES report styles is offered exactly its own weights (a subset
+    # of the standard ladder) — never a weight Qt would have to synthesize.
+    for family in QFontDatabase.families():
+        styles = QFontDatabase.styles(family)
+        if styles:
+            real = sorted({QFontDatabase.weight(family, s) for s in styles} - {0})
+            assert dialog._available_weights(family) == real
+            break
+    dialog.close()
+
+
+def test_weight_label_names_standard_and_off_ladder_weights(qapp):
+    dialog = SettingsDialog(Config())
+    assert dialog._weight_label(700)  # a standard weight -> a plain name
+    labelled = dialog._weight_label(316)  # DemiLight-ish -> nearest name + the value
+    assert "316" in labelled
     dialog.close()
 
 

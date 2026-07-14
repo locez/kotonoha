@@ -179,8 +179,13 @@ class LyricsOverlay(QWidget):
         self._update_lock_icon()
         return self._control_bar
 
+    def _control_icon_color(self) -> str:
+        """Darken the lock/gear icons on the light (white) panel so they stay
+        visible; every other panel is dark, where the soft grey reads fine."""
+        return "#5F6368" if self._config.panel_style == "white" else CONTROL_ICON_COLOR
+
     def _update_lock_icon(self) -> None:
-        self._lock_btn.setIcon(lock_icon(self._passthrough, CONTROL_ICON_COLOR))
+        self._lock_btn.setIcon(lock_icon(self._passthrough, self._control_icon_color()))
         self._lock_btn.setToolTip(t("overlay.locked") if self._passthrough else t("overlay.unlocked"))
 
     def _update_chrome(self) -> None:
@@ -210,22 +215,26 @@ class LyricsOverlay(QWidget):
         self._config = config
         self._passthrough = config.passthrough
         self._update_lock_icon()
+        self._settings_btn.setIcon(settings_icon(self._control_icon_color()))
         # Configure the pill width for the fit/fixed mode; `avail` is the inner width
         # the lyric labels may use before a long line scrolls (main) or elides (rest).
         avail = self._configure_panel_width()
         families = self._font_families()
+        base, shadow, context_css = self._text_colors()
 
         current_font = QFont()
         current_font.setFamilies(families)
         current_font.setPixelSize(config.font_size)
         current_font.setWeight(QFont.Weight(config.font_weight))
-        self._current.set_style(current_font, config.accent_start, config.accent_end, config.accent_sweep)
+        self._current.set_style(
+            current_font, config.accent_start, config.accent_end, config.accent_sweep, base, shadow
+        )
         self._current.set_max_width(avail)
 
         family_stack = ", ".join(f"'{name}'" for name in families)
         for label in (self._prev_label, self._next_label):
             label.setStyleSheet(
-                f"color: rgba(255,255,255,120); font-size: {config.context_font_size}px; "
+                f"color: {context_css}; font-size: {config.context_font_size}px; "
                 f"font-family: {family_stack};"
             )
             label.setMaximumWidth(avail)
@@ -234,7 +243,9 @@ class LyricsOverlay(QWidget):
         trans_font.setFamilies(families)
         trans_font.setPixelSize(config.translation_font_size)
         trans_font.setItalic(True)
-        self._translation.set_style(trans_font, config.accent_start, config.accent_end, config.accent_sweep)
+        self._translation.set_style(
+            trans_font, config.accent_start, config.accent_end, config.accent_sweep, base, shadow
+        )
         self._translation.set_max_width(avail)
         self._translation.setVisible(config.show_translation)
 
@@ -585,12 +596,23 @@ class LyricsOverlay(QWidget):
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRoundedRect(self._container.geometry(), PILL_RADIUS, PILL_RADIUS)
 
+    def _text_colors(self) -> tuple[QColor, QColor, str]:
+        """(base, shadow, context-CSS) text colours chosen for contrast against the
+        panel: the white panel needs dark text with a soft light halo, every other
+        style keeps light text with a dark shadow."""
+        if self._config.panel_style == "white":
+            return QColor(28, 30, 36, 235), QColor(255, 255, 255, 90), "rgba(20,22,28,150)"
+        return QColor(255, 255, 255, 95), QColor(0, 0, 0, 170), "rgba(255,255,255,120)"
+
     def _panel_base_color(self) -> QColor:
         """Fill colour for the panel (alpha applied separately from the slider).
 
         Black panel is a near-black slab, optionally tinted toward the accent
-        colour. Frosted is a cool translucent dark that the KWin backdrop-blur
-        (when available) shows through."""
+        colour; white is a near-white slab (dark lyrics ride on top). Frosted is a
+        cool translucent dark that the KWin backdrop-blur (when available) shows
+        through."""
+        if self._config.panel_style == "white":
+            return QColor(244, 245, 248)
         if self._config.panel_style == "frost":
             return QColor(26, 30, 40)
         if self._config.panel_accent_tint:
@@ -600,10 +622,10 @@ class LyricsOverlay(QWidget):
 
     def _should_paint_panel(self) -> bool:
         """The background panel follows the panel-style setting, decoupled from the
-        lock state: a black/frosted panel stays visible (with its opacity) even when
-        locked; "No panel" is the immersive, text-only mode. Locking only toggles
-        click-through, so it no longer silently drops the panel to nothing."""
-        return self._config.panel_style in ("pill", "frost")
+        lock state: a black/white/frosted panel stays visible (with its opacity)
+        even when locked; "No panel" is the immersive, text-only mode. Locking only
+        toggles click-through, so it no longer silently drops the panel to nothing."""
+        return self._config.panel_style in ("pill", "white", "frost")
 
     def _panel_alpha(self) -> int:
         """Panel fill alpha from the opacity slider. The frosted panel has its own

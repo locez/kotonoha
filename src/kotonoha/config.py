@@ -55,7 +55,7 @@ class Config:
     translation_font_size: int = 13  # translation line size (px)
     opacity: float = 1.0            # black-panel fill opacity 0.0..1.0
     frost_opacity: float = 0.6       # frosted-panel fill opacity 0.0..1.0 (0 = pure blur)
-    panel_style: str = "pill"        # "pill" (black) | "frost" (frosted glass) | "text" (no panel)
+    panel_style: str = "pill"        # "pill" (black) | "white" | "frost" (frosted glass) | "text" (no panel)
     panel_width_mode: str = "fit"    # "fit" (hug the text) | "fixed" (constant width)
     panel_width: int = 720           # panel width in px when panel_width_mode == "fixed"
     panel_accent_tint: bool = False  # tint the black panel toward the accent colour
@@ -70,6 +70,7 @@ class Config:
     prefer_best_lyrics: bool = True  # query sources concurrently and pick the best-quality match
     cache_enabled: bool = True
     ui_language: str = "auto"        # UI language: "auto" -> system locale, else zh-Hans/zh-Hant/ja/en
+    theme: str = "auto"              # settings-window theme: "auto" (follow system) | "light" | "dark"
     lyrics_script: str = "off"       # display-convert lyrics: "off" | "zh-Hans" | "zh-Hant"
     # Pink accent (sung text gradient + sweep highlight)
     accent_start: str = "#FF4FA3"
@@ -90,7 +91,7 @@ class Config:
             translation_font_size=_clamp_int(self.translation_font_size, 8, 120, 13),
             opacity=_clamp_float(self.opacity, 0.0, 1.0, 1.0),
             frost_opacity=_clamp_float(self.frost_opacity, 0.0, 1.0, 0.6),
-            panel_style=self.panel_style if self.panel_style in ("pill", "frost", "text") else "pill",
+            panel_style=self.panel_style if self.panel_style in ("pill", "white", "frost", "text") else "pill",
             panel_width_mode=self.panel_width_mode if self.panel_width_mode in ("fit", "fixed") else "fit",
             panel_width=_clamp_int(self.panel_width, 240, 2400, 720),
             panel_accent_tint=bool(self.panel_accent_tint),
@@ -107,6 +108,7 @@ class Config:
             prefer_best_lyrics=bool(self.prefer_best_lyrics),
             cache_enabled=bool(self.cache_enabled),
             ui_language=str(self.ui_language),
+            theme=self.theme if self.theme in ("auto", "light", "dark") else "auto",
             lyrics_script=self.lyrics_script if self.lyrics_script in ("off", "zh-Hans", "zh-Hant") else "off",
         )
 
