@@ -8,21 +8,25 @@ from :mod:`kotonoha.strings`.
 
 from __future__ import annotations
 
+import os
 from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
+from PyQt6 import sip
 from PyQt6.QtCore import QAbstractAnimation, QEasingCurve, QPropertyAnimation, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import (
     QColor,
     QFont,
     QFontDatabase,
     QGuiApplication,
+    QHideEvent,
     QIcon,
     QMouseEvent,
     QPainter,
     QPaintEvent,
     QPen,
+    QResizeEvent,
     QShowEvent,
 )
 from PyQt6.QtWidgets import (
@@ -48,8 +52,12 @@ from PyQt6.QtWidgets import (
 )
 
 from .config import ACCENT_PRESETS, DEFAULT_ICON_NAME, VALID_LYRICS_SOURCES, Config
+from .native import LayerShellController, default_package_dir
 from .strings import UI_LANGUAGES, t
 from .tray import discover_icon_paths
+
+# Dialog corner radius, shared by the painted background and the KWin blur region.
+_RADIUS = 14
 
 # One QSS template, filled from a light or dark palette below. Spacing and radii
 # are generous and the inner borders are soft so the panels don't read as boxes
@@ -271,6 +279,14 @@ class SettingsDialog(QDialog):
         self._initial_ui_language = config.ui_language
         self._theme = _resolve_theme(config.theme)
         self._did_fade_in = False
+        # Real KWin backdrop-blur behind the whole window (frosted glass), but only
+        # on KDE *Wayland* — that is where org_kde_kwin_blur applies. Anywhere else
+        # (X11, GNOME, offscreen) the window stays a solid panel, so we never turn it
+        # see-through where the blur would not actually happen.
+        desktop = os.environ.get("XDG_CURRENT_DESKTOP", "")
+        platform = QGuiApplication.platformName() or ""
+        self._blur = LayerShellController(default_package_dir(), platform, desktop)
+        self._frosted = self._blur.available and "wayland" in platform.lower() and "KDE" in desktop.upper()
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setStyleSheet(_skin(config.accent_start, self._theme))
@@ -372,12 +388,39 @@ class SettingsDialog(QDialog):
     def paintEvent(self, a0: QPaintEvent | None) -> None:  # noqa: ARG002
         palette = _PALETTES[self._theme]
         rgba = cast("dict[str, tuple[int, int, int, int]]", palette)
+        bg = rgba["window_bg"]
+        if self._frosted:
+            # Translucent so the KWin blur behind the window shows through as frost.
+            bg = (bg[0], bg[1], bg[2], 165)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setBrush(QColor(*rgba["window_bg"]))
+        painter.setBrush(QColor(*bg))
         painter.setPen(QPen(QColor(*rgba["window_border"])))
         rect = self.rect().adjusted(0, 0, -1, -1)
-        painter.drawRoundedRect(rect, 14.0, 14.0)
+        painter.drawRoundedRect(rect, float(_RADIUS), float(_RADIUS))
+
+    def _window_ptr(self) -> int | None:
+        self.winId()  # force native handle creation
+        handle = self.windowHandle()
+        return sip.unwrapinstance(handle) if handle is not None else None
+
+    def _apply_blur(self) -> None:
+        if not self._frosted:
+            return
+        ptr = self._window_ptr()
+        if ptr is not None:
+            self._blur.set_blur_region(ptr, 0, 0, self.width(), self.height(), _RADIUS)
+
+    def hideEvent(self, a0: QHideEvent | None) -> None:
+        if self._frosted:
+            ptr = self._window_ptr()
+            if ptr is not None:
+                self._blur.clear_blur(ptr)
+        super().hideEvent(a0)
+
+    def resizeEvent(self, a0: QResizeEvent | None) -> None:
+        super().resizeEvent(a0)
+        self._apply_blur()  # keep the blur region matched to the window size
 
     def mousePressEvent(self, a0: QMouseEvent | None) -> None:
         # Wayland forbids client-side move(); use the compositor's system move.
@@ -414,6 +457,7 @@ class SettingsDialog(QDialog):
             anim.setEndValue(1.0)
             anim.setEasingCurve(QEasingCurve.Type.OutCubic)
             anim.start(QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
+        self._apply_blur()  # frost the window backdrop once it is shown + sized
 
     # --- tabs ---
 

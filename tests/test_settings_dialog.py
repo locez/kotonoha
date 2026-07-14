@@ -125,6 +125,22 @@ def test_white_panel_option_present_and_roundtrips(qapp):
     dialog.close()
 
 
+def test_frost_only_on_kwin_wayland_and_blur_lifecycle_is_safe(qapp):
+    # Frost is gated to KDE Wayland; the offscreen test platform is not Wayland, so
+    # the window stays a solid panel. The blur lifecycle (apply on show, re-apply on
+    # resize, clear on hide) must be a sequence of safe no-ops that never raise.
+    dialog = SettingsDialog(Config())
+    assert dialog._frosted is False  # offscreen platform is not "wayland"
+    dialog._apply_blur()
+    dialog.show()
+    qapp.processEvents()
+    dialog.resize(dialog.width() + 20, dialog.height())
+    qapp.processEvents()
+    dialog.close()
+    dialog.deleteLater()
+    qapp.processEvents()
+
+
 def test_content_sits_in_a_raised_card_and_page_switch_is_safe(qapp):
     from PyQt6.QtWidgets import QWidget
 

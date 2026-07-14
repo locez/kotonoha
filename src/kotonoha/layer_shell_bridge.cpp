@@ -25,15 +25,19 @@
 #ifdef KOTONOHA_HAVE_BLUR
 #include <cmath>
 #include <cstring>
+#include <map>
 
 #include "blur-client-protocol.h"
 
 
 namespace {
-    // KWin blur ("org_kde_kwin_blur") for the frosted-glass panel. Bound lazily
+    // KWin blur ("org_kde_kwin_blur") for the frosted-glass surfaces. Bound lazily
     // from the registry; absent on non-KWin compositors, where blur is a no-op.
     struct org_kde_kwin_blur_manager* g_blur_manager = nullptr;
-    struct org_kde_kwin_blur* g_blur = nullptr;  // one overlay window -> one blur object
+    // One blur object PER surface, so several windows (the overlay pill AND the
+    // settings window) can each be frosted independently without clobbering a
+    // single shared object.
+    std::map<struct wl_surface*, struct org_kde_kwin_blur*> g_blurs;
     bool g_blur_probed = false;
 
     void registry_global(void*, struct wl_registry* registry, uint32_t name,
@@ -208,20 +212,22 @@ extern "C" {
         struct org_kde_kwin_blur_manager* manager = blur_manager(native);
         if (!manager) return;
 
-        // Replace any previous blur for this surface before setting the new region.
-        if (g_blur) {
-            org_kde_kwin_blur_release(g_blur);
-            g_blur = nullptr;
+        // Replace any previous blur for THIS surface (leave other windows' blur).
+        auto existing = g_blurs.find(surface);
+        if (existing != g_blurs.end()) {
+            org_kde_kwin_blur_release(existing->second);
+            g_blurs.erase(existing);
         }
-        g_blur = org_kde_kwin_blur_manager_create(manager, surface);
+        struct org_kde_kwin_blur* blur = org_kde_kwin_blur_manager_create(manager, surface);
+        g_blurs[surface] = blur;  // keep it alive so the effect persists
         struct wl_compositor* compositor = get_compositor(native);
         if (compositor) {
             struct wl_region* region = wl_compositor_create_region(compositor);
             add_rounded_rect(region, x, y, w, h, radius);  // match the pill's rounded corners
-            org_kde_kwin_blur_set_region(g_blur, region);
+            org_kde_kwin_blur_set_region(blur, region);
             wl_region_destroy(region);
         }
-        org_kde_kwin_blur_commit(g_blur);  // keep g_blur alive so the effect persists
+        org_kde_kwin_blur_commit(blur);
         wl_surface_commit(surface);
 #endif  // KOTONOHA_HAVE_BLUR
     }
@@ -238,9 +244,10 @@ extern "C" {
         if (!surface) return;
         struct org_kde_kwin_blur_manager* manager = blur_manager(native);
         if (!manager) return;
-        if (g_blur) {
-            org_kde_kwin_blur_release(g_blur);
-            g_blur = nullptr;
+        auto existing = g_blurs.find(surface);
+        if (existing != g_blurs.end()) {
+            org_kde_kwin_blur_release(existing->second);
+            g_blurs.erase(existing);
         }
         org_kde_kwin_blur_manager_unset(manager, surface);
         wl_surface_commit(surface);
