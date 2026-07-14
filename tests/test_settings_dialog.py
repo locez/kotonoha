@@ -445,6 +445,16 @@ def test_fuzzy_match_toggle_roundtrips(qapp):
     dialog.close()
 
 
+def test_settings_window_opacity_applies_and_roundtrips(qapp):
+    dialog = SettingsDialog(Config(settings_opacity=0.8))
+    assert dialog._settings_opacity.value() == 80
+    assert abs(dialog.windowOpacity() - 0.8) < 0.01  # applied to the window on open
+    dialog._settings_opacity.setValue(70)  # live preview while dragging
+    assert abs(dialog.windowOpacity() - 0.7) < 0.01
+    assert dialog.current_config().settings_opacity == 0.7
+    dialog.close()
+
+
 def test_font_picker_resolves_an_absent_family_to_an_installed_one(qapp):
     from PyQt6.QtGui import QFontDatabase
 

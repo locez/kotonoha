@@ -310,7 +310,7 @@ def _skin(accent: str, theme: str = "dark", frosted: bool = False) -> str:
 # The Config fields each sidebar page owns, in nav order. Used by "Reset this tab"
 # to restore just the current page's fields to their defaults, leaving the rest.
 _PAGE_FIELDS: tuple[tuple[str, ...], ...] = (
-    ("ui_language", "theme", "frost_window"),                                            # General
+    ("ui_language", "theme", "frost_window", "settings_opacity"),                         # General
     ("icon_name", "window_icon_name"),                                                   # Icon
     ("font_family", "font_style", "font_size", "context_font_size", "translation_font_size"),  # Text
     ("panel_style", "panel_width_mode", "panel_width", "opacity", "frost_opacity", "panel_accent_tint"),  # Panel
@@ -349,6 +349,7 @@ class SettingsDialog(QDialog):
         self._frosted = self._blur_capable and config.frost_window
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setWindowOpacity(config.settings_opacity)  # a touch see-through by default
         self.setStyleSheet(_skin(config.accent_start, self._theme, self._frosted))
 
         # Sidebar categories drive a stacked content area (replaces top tabs).
@@ -553,6 +554,13 @@ class SettingsDialog(QDialog):
         form.addRow(self._frost_window)
         if not self._blur_capable:
             form.addRow(self._hint(t("set.frost_window_hint")))
+
+        # How see-through this settings window is (whole window; text stays legible).
+        self._settings_opacity = self._spin(60, 100, round(self._config.settings_opacity * 100), " %")
+        self._settings_opacity.valueChanged.connect(
+            lambda value: self.setWindowOpacity(value / 100.0)  # live preview while dragging
+        )
+        form.addRow(t("set.settings_opacity"), self._settings_opacity)
 
         # Hidden until the language selection differs from what is running; the UI
         # is only rebuilt on restart, so offer to do it right here.
@@ -1005,6 +1013,7 @@ class SettingsDialog(QDialog):
             ui_language=str(self._ui_language.currentData()),
             theme=str(self._theme_combo.currentData()),
             frost_window=self._frost_window.isChecked(),
+            settings_opacity=self._settings_opacity.value() / 100.0,
             lyrics_script=str(self._lyrics_script.currentData()),
             icon_name=self._picked_icon(self._tray_icon_list),
             window_icon_name=self._picked_icon(self._window_icon_list),
@@ -1080,6 +1089,7 @@ class SettingsDialog(QDialog):
         # away (tab underline, checkbox fill, light/dark palette) rather than only
         # after Settings is closed and reopened.
         self._theme = _resolve_theme(self._config.theme)
+        self.setWindowOpacity(self._config.settings_opacity)  # commit the see-through level
         self.setStyleSheet(_skin(self._config.accent_start, self._theme, self._frosted))
         self._update_logo_badge()  # re-tint the leaf logo to the new accent
         self._refresh_generated_icons()  # re-tint the accent/tile icon previews
