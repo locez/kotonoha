@@ -83,6 +83,7 @@ jobs:
             python3-dbus-fast \
             python3-hatchling \
             python3-pyqt6 \
+            python3-pyqt6.qtsvg \
             python3-qasync \
             qt6-base-dev \
             qt6-base-private-dev \
@@ -111,6 +112,7 @@ jobs:
           test "${#debs[@]}" -eq 1
           apt-get install -y "./${debs[0]}"
           python3 -c "import kotonoha.main"
+          python3 -c "from PyQt6.QtSvg import QSvgRenderer"
           command -v kotonoha
           bridge=$(python3 -c "import pathlib, kotonoha; print(pathlib.Path(kotonoha.__file__).with_name('libkoto-layer.so'))")
           test -f "$bridge"
@@ -200,6 +202,7 @@ jobs:
           test "${#rpms[@]}" -eq 1
           dnf install -y "./${rpms[0]}"
           python3 -c "import qasync"
+          python3 -c "from PyQt6.QtSvg import QSvgRenderer"
           python3 -c "import kotonoha.main"
           command -v kotonoha
           bridge=$(python3 -c "import pathlib, kotonoha; print(pathlib.Path(kotonoha.__file__).with_name('libkoto-layer.so'))")
