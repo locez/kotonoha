@@ -573,6 +573,9 @@ class SettingsDialog(QDialog):
 
         # How see-through this settings window is (whole window; text stays legible).
         self._settings_opacity = self._spin(0, 100, round(self._config.settings_opacity * 100), " %")
+        # Only preview once editing settles, so typing "95" doesn't flash the window
+        # near-invisible as it passes through the intermediate "9". Arrows still preview.
+        self._settings_opacity.setKeyboardTracking(False)
         self._settings_opacity.valueChanged.connect(self._preview_window_opacity)  # live while changing
         form.addRow(t("set.settings_opacity"), self._settings_opacity)
 
