@@ -459,6 +459,20 @@ def test_settings_window_opacity_applies_and_roundtrips(qapp):
     dialog.close()
 
 
+def test_settings_opacity_100_is_fully_opaque_and_range_is_full(qapp):
+    # 100% must be genuinely opaque (the base palette alpha is < 255, which is why a
+    # "100%" window still looked see-through before), and the spin allows 0..100.
+    dialog = SettingsDialog(Config(settings_opacity=1.0, theme="dark"))
+    dialog.resize(200, 200)
+    assert dialog._settings_opacity.minimum() == 0
+    assert dialog._settings_opacity.maximum() == 100
+    opaque = dialog.grab().toImage().pixelColor(100, 100).alpha()
+    assert opaque == 255  # fully solid at 100%
+    dialog._settings_opacity.setValue(50)
+    assert dialog.grab().toImage().pixelColor(100, 100).alpha() < 200  # clearly see-through
+    dialog.close()
+
+
 def test_font_picker_resolves_an_absent_family_to_an_installed_one(qapp):
     from PyQt6.QtGui import QFontDatabase
 

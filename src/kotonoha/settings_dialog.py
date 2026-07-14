@@ -471,9 +471,10 @@ class SettingsDialog(QDialog):
         if self._frosted:
             # Translucent so the KWin blur behind the window shows through as frost.
             bg = (bg[0], bg[1], bg[2], 165)
-        elif self._win_opacity < 0.999:
-            # See-through: thin the window fill so the desktop shows through it.
-            bg = (bg[0], bg[1], bg[2], max(0, min(255, round(bg[3] * self._win_opacity))))
+        else:
+            # Opacity drives the window fill directly: 100% is fully opaque (alpha
+            # 255, not the palette's slightly-translucent default), 0% invisible.
+            bg = (bg[0], bg[1], bg[2], max(0, min(255, round(255 * self._win_opacity))))
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setBrush(QColor(*bg))
@@ -567,7 +568,7 @@ class SettingsDialog(QDialog):
             form.addRow(self._hint(t("set.frost_window_hint")))
 
         # How see-through this settings window is (whole window; text stays legible).
-        self._settings_opacity = self._spin(60, 100, round(self._config.settings_opacity * 100), " %")
+        self._settings_opacity = self._spin(0, 100, round(self._config.settings_opacity * 100), " %")
         self._settings_opacity.valueChanged.connect(self._preview_window_opacity)  # live while changing
         form.addRow(t("set.settings_opacity"), self._settings_opacity)
 
