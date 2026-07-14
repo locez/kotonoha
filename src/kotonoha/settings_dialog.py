@@ -580,8 +580,10 @@ class SettingsDialog(QDialog):
         c = self._config
         page, form = self._form_page()
         self._font_family = QFontComboBox()
-        # A zero preview glyph keeps the field the same height as the other inputs;
-        # it stays a dropdown you can also type into to filter the (long) font list.
+        # Selection, not a text box: clicking anywhere opens the font list (typing to
+        # jump still works while it is open). A zero preview glyph keeps the field the
+        # same height as the other inputs.
+        self._font_family.setEditable(False)
         self._font_family.setIconSize(QSize(0, 0))
         self._font_family.setCurrentFont(QFont(c.font_family.split(",")[0].strip().strip("'\"")))
         form.addRow(t("set.font_family"), self._font_family)

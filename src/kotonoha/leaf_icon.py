@@ -74,7 +74,8 @@ def render_leaf(style: str, accent: str = "#FF4FA3", *, dark_panel: bool = True,
         renderer.render(painter, QRectF(inset, inset, size - 2 * inset, size - 2 * inset))
     else:
         renderer = QSvgRenderer(QByteArray(_leaf_svg(accent, dark_panel, mono=(style == MONO)).encode("utf-8")))
-        renderer.render(painter)
+        inset = size * 0.08  # breathing room so the diagonal leaf isn't jammed into the corners
+        renderer.render(painter, QRectF(inset, inset, size - 2 * inset, size - 2 * inset))
     painter.end()
     return pixmap
 

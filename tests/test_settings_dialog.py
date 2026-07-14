@@ -216,6 +216,13 @@ def test_connection_section_removed_but_port_preserved(qapp):
     dialog.close()
 
 
+def test_font_picker_is_a_dropdown_not_a_text_box(qapp):
+    # Clicking the field should open the font list, not put a text cursor there.
+    dialog = SettingsDialog(Config())
+    assert dialog._font_family.isEditable() is False
+    dialog.close()
+
+
 def test_typography_controls_roundtrip(qapp):
     dialog = SettingsDialog(Config(
         font_family="DejaVu Sans", font_weight=600,

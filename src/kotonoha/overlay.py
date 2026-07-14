@@ -414,10 +414,12 @@ class LyricsOverlay(QWidget):
             # go in the tiny translation label, which read as uncomfortably small).
             # end far in the future so it stays un-swept (plain) while idle.
             text = convert_script(f"♪ {snapshot.title}{artist}", self._config.lyrics_script)
-            title_line = LyricLine(index=0, id="title", start=0.0, end=1e9, text=text, translation="", words=())
-            self._current.set_line(title_line, False)
         else:
-            self._current.set_line(None, False)
+            # Nothing playing: a default line so the panel isn't a blank box.
+            text = t("overlay.idle")
+        # end far in the future so it stays un-swept (plain) while idle.
+        title_line = LyricLine(index=0, id="title", start=0.0, end=1e9, text=text, translation="", words=())
+        self._current.set_line(title_line, False)
 
     def _render_tick(self) -> None:
         t = self._clock.now()

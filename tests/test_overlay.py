@@ -59,6 +59,17 @@ def test_font_fallback_chain_keeps_cjk_after_a_latin_family(qapp):
     qapp.processEvents()
 
 
+def test_idle_shows_default_text_so_the_panel_is_not_empty(qapp):
+    from kotonoha.model import EMPTY_SNAPSHOT
+
+    overlay = LyricsOverlay(LyricsState(), Config(), UnavailableController())
+    overlay._on_snapshot(EMPTY_SNAPSHOT)  # nothing playing
+    assert overlay._current.text  # a default line is shown, not a blank box
+    assert "♪" in overlay._current.text
+    overlay.deleteLater()
+    qapp.processEvents()
+
+
 def test_effects_apply_to_current_line_only_and_paint_safely(qapp):
     from kotonoha.model import LyricLine, LyricsSnapshot, LyricWord
 
