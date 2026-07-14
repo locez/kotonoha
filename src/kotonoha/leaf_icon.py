@@ -38,11 +38,15 @@ GENERATED: tuple[str, ...] = (ACCENT, MONO, WHITE, BLACK, TILE)
 # and white are clearer to choose than a single "adapts to your theme" swatch.
 PICKER_STYLES: tuple[str, ...] = (ACCENT, WHITE, BLACK, TILE)
 
-# Solid monochrome tones: (leaf, lyrics-motif). White reads on a dark panel, black
-# on a light one; the motif is a touch softer so the "lyrics" mark stays legible.
-_MONO_TONES = {
-    WHITE: ("#F5F5F5", "#C4C9CE"),
-    BLACK: ("#2B2B2B", "#6B6B6B"),
+# Monochrome leaves keep the leaf's depth instead of going flat: the three leaf
+# shades (vein, body, underside fold) map to a grey ramp, and the fold inverts
+# against the body so the bottom wedge stays visible — a darker wedge on the white
+# leaf, a lighter one on the black leaf. The trailing value recolours the lyrics
+# motif so it reads against the body. White suits a dark panel, black a light one.
+_MONO_RAMPS = {
+    #        vein (cls-3)  body (cls-2)  fold (cls-1)  motif (cls-4)
+    WHITE: ("#C0C5CD", "#F4F5F6", "#A7ADB7", "#979DA5"),
+    BLACK: ("#4A4B51", "#232327", "#5C5D64", "#8A9098"),
 }
 
 
@@ -59,21 +63,41 @@ def system_is_dark() -> bool:
     return scheme != Qt.ColorScheme.Light
 
 
+def _mix_over_white(color: QColor, frac: float) -> str:
+    """Blend `frac` of `color` into white — a light tint used to give the white
+    tile leaf faint depth in the family of the tile colour."""
+    red = round(255 * (1.0 - frac) + color.red() * frac)
+    green = round(255 * (1.0 - frac) + color.green() * frac)
+    blue = round(255 * (1.0 - frac) + color.blue() * frac)
+    return QColor(red, green, blue).name()
+
+
 def _leaf_svg(style: str, accent: str, dark_panel: bool) -> str:
     """The bare leaf SVG re-coloured for a style: accent-shaded, an explicit or
     theme-adaptive monochrome, or white-with-accent-motif for use on a tile."""
     svg = _LEAF.read_text(encoding="utf-8")
-    if style == TILE:  # white leaf, accent lyrics-motif, sits on the tile
-        for shade in _LEAF_SHADES:
-            svg = svg.replace(shade, "#ffffff")
-        return svg.replace(_WHITE, QColor(accent).name())
-    if style in _MONO_TONES or style == MONO:
-        if style == MONO:  # adapt to the panel behind the tray (legacy configs)
-            leaf, motif = ("#ECECEC", "#9AA0A6") if dark_panel else ("#3A3A3A", "#8A8A8A")
-        else:
-            leaf, motif = _MONO_TONES[style]
+    if style == TILE:
+        # White leaf on the accent tile, but not a flat blob: the vein and fold take
+        # a faint wash of the tile colour so the leaf reads with depth (the tile hue
+        # showing "through" it); the lyrics motif is the full accent.
+        tone = QColor(accent)
+        ramp = {
+            "#60a65a": _mix_over_white(tone, 0.17),  # vein: light tint (soft shadow)
+            "#a4d382": "#ffffff",                     # body: pure white
+            "#def1d3": _mix_over_white(tone, 0.09),  # underside fold: fainter still
+        }
+        for shade, tint in ramp.items():
+            svg = svg.replace(shade, tint)
+        return svg.replace(_WHITE, tone.name())
+    if style == MONO:  # legacy adaptive flat mono (configs saved before white/black)
+        leaf, motif = ("#ECECEC", "#9AA0A6") if dark_panel else ("#3A3A3A", "#8A8A8A")
         for shade in _LEAF_SHADES:
             svg = svg.replace(shade, leaf)
+        return svg.replace(_WHITE, motif)
+    if style in _MONO_RAMPS:
+        vein, body, fold, motif = _MONO_RAMPS[style]
+        for shade, tone in zip(_LEAF_SHADES, (vein, body, fold), strict=True):
+            svg = svg.replace(shade, tone)
         return svg.replace(_WHITE, motif)
     tone = QColor(accent)  # accent dark/mid/light, keep the white motif
     for old, new in zip(_LEAF_SHADES, (tone.darker(135).name(), tone.name(), tone.lighter(158).name()), strict=True):
