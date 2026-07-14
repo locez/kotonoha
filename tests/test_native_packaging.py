@@ -139,6 +139,7 @@ def test_debian_control_declares_package_metadata_and_dependencies() -> None:
             "python3-aiohttp",
             "python3-dbus-fast",
             "python3-pyqt6",
+            "python3-pyqt6.qtsvg",
             "python3-qasync",
             "qt6-base-private-dev",
             "qt6-wayland-dev",
@@ -150,8 +151,9 @@ def test_debian_control_declares_package_metadata_and_dependencies() -> None:
             "Package: kotonoha",
             "${python3:Depends}",
             "${misc:Depends}",
-        ),
+        )
     )
+    assert control.count("python3-pyqt6.qtsvg") == 2
 
 
 def test_debian_rules_builds_with_system_libraries_and_installs_icon() -> None:
@@ -294,6 +296,7 @@ def test_rpm_workflow_updates_spec_version_and_changelog(tmp_path: Path) -> None
 
 def test_package_workflow_installs_local_artifacts_and_stages_qasync() -> None:
     workflow = read_packaging_file(PACKAGE_WORKFLOW)
+    deb_job = workflow.split("\n  deb:\n", maxsplit=1)[1].split("\n  rpm:\n", maxsplit=1)[0]
     rpm_job = workflow.split("\n  rpm:\n", maxsplit=1)[1].split("\n  wheel:\n", maxsplit=1)[0]
 
     assert 'apt-get install -y "./${debs[0]}"' in workflow
@@ -301,6 +304,8 @@ def test_package_workflow_installs_local_artifacts_and_stages_qasync() -> None:
     assert "python3-pyqt6" in rpm_job
     assert "python3-qt6" not in rpm_job
     assert "python3-qasync" not in rpm_job
+    assert 'python3 -c "from PyQt6.QtSvg import QSvgRenderer"' in deb_job
+    assert 'python3 -c "from PyQt6.QtSvg import QSvgRenderer"' in rpm_job
     assert "qasync-0.28.0-py3-none-any.whl" in rpm_job
     assert 'python3 -c "import qasync"' in rpm_job
     assert (

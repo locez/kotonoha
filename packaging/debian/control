@@ -12,6 +12,7 @@ Build-Depends:
  python3-aiohttp,
  python3-dbus-fast,
  python3-pyqt6,
+ python3-pyqt6.qtsvg,
  python3-qasync,
  qt6-base-dev,
  qt6-base-private-dev,
@@ -34,6 +35,7 @@ Depends:
  python3-aiohttp,
  python3-dbus-fast,
  python3-pyqt6,
+ python3-pyqt6.qtsvg,
  python3-qasync
 Description: desktop lyrics overlay for Linux
  Kotonoha displays synchronized lyrics for the currently playing track in a
