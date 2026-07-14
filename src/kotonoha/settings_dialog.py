@@ -59,8 +59,10 @@ QLabel { background: transparent; }
 QLabel#hint { color: %HINT%; }
 QLabel#section { color: %TEXT_DIM%; font-size: 11px; font-weight: 700; padding-top: 6px; }
 QLabel#dialogTitle { color: %TEXT_STRONG%; font-size: 15px; font-weight: 600; }
-QPushButton#closeButton { background: transparent; border: none; color: %TEXT_DIM%; font-size: 16px; padding: 0; }
-QPushButton#closeButton:hover { color: %TEXT_STRONG%; }
+QPushButton#closeButton {
+    background: transparent; border: none; color: %TEXT_DIM%; font-size: 15px; border-radius: 13px;
+}
+QPushButton#closeButton:hover { color: %TEXT_STRONG%; background: %ITEM_SEL%; }
 /* Left sidebar navigation (a QListWidget#nav) + a stacked content area, instead
    of top tabs — a cleaner settings layout with no tab/box corner clashes. */
 QListWidget#nav {
@@ -314,10 +316,15 @@ class SettingsDialog(QDialog):
         body.addWidget(divider)
         body.addWidget(self._stack, 1)
 
+        header_line = QWidget()
+        header_line.setObjectName("navDivider")
+        header_line.setFixedHeight(1)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 14, 16, 14)
         layout.setSpacing(12)
         layout.addLayout(self._title_bar())
+        layout.addWidget(header_line)
         layout.addLayout(body, 1)
         layout.addWidget(buttons)
 
@@ -325,11 +332,20 @@ class SettingsDialog(QDialog):
 
     def _title_bar(self) -> QHBoxLayout:
         bar = QHBoxLayout()
+        bar.setSpacing(9)
+        icon_path = next(
+            (choice.path for choice in discover_icon_paths() if choice.key == self._config.icon_name),
+            None,
+        )
+        if icon_path is not None:
+            badge = QLabel()
+            badge.setPixmap(QIcon(str(icon_path)).pixmap(QSize(22, 22)))
+            bar.addWidget(badge)
         title = QLabel(t("settings.title"))
         title.setObjectName("dialogTitle")  # styled by the theme QSS
         close_btn = QPushButton("✕")
         close_btn.setObjectName("closeButton")
-        close_btn.setFixedSize(24, 24)
+        close_btn.setFixedSize(26, 26)
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         close_btn.clicked.connect(self.reject)
         bar.addWidget(title)
