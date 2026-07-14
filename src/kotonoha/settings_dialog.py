@@ -25,6 +25,7 @@ from PyQt6.QtCore import (
 from PyQt6.QtGui import (
     QColor,
     QFont,
+    QFontDatabase,
     QGuiApplication,
     QHideEvent,
     QIcon,
@@ -514,7 +515,13 @@ class SettingsDialog(QDialog):
         self._font_family.setIconSize(QSize(0, 0))
         self._font_family.setCurrentFont(QFont(c.font_family.split(",")[0].strip().strip("'\"")))
         form.addRow(t("set.font_family"), self._font_family)
-        form.addRow(self._hint(t("set.font_family_hint")))
+
+        # KDE-style style picker (Regular / Bold / Light / Italic / Condensed …) fed
+        # by the chosen family's real styles — no numeric weight, no faux styling.
+        self._font_style = QComboBox()
+        self._rebuild_style_options(self._font_family.currentFont().family(), prefer=c.font_style)
+        self._font_family.currentFontChanged.connect(lambda font: self._rebuild_style_options(font.family()))
+        form.addRow(t("set.font_style"), self._font_style)
 
         self._font_size = self._spin(8, 120, c.font_size, " px")
         form.addRow(t("set.font_size"), self._font_size)
@@ -823,6 +830,26 @@ class SettingsDialog(QDialog):
                 pixmap = leaf_icon.render_leaf(key, self._config.accent_start, dark_panel=dark, size=64)
                 item.setIcon(self._no_tint_icon(pixmap))
 
+    def _available_styles(self, family: str) -> list[str]:
+        """The family's real styles (Regular/Bold/Light/Italic/Condensed …), plain
+        styles first; falls back to a single "Regular" when a family reports none."""
+        styles = QFontDatabase.styles(family)
+        if not styles:
+            return ["Regular"]
+        return sorted(styles, key=lambda s: (0 if s in ("Regular", "Book", "Normal") else 1, s))
+
+    def _rebuild_style_options(self, family: str, prefer: str | None = None) -> None:
+        """Repopulate the style picker for the chosen family, keeping the selection
+        (or `prefer`) if the family still offers it, else defaulting to the first."""
+        target = prefer if prefer is not None else self._font_style.currentText()
+        styles = self._available_styles(family)
+        self._font_style.blockSignals(True)
+        self._font_style.clear()
+        self._font_style.addItems(styles)
+        index = self._font_style.findText(target)
+        self._font_style.setCurrentIndex(index if index >= 0 else 0)
+        self._font_style.blockSignals(False)
+
     def _spin(self, low: int, high: int, value: int, suffix: str) -> QSpinBox:
         spin = QSpinBox()
         spin.setRange(low, high)
@@ -851,6 +878,7 @@ class SettingsDialog(QDialog):
             lyrics_script=str(self._lyrics_script.currentData()),
             icon_name=icon_name,
             font_family=self._font_family.currentFont().family(),
+            font_style=self._font_style.currentText(),
             font_size=self._font_size.value(),
             context_font_size=self._context_font_size.value(),
             translation_font_size=self._translation_font_size.value(),

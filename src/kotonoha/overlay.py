@@ -225,8 +225,8 @@ class LyricsOverlay(QWidget):
         current_font = QFont()
         current_font.setFamilies(families)
         current_font.setPixelSize(config.font_size)
-        # Weight comes from the chosen font family itself (e.g. "Noto Sans CJK SC
-        # Bold"), not a forced weight — forcing it would fake-bold a regular family.
+        if config.font_style:
+            current_font.setStyleName(config.font_style)  # e.g. "Bold", "Light Italic"
         self._current.set_style(
             current_font, config.accent_start, config.accent_end, config.accent_sweep, base, shadow
         )

@@ -49,6 +49,7 @@ class Config:
     margin_x: int = 0                # horizontal nudge (px)
     # Typography / appearance
     font_family: str = "Inter, 'Segoe UI', 'Microsoft YaHei', sans-serif"
+    font_style: str = "Regular"     # named style/weight for the family (e.g. "Bold", "Light Italic")
     font_size: int = 20             # main (current) line size (px)
     context_font_size: int = 14      # previous/next line size (px)
     translation_font_size: int = 13  # translation line size (px)
@@ -91,6 +92,7 @@ class Config:
             margin_edge=_clamp_int(self.margin_edge, 0, 4000, 64),
             margin_x=_clamp_int(self.margin_x, -4000, 4000, 0),
             font_family=str(self.font_family),
+            font_style=str(self.font_style),
             # All three ranges match the Appearance spin boxes (8..120), so opening
             # Settings and pressing Apply can never silently truncate a saved size.
             font_size=_clamp_int(self.font_size, 8, 120, 20),

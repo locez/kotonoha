@@ -223,18 +223,38 @@ def test_font_picker_is_a_dropdown_not_a_text_box(qapp):
 
 
 def test_typography_controls_roundtrip(qapp):
-    # No weight picker: weight comes from the chosen font family. The sizes and the
-    # (non-editable) font family round-trip.
+    # KDE-style: a Family picker + a Style picker (Regular/Bold/…), no numeric weight.
     dialog = SettingsDialog(Config(
         font_family="DejaVu Sans", context_font_size=17, translation_font_size=11,
     ))
     assert dialog._context_font_size.value() == 17
     assert dialog._translation_font_size.value() == 11
-    assert not hasattr(dialog, "_font_weight")  # the weight picker is gone
+    assert not hasattr(dialog, "_font_weight")  # the numeric weight picker is gone
+    assert dialog._font_style.count() >= 1  # the style picker always offers something
+    assert dialog._font_family.isEditable() is False  # a dropdown, never a text box
     cfg = dialog.current_config()
     assert cfg.context_font_size == 17
     assert cfg.translation_font_size == 11
-    assert cfg.font_family  # a concrete family is stored (QFontComboBox resolves it)
+    assert cfg.font_family  # a concrete family is stored
+    assert cfg.font_style  # a concrete style is stored
+    dialog.close()
+
+
+def test_style_picker_lists_the_familys_real_styles(qapp):
+    from PyQt6.QtGui import QFontDatabase
+
+    dialog = SettingsDialog(Config())
+    # A family with no reported styles still offers a usable default.
+    assert dialog._available_styles("___no_such_font___") == ["Regular"]
+    # A family that reports styles offers exactly those (Regular sorted first).
+    for family in QFontDatabase.families():
+        styles = QFontDatabase.styles(family)
+        if styles:
+            offered = dialog._available_styles(family)
+            assert set(offered) == set(styles)
+            if "Regular" in styles:
+                assert offered[0] == "Regular"
+            break
     dialog.close()
 
 

@@ -60,12 +60,7 @@ STRINGS: dict[str, dict[str, str]] = {
                           "zh-Hant": "用於系統匣與視窗圖示。",
                           "ja": "システムトレイとウィンドウアイコンに使われます。"},
     "set.font_family": {"en": "Font", "zh-Hans": "字体", "zh-Hant": "字型", "ja": "フォント"},
-    "set.font_family_hint": {
-        "en": "Weight comes from the font — pick a bold/light variant by name (e.g. …Bold, …Light).",
-        "zh-Hans": "字重由字体决定 —— 直接按名称选择粗细变体（如 …Bold、…Light）。",
-        "zh-Hant": "字重由字型決定 —— 直接按名稱選擇粗細變體（如 …Bold、…Light）。",
-        "ja": "太さはフォントで決まります。太字/細字は名前で選んでください（…Bold / …Light など）。",
-    },
+    "set.font_style": {"en": "Style", "zh-Hans": "样式", "zh-Hant": "樣式", "ja": "スタイル"},
     "set.font_size": {"en": "Main line size", "zh-Hans": "主歌词字号",
                       "zh-Hant": "主歌詞字級", "ja": "メイン行のサイズ"},
     "set.context_font_size": {"en": "Context line size", "zh-Hans": "上下句字号",
