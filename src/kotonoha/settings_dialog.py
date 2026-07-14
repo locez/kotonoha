@@ -17,6 +17,7 @@ from PyQt6 import sip
 from PyQt6.QtCore import (
     QAbstractAnimation,
     QEasingCurve,
+    QModelIndex,
     QPropertyAnimation,
     QSize,
     Qt,
@@ -54,6 +55,8 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QStackedWidget,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QVBoxLayout,
     QWidget,
 )
@@ -66,6 +69,37 @@ from .tray import discover_icon_paths
 
 # Dialog corner radius, shared by the painted background and the KWin blur region.
 _RADIUS = 14
+
+
+class _FontNameDelegate(QStyledItemDelegate):
+    """Font-list delegate that previews each family name in its own font but drops
+    the file-type 'T' icon QFontComboBox normally draws on the left."""
+
+    def initStyleOption(self, option: QStyleOptionViewItem, index: QModelIndex) -> None:
+        super().initStyleOption(option, index)
+        family = index.data()
+        if isinstance(family, str) and family:
+            option.font = QFont(family)  # render the name in its own font
+
+
+class _IconStrip(QListWidget):
+    """Icon grid that keeps its height equal to exactly the rows its items wrap
+    into, so there is never a scrollbar and the hint below sits right under the
+    icons. It refits whenever its width changes (theme swap, window resize),
+    reading the real laid-out geometry instead of guessing the columns."""
+
+    def resizeEvent(self, e: QResizeEvent | None) -> None:
+        super().resizeEvent(e)
+        self._refit_height()
+
+    def _refit_height(self) -> None:
+        if self.count() == 0:
+            return
+        last = self.visualItemRect(self.item(self.count() - 1))
+        wanted = last.bottom() + 8
+        if self.height() != wanted:
+            self.setFixedHeight(wanted)
+
 
 # One QSS template, filled from a light or dark palette below. Spacing and radii
 # are generous and the inner borders are soft so the panels don't read as boxes
@@ -242,9 +276,13 @@ def _resolve_theme(value: str) -> str:
     return "light" if scheme == Qt.ColorScheme.Light else "dark"
 
 
-def _skin(accent: str, theme: str = "dark") -> str:
-    """Fill the QSS template from the theme palette, accent colour and checkmark."""
-    palette = _PALETTES.get(theme, _PALETTES["dark"])
+def _skin(accent: str, theme: str = "dark", frosted: bool = False) -> str:
+    """Fill the QSS template from the theme palette, accent colour and checkmark.
+    When `frosted`, the content card is made translucent so the KWin backdrop-blur
+    shows through it instead of reading as a solid block on the frosted window."""
+    palette = dict(_PALETTES.get(theme, _PALETTES["dark"]))
+    if frosted:
+        palette["CARD_BG"] = "rgba(255, 255, 255, 120)" if theme == "light" else "rgba(255, 255, 255, 16)"
     qss = _QSS
     for token, value in palette.items():
         if isinstance(value, str):
@@ -284,7 +322,7 @@ class SettingsDialog(QDialog):
         self._frosted = self._blur_capable and config.frost_window
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setStyleSheet(_skin(config.accent_start, self._theme))
+        self.setStyleSheet(_skin(config.accent_start, self._theme, self._frosted))
 
         # Sidebar categories drive a stacked content area (replaces top tabs).
         self._stack = QStackedWidget()
@@ -477,8 +515,11 @@ class SettingsDialog(QDialog):
             form.addRow(self._hint(t("set.frost_window_hint")))
 
         # App identity lives with the other app-wide options, not with the lyric look.
+        # The picker spans the full width (label above) so all styles fit one row and
+        # the hint sits right under them, instead of being pushed down by a wrap.
         self._icon_list = self._build_icon_picker()
-        form.addRow(t("set.app_icon"), self._icon_list)
+        form.addRow(QLabel(t("set.app_icon")))
+        form.addRow(self._icon_list)
         form.addRow(self._hint(t("set.app_icon_hint")))
 
         # Hidden until the language selection differs from what is running; the UI
@@ -508,11 +549,11 @@ class SettingsDialog(QDialog):
         c = self._config
         page, form = self._form_page()
         self._font_family = QFontComboBox()
-        # Selection, not a text box: clicking anywhere opens the font list (typing to
-        # jump still works while it is open). A zero preview glyph keeps the field the
-        # same height as the other inputs.
+        # Selection, not a text box: clicking anywhere opens the font list. The
+        # custom delegate previews each name in its own font without the "T" icon.
         self._font_family.setEditable(False)
         self._font_family.setIconSize(QSize(0, 0))
+        self._font_family.setItemDelegate(_FontNameDelegate(self._font_family))
         self._font_family.setCurrentFont(QFont(c.font_family.split(",")[0].strip().strip("'\"")))
         form.addRow(t("set.font_family"), self._font_family)
 
@@ -768,7 +809,7 @@ class SettingsDialog(QDialog):
         return label
 
     def _build_icon_picker(self) -> QListWidget:
-        icon_list = QListWidget()
+        icon_list = _IconStrip()
         icon_list.setObjectName("iconPicker")
         icon_list.setViewMode(QListView.ViewMode.IconMode)
         icon_list.setFlow(QListView.Flow.LeftToRight)
@@ -776,10 +817,10 @@ class SettingsDialog(QDialog):
         icon_list.setResizeMode(QListView.ResizeMode.Adjust)
         icon_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         icon_list.setWrapping(True)
-        icon_list.setIconSize(QSize(42, 42))
-        icon_list.setGridSize(QSize(60, 60))
-        icon_list.setFixedHeight(136)  # two rows so the generated + file icons all fit
+        icon_list.setIconSize(QSize(40, 40))
+        icon_list.setGridSize(QSize(54, 54))
         icon_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        icon_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._icon_items: dict[str, QListWidgetItem] = {}
         selected_item: QListWidgetItem | None = None
         default_item: QListWidgetItem | None = None
@@ -909,15 +950,8 @@ class SettingsDialog(QDialog):
 
     def _emit(self) -> None:
         self._config = self.current_config()
-        # Re-skin the dialog itself so an accent OR theme change is visible right
-        # away (tab underline, checkbox fill, light/dark palette) rather than only
-        # after Settings is closed and reopened.
-        self._theme = _resolve_theme(self._config.theme)
-        self.setStyleSheet(_skin(self._config.accent_start, self._theme))
-        self._update_logo_badge()  # re-tint the leaf logo to the new accent
-        self._refresh_generated_icons()  # re-tint the accent/tile icon previews
-        # Toggle the frosted backdrop live: apply/clear the KWin blur and repaint
-        # the panel translucent-or-solid to match the new setting.
+        # Toggle the frosted backdrop live: apply/clear the KWin blur to match the
+        # new setting, so the re-skin below can pick the right (translucent) card.
         frosted = self._blur_capable and self._config.frost_window
         if frosted != self._frosted:
             self._frosted = frosted
@@ -927,6 +961,13 @@ class SettingsDialog(QDialog):
                     self._apply_blur()
                 else:
                     self._blur.clear_blur(ptr)
+        # Re-skin the dialog itself so an accent OR theme change is visible right
+        # away (tab underline, checkbox fill, light/dark palette) rather than only
+        # after Settings is closed and reopened.
+        self._theme = _resolve_theme(self._config.theme)
+        self.setStyleSheet(_skin(self._config.accent_start, self._theme, self._frosted))
+        self._update_logo_badge()  # re-tint the leaf logo to the new accent
+        self._refresh_generated_icons()  # re-tint the accent/tile icon previews
         self.update()  # repaint the frameless background (theme / frost)
         self.applied.emit(self._config)
 
