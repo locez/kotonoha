@@ -160,7 +160,9 @@ def test_content_sits_in_a_raised_card_and_page_switch_is_safe(qapp):
     # effect is left on the page (it can never be stuck dim/blank).
     dialog._nav.setCurrentRow(2)
     assert dialog._stack.currentIndex() == 2
-    assert dialog._stack.currentWidget().graphicsEffect() is None
+    current = dialog._stack.currentWidget()
+    assert current is not None
+    assert current.graphicsEffect() is None
     dialog.close()
 
 
@@ -189,17 +191,17 @@ def test_theme_selector_roundtrips_and_switches_palette(qapp):
 
     dark = SettingsDialog(Config(theme="dark"))
     assert dark._theme == "dark"
-    assert _PALETTES["dark"]["TEXT"] in dark.styleSheet()
+    assert cast(str, _PALETTES["dark"]["TEXT"]) in dark.styleSheet()
     assert dark.current_config().theme == "dark"
 
     light = SettingsDialog(Config(theme="light"))
     assert light._theme == "light"
-    assert _PALETTES["light"]["TEXT"] in light.styleSheet()
+    assert cast(str, _PALETTES["light"]["TEXT"]) in light.styleSheet()
     # Switching theme on Apply re-skins the dialog live.
     light._theme_combo.setCurrentIndex(light._theme_combo.findData("dark"))
     light._emit()
     assert light._theme == "dark"
-    assert _PALETTES["dark"]["TEXT"] in light.styleSheet()
+    assert cast(str, _PALETTES["dark"]["TEXT"]) in light.styleSheet()
     dark.close()
     light.close()
 
@@ -208,7 +210,11 @@ def test_connection_section_removed_but_port_preserved(qapp):
     # The WS-port control was dropped; the sidebar no longer lists Connection,
     # and current_config keeps the config's port untouched (still used by the CLI).
     dialog = SettingsDialog(Config(port=41234))
-    labels = [dialog._nav.item(i).text() for i in range(dialog._nav.count())]
+    labels = []
+    for i in range(dialog._nav.count()):
+        item = dialog._nav.item(i)
+        assert item is not None
+        labels.append(item.text())
     assert not any("onnect" in label or "连接" in label or "連接" in label or "接続" in label for label in labels)
     assert not hasattr(dialog, "_port")
     assert dialog.current_config().port == 41234  # preserved from the config
@@ -317,10 +323,11 @@ def test_icon_picker_includes_generated_leaf_styles(qapp):
     from kotonoha import leaf_icon
 
     dialog = SettingsDialog(Config(icon_name=leaf_icon.TILE))
-    keys = [
-        str(dialog._tray_icon_list.item(i).data(Qt.ItemDataRole.UserRole))
-        for i in range(dialog._tray_icon_list.count())
-    ]
+    keys = []
+    for i in range(dialog._tray_icon_list.count()):
+        item = dialog._tray_icon_list.item(i)
+        assert item is not None
+        keys.append(str(item.data(Qt.ItemDataRole.UserRole)))
     for style in leaf_icon.PICKER_STYLES:  # accent / white / black / tile are offered
         assert style in keys
     assert leaf_icon.WHITE in keys and leaf_icon.BLACK in keys  # explicit monochromes
@@ -349,10 +356,11 @@ def test_tray_and_window_icons_are_chosen_independently(qapp):
     assert dialog._picked_icon(dialog._tray_icon_list) == leaf_icon.WHITE
     assert dialog._picked_icon(dialog._window_icon_list) == leaf_icon.TILE
     # Changing one does not move the other.
-    window_keys = [
-        str(dialog._window_icon_list.item(i).data(Qt.ItemDataRole.UserRole))
-        for i in range(dialog._window_icon_list.count())
-    ]
+    window_keys = []
+    for i in range(dialog._window_icon_list.count()):
+        item = dialog._window_icon_list.item(i)
+        assert item is not None
+        window_keys.append(str(item.data(Qt.ItemDataRole.UserRole)))
     dialog._window_icon_list.setCurrentRow(window_keys.index(leaf_icon.BLACK))
     cfg = dialog.current_config()
     assert cfg.icon_name == leaf_icon.WHITE

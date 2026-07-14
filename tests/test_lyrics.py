@@ -364,7 +364,9 @@ def test_exact_title_and_artist_survive_small_duration_skew():
 def test_best_match_prefers_genuine_artist_over_missing_artist():
     track = TrackMetadata("Song", "Artist", "", 180.0)
     candidates = [Candidate("noart", "Song", "", 180.0), Candidate("art", "Song", "Artist", 180.0)]
-    assert best_match(candidates, track).candidate.song_id == "art"
+    evidence = best_match(candidates, track)
+    assert evidence is not None
+    assert evidence.candidate.song_id == "art"
 
 
 def test_query_variants_are_raw_then_base_title_primary_artist():

@@ -82,8 +82,10 @@ class _FontNameDelegate(QStyledItemDelegate):
     """Font-list delegate that previews each family name in its own font but drops
     the file-type 'T' icon QFontComboBox normally draws on the left."""
 
-    def initStyleOption(self, option: QStyleOptionViewItem, index: QModelIndex) -> None:
+    def initStyleOption(self, option: QStyleOptionViewItem | None, index: QModelIndex) -> None:
         super().initStyleOption(option, index)
+        if option is None:
+            return
         family = index.data()
         if isinstance(family, str) and family:
             option.font = QFont(family)  # render the name in its own font
@@ -277,7 +279,7 @@ def _resolve_theme(value: str) -> str:
     "auto" follows the system colour scheme (Qt 6.5+), defaulting to dark."""
     if value in ("light", "dark"):
         return value
-    app = QGuiApplication.instance()
+    app = cast(QGuiApplication | None, QGuiApplication.instance())
     hints = app.styleHints() if app is not None else None
     scheme = hints.colorScheme() if hints is not None else None
     return "light" if scheme == Qt.ColorScheme.Light else "dark"
@@ -506,10 +508,8 @@ class SettingsDialog(QDialog):
         # sections never resizes the window and the nav never truncates.
         self._nav.setFixedWidth(self._nav.sizeHintForColumn(0) + 30)
         self._stack.setMinimumWidth(400)
-        tallest = max(
-            (self._stack.widget(i).sizeHint().height() for i in range(self._stack.count())),
-            default=0,
-        )
+        widgets = (self._stack.widget(i) for i in range(self._stack.count()))
+        tallest = max((widget.sizeHint().height() for widget in widgets if widget is not None), default=0)
         self._stack.setMinimumHeight(tallest)
         needed = self._nav.width() + 1 + 400 + 46  # nav + divider + content + margins/spacing
         if self.minimumWidth() < needed:

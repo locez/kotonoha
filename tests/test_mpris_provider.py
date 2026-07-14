@@ -61,6 +61,9 @@ class RecordingResolver:
     def set_prefer_best(self, _enabled):
         return None
 
+    def set_fuzzy(self, _enabled):
+        return None
+
     async def clear_cache(self):
         return None
 

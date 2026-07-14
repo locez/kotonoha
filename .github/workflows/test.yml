@@ -27,6 +27,9 @@ jobs:
     name: Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
     container: ubuntu:26.04
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:

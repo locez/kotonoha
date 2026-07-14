@@ -13,7 +13,7 @@ does not clash with the overlay's drop-shadow glow.
 
 from __future__ import annotations
 
-from typing import Any, Protocol, cast
+from typing import Any, Protocol, TypedDict, cast
 
 from PyQt6 import QtCore
 from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QRectF, QSize, Qt
@@ -40,7 +40,13 @@ _MARQUEE_PAUSE_S = 1.6       # hold at each end before reversing
 
 # Effect strength per intensity: glow alpha (of the accent), glow radius (px), and
 # the active-word brightening (QColor.lighter percent).
-_FX = {
+class _EffectConfig(TypedDict):
+    glow_alpha: float
+    glow_radius: float
+    pop: int
+
+
+_FX: dict[str, _EffectConfig] = {
     "subtle": {"glow_alpha": 0.22, "glow_radius": 2.0, "pop": 128},
     "expressive": {"glow_alpha": 0.42, "glow_radius": 3.0, "pop": 155},
 }

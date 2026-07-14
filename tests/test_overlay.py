@@ -8,12 +8,14 @@ from PyQt6.QtGui import QPaintEvent
 from PyQt6.QtWidgets import QApplication
 
 from kotonoha.config import Config
+from kotonoha.native import LayerShellController
 from kotonoha.overlay import LyricsOverlay
 from kotonoha.state import LyricsState
 
 
-class UnavailableController:
-    available = False
+class UnavailableController(LayerShellController):
+    def __init__(self) -> None:
+        super().__init__("", "wayland", "GNOME")
 
 
 class RecordingOverlay(LyricsOverlay):
@@ -169,7 +171,9 @@ def test_white_panel_flips_text_and_context_shadow_to_light(qapp):
     # A dark panel keeps light text with a dark halo.
     overlay.apply_config(Config(panel_style="pill"))
     assert overlay._text_colors()[0].lightness() > 160
-    assert overlay._prev_label.graphicsEffect().color().lightness() < 100
+    effect = overlay._prev_label.graphicsEffect()
+    assert isinstance(effect, QGraphicsDropShadowEffect)
+    assert effect.color().lightness() < 100
     overlay.deleteLater()
     qapp.processEvents()
 
@@ -222,6 +226,7 @@ def test_lyric_script_converts_displayed_line(qapp):
         LyricsState(), Config(lyrics_script="zh-Hant"), UnavailableController()
     )
     out = converted._convert_line(line)
+    assert out is not None
     assert out.text == "簡體字"  # display converted to Traditional
     assert out.words[0].text == "簡"  # words converted too (for the karaoke sweep)
     off = LyricsOverlay(LyricsState(), Config(lyrics_script="off"), UnavailableController())

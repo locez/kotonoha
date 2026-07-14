@@ -77,7 +77,7 @@ def resolver_with_fakes(
     network_hits = network_hits or {}
 
     def adapter(name):
-        async def fetch(_session, _track, *, fuzzy=False):
+        async def fetch(session, track, *, fuzzy=False):
             calls.append(f"network:{name}")
             return network_hits.get(name)
 
@@ -195,7 +195,7 @@ async def test_concurrent_identical_requests_share_network_work():
     started = asyncio.Event()
     release = asyncio.Event()
 
-    async def fetch(_session, _track, *, fuzzy=False):
+    async def fetch(session, track, *, fuzzy=False):
         calls.append("network:netease")
         started.set()
         await release.wait()
@@ -219,7 +219,7 @@ async def test_concurrent_identical_requests_share_network_work():
 
 
 async def test_network_timeout_log_includes_exception_type(caplog):
-    async def timeout(_session, _track, *, fuzzy=False):
+    async def timeout(session, track, *, fuzzy=False):
         raise TimeoutError
 
     resolver = LyricsResolver(

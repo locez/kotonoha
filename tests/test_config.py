@@ -1,3 +1,5 @@
+from typing import cast
+
 from kotonoha.config import Config, load_config, save_config
 
 
@@ -74,7 +76,7 @@ def test_effects_defaults_clamp_and_roundtrip(tmp_path):
     assert Config(fx_transition="bogus").clamped().fx_transition == "rise"
     # Fuzzy matching: on by default, coerced to bool.
     assert Config().fuzzy_match is True
-    assert Config(fuzzy_match=0).clamped().fuzzy_match is False
+    assert Config(fuzzy_match=cast(bool, 0)).clamped().fuzzy_match is False
     path = tmp_path / "c.json"
     save_config(Config(fx_animate=False, fx_glow=False, fx_word_pop=False, fx_intensity="expressive"), path)
     loaded = load_config(path)
@@ -96,7 +98,7 @@ def test_theme_and_white_panel_clamp_and_roundtrip(tmp_path):
 
 def test_frost_window_defaults_and_roundtrips(tmp_path):
     assert Config().frost_window is True
-    assert Config(frost_window=0).clamped().frost_window is False  # coerced to bool
+    assert Config(frost_window=cast(bool, 0)).clamped().frost_window is False  # coerced to bool
     path = tmp_path / "c.json"
     save_config(Config(frost_window=False), path)
     assert load_config(path).frost_window is False
