@@ -34,6 +34,10 @@ _VERSION_TAGS = {
     "remaster": ("remaster", "remastered"),
     "remix": ("remix",),
 }
+# Tags that change the recording but NOT the lyrics: a remaster has the same
+# words as the studio take, so it must not force a version conflict that rejects
+# the only correct candidate. (live/acoustic/instrumental/remix/etc. can differ.)
+_LYRIC_NEUTRAL_TAGS = frozenset({"remaster"})
 
 NORMALIZER_VERSION = 1
 
@@ -67,6 +71,8 @@ class MatchEvidence:
     confidence: MatchConfidence
     title_exact: bool
     artist_overlap: bool
+    artist_evidence: bool
+    artist_identity: bool
     album_match: bool
     duration_delta: float | None
     version_conflict: bool
@@ -161,7 +167,10 @@ def evaluate_match(candidate: Candidate, track: TrackMetadata) -> MatchEvidence:
         if track.duration_s is not None and candidate.duration_s is not None
         else None
     )
-    version_conflict = bool(track_tags or candidate_tags) and track_tags != candidate_tags
+    # Only lyric-changing tags conflict; a remaster shares the studio lyrics.
+    track_lyric_tags = track_tags - _LYRIC_NEUTRAL_TAGS
+    candidate_lyric_tags = candidate_tags - _LYRIC_NEUTRAL_TAGS
+    version_conflict = bool(track_lyric_tags or candidate_lyric_tags) and track_lyric_tags != candidate_lyric_tags
     catalog_identity = title_exact and artist_identity and album_match
 
     confidence = MatchConfidence.NONE
@@ -169,7 +178,11 @@ def evaluate_match(candidate: Candidate, track: TrackMetadata) -> MatchEvidence:
         supporting_identity = artist_evidence or album_match or (
             duration_delta is not None and duration_delta <= 3.0
         )
-        if title_strong and supporting_identity and (duration_delta is None or duration_delta <= 3.0):
+        if title_exact and artist_identity and (duration_delta is None or duration_delta <= 8.0):
+            # Exact title AND the exact same artist set is a strong identity even
+            # if the reported duration is a few seconds off (common metadata skew).
+            confidence = MatchConfidence.HIGH
+        elif title_strong and supporting_identity and (duration_delta is None or duration_delta <= 3.0):
             confidence = MatchConfidence.HIGH
         elif catalog_identity:
             confidence = MatchConfidence.MEDIUM
@@ -190,23 +203,29 @@ def evaluate_match(candidate: Candidate, track: TrackMetadata) -> MatchEvidence:
         confidence=confidence,
         title_exact=title_exact,
         artist_overlap=artist_overlap,
+        artist_evidence=artist_evidence,
+        artist_identity=artist_identity,
         album_match=album_match,
         duration_delta=duration_delta,
         version_conflict=version_conflict,
     )
 
 
-def _evidence_sort_key(evidence: MatchEvidence) -> tuple[int, bool, bool, bool, float]:
+def _evidence_sort_key(evidence: MatchEvidence) -> tuple[int, bool, bool, bool, bool, float]:
     confidence_rank = {
         MatchConfidence.NONE: 0,
         MatchConfidence.MEDIUM: 1,
         MatchConfidence.HIGH: 2,
     }
     duration_rank = -evidence.duration_delta if evidence.duration_delta is not None else float("-inf")
+    # Rank genuine artist evidence (exact set, then shared tokens) above the
+    # duration tie-break: artist_overlap is vacuously true when a candidate has no
+    # artist, so it must not let a metadata-less candidate tie a real artist match.
     return (
         confidence_rank[evidence.confidence],
         evidence.title_exact,
-        evidence.artist_overlap,
+        evidence.artist_identity,
+        evidence.artist_evidence,
         evidence.album_match,
         duration_rank,
     )

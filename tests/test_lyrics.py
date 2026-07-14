@@ -192,6 +192,25 @@ def test_query_variants_add_simplified_fold_for_traditional_input():
     assert "麻雀 李荣浩" in query_variants(TrackMetadata("麻雀", "李榮浩"))
 
 
+def test_remaster_is_not_a_version_conflict():
+    # A remaster shares the studio lyrics, so it must not be rejected as a conflict.
+    track = TrackMetadata("Song", "Artist", "", 180.0)
+    candidate = Candidate("1", "Song (Remastered 2011)", "Artist", 180.0)
+    assert evaluate_match(candidate, track).confidence is MatchConfidence.HIGH
+
+
+def test_exact_title_and_artist_survive_small_duration_skew():
+    track = TrackMetadata("Song", "Artist", "", 180.0)
+    candidate = Candidate("1", "Song", "Artist", 186.0)  # 6s skew, exact title + artist
+    assert evaluate_match(candidate, track).confidence is MatchConfidence.HIGH
+
+
+def test_best_match_prefers_genuine_artist_over_missing_artist():
+    track = TrackMetadata("Song", "Artist", "", 180.0)
+    candidates = [Candidate("noart", "Song", "", 180.0), Candidate("art", "Song", "Artist", 180.0)]
+    assert best_match(candidates, track).candidate.song_id == "art"
+
+
 def test_query_variants_are_raw_then_base_title_primary_artist():
     track = TrackMetadata("Song (Remastered 2011)", "A feat. B", "Album", 180.0)
     assert query_variants(track) == (
