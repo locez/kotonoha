@@ -38,7 +38,7 @@
 | 异步集成 | **qasync** | 相同 |
 | 本地传输 | **aiohttp WebSocket**（服务端） | 相同库；BiliHUD 用 aiohttp 做 Mirror，这里用其 WS 做 receiver |
 | Wayland 浮窗 | **layer-shell-qt**（C++ 桥 + ctypes） | **直接移植** `layer_shell_bridge.cpp` |
-| 构建 | **hatchling + hatch-build-scripts** | 相同：构建期编译 `.so` 并 force-include |
+| 构建 | **scikit-build-core + CMake** | CMake 负责 native 构建和 wheel 安装布局 |
 | 包管理 | **uv** | 相同 |
 | 歌词来源 | Cider TS 探针插件（已存在） | Kotonoha 独有 |
 
@@ -293,22 +293,19 @@ class LyricsReceiver:
 
 ---
 
-## 11. 打包与构建（移植 BiliHUD 的 hatch hook）
+## 11. 打包与构建（scikit-build-core + CMake）
 
 `pyproject.toml`：
 
 ```toml
 [build-system]
-requires = ["hatchling", "hatch-build-scripts"]
-build-backend = "hatchling.build"
+requires = ["scikit-build-core>=0.12"]
+build-backend = "scikit_build_core.build"
 
-[tool.hatch.build.targets.wheel.force-include]
-"src/kotonoha/libkoto-layer.so" = "kotonoha/libkoto-layer.so"
-
-[tool.hatch.build.hooks.build-scripts]
-[[tool.hatch.build.hooks.build-scripts.scripts]]
-commands = ["bash src/kotonoha/build_bridge.sh"]
-artifacts = ["src/kotonoha/libkoto-layer.so"]
+[tool.scikit-build]
+wheel.packages = ["src/kotonoha"]
+cmake.build-type = "Release"
+cmake.args = ["-DKOTONOHA_INSTALL_DIR=kotonoha"]
 
 [project]
 dependencies = ["PyQt6", "qasync", "aiohttp"]

@@ -24,7 +24,6 @@ NATIVE_PACKAGING_DOCS = (
     PROJECT_ROOT / "docs" / "superpowers" / "specs" / "2026-07-11-github-workflows-design.md",
     PROJECT_ROOT / "docs" / "superpowers" / "plans" / "2026-07-11-github-workflows.md",
 )
-SED_EXPRESSION_PATTERN = re.compile(r"^\s*sed -i '([^']+)' pyproject\.toml$", re.MULTILINE)
 RPM_SPEC_SED_PATTERN = re.compile(
     r'^\s*(sed -i -E "[^"]+" packaging/fedora/kotonoha\.spec)$',
     re.MULTILINE,
@@ -78,20 +77,21 @@ def test_cmake_builds_and_installs_native_bridge() -> None:
     assert "src/kotonoha/build_bridge.sh" not in cmake
 
 
-def test_hatch_hook_stages_cmake_bridge_for_wheel() -> None:
+def test_scikit_build_core_builds_cmake_bridge_into_wheel() -> None:
     pyproject = tomllib.loads(read_packaging_file(PROJECT_ROOT / "pyproject.toml"))
-    script = pyproject["tool"]["hatch"]["build"]["hooks"]["build-scripts"]["scripts"][0]
 
-    assert script["commands"] == [
-        "cmake -S . -B build/hatch-cmake -DCMAKE_BUILD_TYPE=Release -DKOTONOHA_INSTALL_DIR=src/kotonoha",
-        "cmake --build build/hatch-cmake --config Release",
-        'cmake --install build/hatch-cmake --config Release --prefix "$PWD" --component KotonohaBridge',
-    ]
-    assert script["artifacts"] == ["src/kotonoha/libkoto-layer.so"]
-    assert pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"] == {
-        "src/kotonoha/libkoto-layer.so": "kotonoha/libkoto-layer.so"
+    assert pyproject["build-system"] == {
+        "requires": ["scikit-build-core>=0.12"],
+        "build-backend": "scikit_build_core.build",
     }
-    assert (PROJECT_ROOT / "src" / "kotonoha" / "build_bridge.sh").is_file()
+    assert pyproject["tool"]["scikit-build"] == {
+        "wheel": {"packages": ["src/kotonoha"]},
+        "cmake": {
+            "build-type": "Release",
+            "args": ["-DKOTONOHA_INSTALL_DIR=kotonoha"],
+        },
+    }
+    assert "hatch" not in pyproject["tool"]
 
 
 def test_cmake_is_documented_and_verified_by_ci() -> None:
@@ -102,6 +102,7 @@ def test_cmake_is_documented_and_verified_by_ci() -> None:
     assert "cmake -S . -B build/cmake" in readme
     assert "cmake --build build/cmake" in readme
     assert "cmake --install build/cmake --config Release" in readme
+    assert "scikit-build-core" in readme
     assert "build_bridge.sh" in readme
     assert "Verify standalone CMake install" in test_workflow
     assert "-DCMAKE_BUILD_TYPE=Release" in test_workflow
@@ -135,12 +136,13 @@ def test_debian_control_declares_package_metadata_and_dependencies() -> None:
             "dh-sequence-python3",
             "pybuild-plugin-pyproject",
             "python3-all",
-            "python3-hatchling",
+            "python3-scikit-build-core",
             "python3-aiohttp",
             "python3-dbus-fast",
             "python3-pyqt6",
             "python3-pyqt6.qtsvg",
             "python3-qasync",
+            "cmake",
             "qt6-base-private-dev",
             "qt6-wayland-dev",
             "liblayershellqtinterface-dev",
@@ -156,7 +158,7 @@ def test_debian_control_declares_package_metadata_and_dependencies() -> None:
     assert control.count("python3-pyqt6.qtsvg") == 2
 
 
-def test_debian_rules_builds_with_system_libraries_and_installs_icon() -> None:
+def test_debian_rules_uses_the_pyproject_backend_and_installs_icon() -> None:
     rules_path = DEBIAN_DIR / "rules"
     rules = read_packaging_file(rules_path)
 
@@ -165,10 +167,8 @@ def test_debian_rules_builds_with_system_libraries_and_installs_icon() -> None:
         rules,
         (
             "export PYBUILD_NAME=kotonoha",
-            "export USE_SYSTEM_LIBS=1",
             "dh $@ --buildsystem=pybuild",
             "override_dh_auto_configure:",
-            "USE_SYSTEM_LIBS=1 bash src/kotonoha/build_bridge.sh",
             "dh_auto_configure --buildsystem=pybuild",
             "override_dh_auto_test:",
             "Tests run separately; skipping duplicate package-build tests.",
@@ -185,7 +185,7 @@ def test_debian_install_and_changelog_define_desktop_file_and_initial_release() 
     changelog = read_packaging_file(DEBIAN_DIR / "changelog")
 
     assert "packaging/kotonoha.desktop usr/share/applications" in install
-    assert "src/kotonoha/libkoto-layer.so usr/lib/python3/dist-packages/kotonoha" in install
+    assert "src/kotonoha/libkoto-layer.so usr/lib/python3/dist-packages/kotonoha" not in install
     assert_contains(
         changelog,
         (
@@ -212,9 +212,10 @@ def test_fedora_spec_declares_metadata_and_dependencies() -> None:
             "Source0:        %{name}-%{version}.tar.gz",
             "Source1:        qasync-0.28.0-py3-none-any.whl",
             "BuildRequires:  python3-devel",
-            "BuildRequires:  python3-hatchling",
+            "BuildRequires:  python3-scikit-build-core",
             "BuildRequires:  pyproject-rpm-macros",
             "BuildRequires:  gcc-c++",
+            "BuildRequires:  cmake",
             "BuildRequires:  qt6-qtbase-private-devel",
             "BuildRequires:  qt6-qtwayland-devel",
             "BuildRequires:  layer-shell-qt-devel",
@@ -242,7 +243,6 @@ def test_fedora_spec_builds_and_installs_native_desktop_assets() -> None:
             "%prep",
             "%autosetup",
             "%build",
-            "USE_SYSTEM_LIBS=1 bash src/kotonoha/build_bridge.sh",
             "%pyproject_wheel",
             "%install",
             "%pyproject_install",
@@ -320,40 +320,16 @@ def test_package_workflow_installs_local_artifacts_and_stages_qasync() -> None:
     assert "BUILD_QT_VERSION" in workflow
 
 
-def apply_packaging_sed_expressions(tmp_path: Path, packaging_path: Path, *, makefile: bool) -> tuple[str, dict]:
-    packaging = read_packaging_file(packaging_path)
-    expressions = SED_EXPRESSION_PATTERN.findall(packaging)
-    assert len(expressions) == 2
+def test_package_workflow_declares_the_scikit_build_core_backend() -> None:
+    workflow = read_packaging_file(PACKAGE_WORKFLOW)
+    deb_job = workflow.split("\n  deb:\n", maxsplit=1)[1].split("\n  rpm:\n", maxsplit=1)[0]
+    rpm_job = workflow.split("\n  rpm:\n", maxsplit=1)[1].split("\n  wheel:\n", maxsplit=1)[0]
 
-    pyproject_path = tmp_path / "pyproject.toml"
-    pyproject_path.write_bytes((PROJECT_ROOT / "pyproject.toml").read_bytes())
-    for expression in expressions:
-        if makefile:
-            expression = expression.replace("$$", "$")
-        subprocess.run(("sed", "-i", expression, str(pyproject_path)), check=True)
-
-    transformed = pyproject_path.read_text(encoding="utf-8")
-    return transformed, tomllib.loads(transformed)
-
-
-@pytest.mark.parametrize(
-    ("packaging_path", "makefile"),
-    ((DEBIAN_DIR / "rules", True), (FEDORA_SPEC, False)),
-)
-def test_native_packaging_sed_expressions_remove_only_the_build_hook(
-    tmp_path: Path,
-    packaging_path: Path,
-    makefile: bool,
-) -> None:
-    transformed, pyproject = apply_packaging_sed_expressions(tmp_path, packaging_path, makefile=makefile)
-
-    assert pyproject["build-system"]["requires"] == ["hatchling"]
-    assert "hatch-build-scripts" not in transformed
-    hatch_build = pyproject["tool"]["hatch"]["build"]
-    assert "hooks" not in hatch_build
-    assert hatch_build["targets"]["wheel"]["force-include"] == {
-        "src/kotonoha/libkoto-layer.so": "kotonoha/libkoto-layer.so"
-    }
+    assert "python3-scikit-build-core" in deb_job
+    assert "python3-scikit-build-core" in rpm_job
+    assert "cmake" in deb_job
+    assert "cmake" in rpm_job
+    assert "python3-hatchling" not in workflow
 
 
 def test_native_packaging_docs_do_not_require_the_removed_build_hook() -> None:
@@ -363,16 +339,14 @@ def test_native_packaging_docs_do_not_require_the_removed_build_hook() -> None:
         assert "PYTHONPATH" not in documentation
 
 
-def test_debian_rules_restore_the_source_tree_after_repeated_configure(
+def test_debian_rules_leave_the_source_tree_unchanged_on_repeated_configure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source_tree = tmp_path / "source"
     debian_dir = source_tree / "debian"
-    package_dir = source_tree / "src" / "kotonoha"
     fake_bin = tmp_path / "bin"
     debian_dir.mkdir(parents=True)
-    package_dir.mkdir(parents=True)
     fake_bin.mkdir()
 
     original_pyproject = (PROJECT_ROOT / "pyproject.toml").read_bytes()
@@ -381,7 +355,6 @@ def test_debian_rules_restore_the_source_tree_after_repeated_configure(
     rules_path = debian_dir / "rules"
     rules_path.write_bytes((DEBIAN_DIR / "rules").read_bytes())
     rules_path.chmod(0o755)
-    write_executable(package_dir / "build_bridge.sh", "#!/bin/bash\n: > src/kotonoha/libkoto-layer.so\n")
     write_executable(fake_bin / "dh_auto_configure", "#!/bin/sh\nprintf 'configure\\n' >> debhelper.log\n")
     write_executable(fake_bin / "dh_clean", "#!/bin/sh\nprintf 'clean\\n' >> debhelper.log\n")
     monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ['PATH']}")
@@ -389,21 +362,17 @@ def test_debian_rules_restore_the_source_tree_after_repeated_configure(
     backup_path = debian_dir / ".kotonoha-pyproject.toml.orig"
     configure_command = ("make", "-f", "debian/rules", "override_dh_auto_configure")
     subprocess.run(configure_command, cwd=source_tree, check=True)
-    assert backup_path.is_file()
-    assert backup_path.read_bytes() == original_pyproject
-    assert pyproject_path.read_bytes() != original_pyproject
-    assert "hatch-build-scripts" not in pyproject_path.read_text(encoding="utf-8")
+    assert not backup_path.exists()
+    assert pyproject_path.read_bytes() == original_pyproject
 
     subprocess.run(configure_command, cwd=source_tree, check=True)
-    assert backup_path.read_bytes() == original_pyproject
-    assert pyproject_path.read_bytes() != original_pyproject
-    assert (package_dir / "libkoto-layer.so").is_file()
+    assert not backup_path.exists()
+    assert pyproject_path.read_bytes() == original_pyproject
 
     clean_command = ("make", "-f", "debian/rules", "override_dh_clean")
     subprocess.run(clean_command, cwd=source_tree, check=True)
     assert pyproject_path.read_bytes() == original_pyproject
     assert not backup_path.exists()
-    assert not (package_dir / "libkoto-layer.so").exists()
 
     subprocess.run(clean_command, cwd=source_tree, check=True)
     assert pyproject_path.read_bytes() == original_pyproject

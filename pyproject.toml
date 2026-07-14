@@ -1,18 +1,11 @@
 [build-system]
-requires = ["hatchling", "hatch-build-scripts"]
-build-backend = "hatchling.build"
+requires = ["scikit-build-core>=0.12"]
+build-backend = "scikit_build_core.build"
 
-[tool.hatch.build.targets.wheel.force-include]
-"src/kotonoha/libkoto-layer.so" = "kotonoha/libkoto-layer.so"
-
-[tool.hatch.build.hooks.build-scripts]
-[[tool.hatch.build.hooks.build-scripts.scripts]]
-commands = [
-  "cmake -S . -B build/hatch-cmake -DCMAKE_BUILD_TYPE=Release -DKOTONOHA_INSTALL_DIR=src/kotonoha",
-  "cmake --build build/hatch-cmake --config Release",
-  "cmake --install build/hatch-cmake --config Release --prefix \"$PWD\" --component KotonohaBridge",
-]
-artifacts = ["src/kotonoha/libkoto-layer.so"]
+[tool.scikit-build]
+wheel.packages = ["src/kotonoha"]
+cmake.build-type = "Release"
+cmake.args = ["-DKOTONOHA_INSTALL_DIR=kotonoha"]
 
 [project]
 name = "kotonoha"

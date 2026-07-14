@@ -17,11 +17,16 @@ def load_patcher():
     return module.patch_linux_wheel_metadata
 
 
-def create_unpacked_wheel(root: Path, *, pyqt_requirement: str | None = "PyQt6") -> Path:
+def create_unpacked_wheel(
+    root: Path,
+    *,
+    pyqt_requirement: str | None = "PyQt6",
+    root_is_purelib: str = "true",
+) -> Path:
     dist_info = root / "kotonoha-0.1.0.dist-info"
     dist_info.mkdir(parents=True)
     (dist_info / "WHEEL").write_text(
-        "Wheel-Version: 1.0\nGenerator: test\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
+        f"Wheel-Version: 1.0\nGenerator: test\nRoot-Is-Purelib: {root_is_purelib}\nTag: py3-none-any\n",
         encoding="utf-8",
     )
     requirements = ["Requires-Dist: qasync"]
@@ -47,6 +52,15 @@ def test_patch_linux_wheel_metadata_pins_pyqt_to_qt_minor(tmp_path: Path) -> Non
         "qasync",
         "PyQt6-Qt6<6.11,>=6.10",
     ]
+
+
+def test_patch_linux_wheel_metadata_accepts_an_already_non_pure_wheel(tmp_path: Path) -> None:
+    dist_info = create_unpacked_wheel(tmp_path, root_is_purelib="false")
+
+    load_patcher()(tmp_path, "6.10.2")
+
+    wheel = Parser().parsestr((dist_info / "WHEEL").read_text(encoding="utf-8"))
+    assert wheel.get_all("Root-Is-Purelib") == ["false"]
 
 
 @pytest.mark.parametrize("version", ("6.10", "6.10.x", "6.10.2.1", "v6.10.2", ""))
