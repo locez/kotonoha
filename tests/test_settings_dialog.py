@@ -446,11 +446,15 @@ def test_fuzzy_match_toggle_roundtrips(qapp):
 
 
 def test_settings_window_opacity_applies_and_roundtrips(qapp):
-    dialog = SettingsDialog(Config(settings_opacity=0.8))
+    # Painted-alpha, not setWindowOpacity (which the Qt Wayland plugin ignores):
+    # in the light theme the card is thinned; the window fill is thinned in paintEvent.
+    dialog = SettingsDialog(Config(settings_opacity=0.8, theme="light"))
     assert dialog._settings_opacity.value() == 80
-    assert abs(dialog.windowOpacity() - 0.8) < 0.01  # applied to the window on open
-    dialog._settings_opacity.setValue(70)  # live preview while dragging
-    assert abs(dialog.windowOpacity() - 0.7) < 0.01
+    assert dialog._win_opacity == 0.8
+    assert "rgba(255, 255, 255, 204)" in dialog.styleSheet()  # 0.8 * 255 card alpha
+    dialog._settings_opacity.setValue(70)  # live preview while changing
+    assert dialog._win_opacity == 0.7
+    assert "rgba(255, 255, 255, 178)" in dialog.styleSheet()  # re-skinned to 0.7
     assert dialog.current_config().settings_opacity == 0.7
     dialog.close()
 

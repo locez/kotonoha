@@ -267,9 +267,9 @@ class LyricsOverlay(QWidget):
         self._translation.setVisible(config.show_translation)
 
         # Opacity is the panel's own fill translucency (see paintEvent / _panel_alpha),
-        # so the window itself is always fully opaque — the lyric text stays crisp,
-        # and lowering opacity (even to 0) only fades the panel, never the text.
-        self.setWindowOpacity(1.0)
+        # so the window itself stays fully opaque — the lyric text is always crisp and
+        # lowering opacity (even to 0) only fades the panel, never the text. (We do NOT
+        # call setWindowOpacity: the Qt Wayland plugin ignores it and just warns.)
         self._update_chrome()
         self._apply_window_geometry()
         self.update()
