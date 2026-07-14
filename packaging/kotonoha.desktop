@@ -15,6 +15,10 @@ Comment[ja]=再生中の曲の同期歌詞を表示
 Exec=kotonoha
 Icon=kotonoha
 Terminal=false
+# Kotonoha only shows a tray icon + a Wayland layer-shell overlay, never a normal
+# top-level window — so the launcher's startup notification would never be completed
+# and KDE would bounce the "launching" cursor until it times out. Opt out of it.
+StartupNotify=false
 Categories=AudioVideo;Audio;
 Keywords=lyrics;music;overlay;karaoke;
 Keywords[zh_CN]=歌词;音乐;悬浮窗;卡拉OK;
