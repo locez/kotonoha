@@ -192,6 +192,40 @@ def test_query_variants_add_simplified_fold_for_traditional_input():
     assert "麻雀 李荣浩" in query_variants(TrackMetadata("麻雀", "李榮浩"))
 
 
+def test_noisy_title_queries_salvage_cluttered_browser_titles():
+    from kotonoha.lyrics.match import noisy_title_queries
+
+    track = TrackMetadata(
+        "【HD】陳一發兒- 童話鎮 [歌詞字幕][完整高清音] Chen Yifa - Fairy Town BELLA PING MUSIC CHANNEL", ""
+    )
+    queries = noisy_title_queries(track)
+    assert "陳一發兒 童話鎮" in queries  # CJK run pulled out
+    assert "Chen Yifa Fairy Town" in queries  # Latin run, channel tail dropped
+    # Corner-bracket titles: the title inside 「」is kept, upload noise removed.
+    lemon = noisy_title_queries(TrackMetadata("米津玄師 MV「Lemon」【完整高清】YouTube Music", ""))
+    assert any("Lemon" in q and "米津玄師" in q for q in lemon)
+
+
+def test_fuzzy_matches_a_title_that_fuses_artist_and_song():
+    # A cluttered title carrying both names; only fuzzy mode rescues it, and only
+    # when an artist token co-occurs (so a bare title substring can't match).
+    track = TrackMetadata("周杰伦 晴天 official mv", "", "", None)
+    right = Candidate("1", "晴天", "周杰伦 / A-LNK", 269.0)
+    wrong = Candidate("2", "晴天", "林俊杰", 240.0)
+    assert evaluate_match(right, track, fuzzy=True).confidence is MatchConfidence.MEDIUM
+    assert evaluate_match(right, track, fuzzy=False).confidence is MatchConfidence.NONE
+    assert evaluate_match(wrong, track, fuzzy=True).confidence is MatchConfidence.NONE
+
+
+def test_query_variants_fuzzy_adds_cleaned_forms():
+    track = TrackMetadata("【MV】告白氣球 周杰倫 官方", "")
+    plain = query_variants(track)
+    fuzzy = query_variants(track, fuzzy=True)
+    assert set(plain).issubset(set(fuzzy))
+    assert any("告白" in q for q in fuzzy)
+    assert "告白气球 周杰伦" in fuzzy  # simplified fold of the cleaned query
+
+
 def test_english_title_matches_candidate_via_translated_alias():
     # A browser reports the English name; Netease lists the song under 生如夏花 with
     # "Life Like Summer Flowers" among its transNames. The alias bridges them.

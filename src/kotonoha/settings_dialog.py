@@ -307,7 +307,7 @@ _PAGE_FIELDS: tuple[tuple[str, ...], ...] = (
     ("accent_start", "accent_end", "accent_sweep", "fx_animate", "fx_glow", "fx_word_pop", "fx_intensity"),  # Effects
     ("karaoke", "lead_ms", "show_translation", "lyrics_script"),                         # Lyrics
     ("anchor_top", "margin_edge", "margin_x", "passthrough"),                            # Position
-    ("lyrics_sources", "prefer_best_lyrics", "cache_enabled"),                           # Sources
+    ("lyrics_sources", "prefer_best_lyrics", "fuzzy_match", "cache_enabled"),             # Sources
 )
 
 
@@ -813,6 +813,11 @@ class SettingsDialog(QDialog):
         layout.addWidget(self._prefer_best)
         layout.addWidget(self._hint(t("set.prefer_best_hint")))
 
+        self._fuzzy_match = QCheckBox(t("set.fuzzy_match"))
+        self._fuzzy_match.setChecked(self._config.fuzzy_match)
+        layout.addWidget(self._fuzzy_match)
+        layout.addWidget(self._hint(t("set.fuzzy_match_hint")))
+
         self._cache_enabled = QCheckBox(t("set.cache_enabled"))
         self._cache_enabled.setChecked(self._config.cache_enabled)
         layout.addWidget(self._cache_enabled)
@@ -996,6 +1001,7 @@ class SettingsDialog(QDialog):
             passthrough=self._passthrough.isChecked(),
             lyrics_sources=self._selected_sources(),
             prefer_best_lyrics=self._prefer_best.isChecked(),
+            fuzzy_match=self._fuzzy_match.isChecked(),
             cache_enabled=self._cache_enabled.isChecked(),
         ).clamped()
 

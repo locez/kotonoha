@@ -72,6 +72,9 @@ def test_effects_defaults_clamp_and_roundtrip(tmp_path):
     assert Config().fx_transition == "rise"
     assert Config(fx_transition="zoom").clamped().fx_transition == "zoom"
     assert Config(fx_transition="bogus").clamped().fx_transition == "rise"
+    # Fuzzy matching: on by default, coerced to bool.
+    assert Config().fuzzy_match is True
+    assert Config(fuzzy_match=0).clamped().fuzzy_match is False
     path = tmp_path / "c.json"
     save_config(Config(fx_animate=False, fx_glow=False, fx_word_pop=False, fx_intensity="expressive"), path)
     loaded = load_config(path)

@@ -22,9 +22,15 @@ from .match import MatchConfidence, TrackMetadata, artist_tokens, normalize, spl
 logger = logging.getLogger(__name__)
 
 TrackKey: TypeAlias = tuple[str, tuple[str, ...], tuple[str, ...], str, float | None]
-RequestKey: TypeAlias = tuple[TrackKey, tuple[str, ...], bool, bool]
+RequestKey: TypeAlias = tuple[TrackKey, tuple[str, ...], bool, bool, bool]
 
 _CONF_RANK = {MatchConfidence.NONE: 0, MatchConfidence.MEDIUM: 1, MatchConfidence.HIGH: 2}
+
+
+class ProviderFetch(Protocol):
+    def __call__(
+        self, session: aiohttp.ClientSession, track: TrackMetadata, *, fuzzy: bool = ...
+    ) -> Coroutine[Any, Any, LyricsArtifact | None]: ...
 
 
 @dataclass(frozen=True)
@@ -39,7 +45,7 @@ class ResolvedLyrics:
 @dataclass(frozen=True)
 class NetworkProvider:
     name: str
-    fetch: Callable[[aiohttp.ClientSession, TrackMetadata], Coroutine[Any, Any, LyricsArtifact | None]]
+    fetch: ProviderFetch
     parse_payload: Callable[[Mapping[str, str]], tuple[LyricLine, ...]]
 
 
@@ -87,6 +93,7 @@ class LyricsResolver:
         cache_enabled: bool = True,
         negative_ttl: float = 30.0,
         prefer_best: bool = True,
+        fuzzy: bool = True,
     ) -> None:
         self._cache = cache or LyricsCache()
         self._gate = gate or SourceGate()
@@ -96,6 +103,7 @@ class LyricsResolver:
         }
         self._cache_enabled = cache_enabled
         self._prefer_best = prefer_best
+        self._fuzzy = fuzzy
         self._negative_ttl = negative_ttl
         self._negative_until: dict[tuple[str, TrackKey], float] = {}
         self._inflight: dict[RequestKey, asyncio.Task[ResolvedLyrics | None]] = {}
@@ -107,7 +115,7 @@ class LyricsResolver:
         sources: Sequence[str],
     ) -> ResolvedLyrics | None:
         ordered_sources = tuple(sources)
-        key = (_track_key(track), ordered_sources, self._cache_enabled, self._prefer_best)
+        key = (_track_key(track), ordered_sources, self._cache_enabled, self._prefer_best, self._fuzzy)
         task = self._inflight.get(key)
         if task is None:
             task = asyncio.create_task(self._resolve_once(session, track, ordered_sources))
@@ -163,7 +171,7 @@ class LyricsResolver:
             if self._negative_until.get(negative_key, 0.0) > time.monotonic():
                 continue
             try:
-                artifact = await provider.fetch(session, track)
+                artifact = await provider.fetch(session, track, fuzzy=self._fuzzy)
             except (aiohttp.ClientError, asyncio.TimeoutError, TimeoutError, ValueError) as exc:
                 logger.warning("%s lyrics fetch failed: %s: %s", source, type(exc).__name__, exc)
                 continue
@@ -253,7 +261,9 @@ class LyricsResolver:
                 continue
             if best_score is not None and (_CONF_RANK[MatchConfidence.HIGH], -index) <= best_score:
                 continue
-            tasks[source] = asyncio.create_task(self._providers[source].fetch(session, track))
+            tasks[source] = asyncio.create_task(
+                self._providers[source].fetch(session, track, fuzzy=self._fuzzy)
+            )
 
         try:
             pending = dict(tasks)
@@ -284,6 +294,9 @@ class LyricsResolver:
 
     def set_prefer_best(self, enabled: bool) -> None:
         self._prefer_best = bool(enabled)
+
+    def set_fuzzy(self, enabled: bool) -> None:
+        self._fuzzy = bool(enabled)
 
     def set_cache_enabled(self, enabled: bool) -> None:
         self._cache_enabled = bool(enabled)

@@ -164,7 +164,26 @@ def primary_artist(artist: str) -> str:
     return parts[0].strip() if parts else artist.strip()
 
 
-def evaluate_match(candidate: Candidate, track: TrackMetadata) -> MatchEvidence:
+def _fuzzy_contains(candidate: Candidate, track: TrackMetadata) -> bool:
+    """True when the candidate's title AND all its artist tokens appear inside the
+    cleaned track title — the fuzzy-mode rescue for a title that fuses artist and
+    song ("陳一發兒 童話鎮"). The title must be substantial (>=2 CJK chars or >=5
+    letters) so a short common word does not match a longer string by accident."""
+    haystack = normalize(track.title)  # brackets already stripped by normalize()
+    title = normalize(split_title(candidate.title)[0])
+    if not haystack or not title or title not in haystack:
+        return False
+    cjk_chars = len(_CJK_ONE.findall(title))
+    if cjk_chars < 2 and len(title) < 5:
+        return False
+    # At least one substantial artist token must also appear in the title. "Any",
+    # not "all", because provider artist fields carry UGC junk co-credits
+    # ("周杰伦 / A-LNK") — the real name co-occurring is the evidence we need.
+    candidate_artists = artist_tokens(candidate.artist)
+    return any(len(token) >= 2 and token in haystack for token in candidate_artists)
+
+
+def evaluate_match(candidate: Candidate, track: TrackMetadata, *, fuzzy: bool = False) -> MatchEvidence:
     track_base, track_tags = split_title(track.title)
     candidate_base, candidate_tags = split_title(candidate.title)
     normalized_track = normalize(track_base)
@@ -208,6 +227,11 @@ def evaluate_match(candidate: Candidate, track: TrackMetadata) -> MatchEvidence:
     candidate_lyric_tags = candidate_tags - _LYRIC_NEUTRAL_TAGS
     version_conflict = bool(track_lyric_tags or candidate_lyric_tags) and track_lyric_tags != candidate_lyric_tags
     catalog_identity = title_exact and artist_identity and album_match
+    # Fuzzy containment: for a cluttered browser title that carries both names in one
+    # string ("陳一發兒 童話鎮 …"), accept a candidate whose (long-enough) title AND
+    # every artist token appear inside the cleaned track title. Requiring the artist
+    # to co-occur keeps a short title from matching by coincidence.
+    fuzzy_title_hit = fuzzy and not title_strong and _fuzzy_contains(candidate, track)
 
     confidence = MatchConfidence.NONE
     if not version_conflict and artist_overlap:
@@ -237,6 +261,9 @@ def evaluate_match(candidate: Candidate, track: TrackMetadata) -> MatchEvidence:
             # different recording), preserving the album-identity requirement there.
             confidence = MatchConfidence.MEDIUM
         elif title_strong and (duration_delta is None or duration_delta <= 8.0):
+            confidence = MatchConfidence.MEDIUM
+        elif fuzzy_title_hit:
+            # The candidate's title + artist both sit inside the noisy track title.
             confidence = MatchConfidence.MEDIUM
         elif (
             not title_strong
@@ -281,16 +308,85 @@ def _evidence_sort_key(evidence: MatchEvidence) -> tuple[int, bool, bool, bool, 
     )
 
 
-def best_match(candidates: list[Candidate], track: TrackMetadata) -> MatchEvidence | None:
-    matches = [evaluate_match(candidate, track) for candidate in candidates]
+def best_match(
+    candidates: list[Candidate], track: TrackMetadata, *, fuzzy: bool = False
+) -> MatchEvidence | None:
+    matches = [evaluate_match(candidate, track, fuzzy=fuzzy) for candidate in candidates]
     usable = [match for match in matches if match.confidence is not MatchConfidence.NONE]
     return max(usable, key=_evidence_sort_key, default=None)
 
 
-def query_variants(track: TrackMetadata) -> tuple[str, ...]:
+def ranked_matches(
+    candidates: list[Candidate], track: TrackMetadata, *, fuzzy: bool = False
+) -> list[MatchEvidence]:
+    """All usable matches, best first. Lets a provider fall through to the next
+    candidate when the top pick turns out to have no timed lyrics (common with
+    UGC re-uploads that carry only credits metadata)."""
+    matches = [evaluate_match(candidate, track, fuzzy=fuzzy) for candidate in candidates]
+    usable = [match for match in matches if match.confidence is not MatchConfidence.NONE]
+    return sorted(usable, key=_evidence_sort_key, reverse=True)
+
+
+def query_variants(track: TrackMetadata, *, fuzzy: bool = False) -> tuple[str, ...]:
     raw = f"{track.title} {track.artist}".strip()
     fallback = f"{base_title(track.title)} {primary_artist(track.artist)}".strip()
     # A simplified-folded query is a fallback for any endpoint whose search is
     # script-sensitive; deduped away when the text is already simplified.
     folded = fold_to_simplified(raw)
-    return tuple(dict.fromkeys(value for value in (raw, fallback, folded) if value))
+    forms = [raw, fallback, folded]
+    if fuzzy:
+        noisy = noisy_title_queries(track)
+        forms.extend(noisy)
+        # Simplified folds too, so a Traditional-titled clip still hits a
+        # Simplified-only catalogue (deduped when already Simplified).
+        forms.extend(fold_to_simplified(query) for query in noisy)
+    return tuple(dict.fromkeys(value for value in forms if value))
+
+
+_BRACKETED = re.compile(r"[【\[（(][^】\]）)]*[】\]）)]")
+# Corner/angle quotes and separators usually WRAP the title (「Lemon」《告白气球》)
+# rather than junk, so they are flattened to spaces (delimiters), not removed.
+_DELIMITERS = re.compile(r"[「」『』《》〈〉|/_~•・\-–—]+")
+# Pure upload noise that is never part of a song name — stripped case-insensitively.
+# Version words (cover/live/remix/acoustic/…) are deliberately NOT here: they change
+# the recording and are handled by the version-tag logic, not thrown away.
+_UPLOAD_NOISE = re.compile(
+    r"\b(?:officical|official|mv|m/v|hd|hq|uhd|sd|4k|8k|60fps|1080p|720p|480p|"
+    r"lyrics?|lyric video|audio|music video|official (?:music )?video|official audio|"
+    r"visualizer|vevo|topic|full version|hi-?res|high quality|完整版|无损|無損|"
+    r"高清|超清|画质|畫質|字幕|歌词|歌詞|官方|试听|試聽|现场|現場|直播)\b",
+    re.IGNORECASE,
+)
+_CJK_CLASS = "㐀-鿿豈-﫿぀-ヿ가-힯"
+_CJK_TOKEN = re.compile(rf"[{_CJK_CLASS}]+")
+_CJK_ONE = re.compile(rf"[{_CJK_CLASS}]")
+_LATIN_TOKEN = re.compile(r"[0-9A-Za-z][0-9A-Za-z'’&.]*")
+_WHITESPACE = re.compile(r"\s+")
+
+
+def noisy_title_queries(track: TrackMetadata) -> tuple[str, ...]:
+    """Extra search queries salvaged from a noisy browser/YouTube title, used only
+    in fuzzy mode. Strips bracketed junk (【HD】, [歌詞字幕], …) then pulls the
+    CJK-only and Latin-only runs as separate queries, so a dual-language,
+    channel-tagged title like "【HD】陳一發兒- 童話鎮 [歌詞字幕] Chen Yifa - Fairy Town
+    BELLA PING MUSIC CHANNEL" still yields "陳一發兒 童話鎮" and "Chen Yifa Fairy
+    Town" to search on. A trailing ALL-CAPS channel/uploader tail is dropped."""
+    stripped = _BRACKETED.sub(" ", track.title)
+    stripped = _UPLOAD_NOISE.sub(" ", stripped)
+    stripped = _DELIMITERS.sub(" ", stripped)
+    queries: list[str] = []
+    # Combined query first (both scripts, cleaned) — the best shot when the title
+    # simply fused artist and song across a separator ("米津玄師 Lemon", "周杰倫 晴天").
+    combined = _WHITESPACE.sub(" ", stripped).strip()
+    if len(combined) >= 2:
+        queries.append(combined)
+    cjk = _WHITESPACE.sub(" ", " ".join(_CJK_TOKEN.findall(stripped))).strip()
+    if len(cjk) >= 2:
+        queries.append(cjk)
+    latin_tokens = _LATIN_TOKEN.findall(stripped)
+    while len(latin_tokens) > 2 and latin_tokens[-1].isupper() and len(latin_tokens[-1]) >= 2:
+        latin_tokens.pop()
+    latin = " ".join(latin_tokens).strip()
+    if len(latin) >= 2:
+        queries.append(latin)
+    return tuple(dict.fromkeys(queries))

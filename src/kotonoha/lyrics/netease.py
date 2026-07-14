@@ -11,7 +11,14 @@ import aiohttp
 from ..model import LyricLine
 from .artifact import LyricsArtifact
 from .lrc_parser import merge_translation, parse_lrc
-from .match import Candidate, MatchConfidence, MatchEvidence, TrackMetadata, best_match, query_variants
+from .match import (
+    Candidate,
+    MatchConfidence,
+    MatchEvidence,
+    TrackMetadata,
+    query_variants,
+    ranked_matches,
+)
 from .yrc_parser import parse_yrc
 
 logger = logging.getLogger(__name__)
@@ -129,27 +136,42 @@ async def _artifact_for_match(
 async def fetch_artifact(
     session: aiohttp.ClientSession,
     track: TrackMetadata,
+    *,
+    fuzzy: bool = False,
 ) -> LyricsArtifact | None:
+    # Cap on lower-confidence candidates we'll actually fetch lyrics for, so a query
+    # that returns a pile of UGC re-uploads doesn't fan out into dozens of requests.
+    max_medium_fetches = 5
     medium_matches: dict[str, MatchEvidence] = {}
     attempted_song_ids: set[str] = set()
-    for query in query_variants(track):
-        match = best_match(await search(session, query), track)
-        if match is None:
-            continue
-        song_id = match.candidate.song_id
-        if match.confidence is MatchConfidence.HIGH:
-            if song_id in attempted_song_ids:
-                continue
-            attempted_song_ids.add(song_id)
-            artifact = await _artifact_for_match(session, match)
-            if artifact is not None:
-                return artifact
-        else:
-            medium_matches[song_id] = match
+    for query in query_variants(track, fuzzy=fuzzy):
+        for match in ranked_matches(await search(session, query), track, fuzzy=fuzzy):
+            song_id = match.candidate.song_id
+            if match.confidence is MatchConfidence.HIGH:
+                # A HIGH is almost certainly the song; fetch it right away, but keep
+                # trying the next HIGH if this one has no timed lyrics.
+                if song_id in attempted_song_ids:
+                    continue
+                attempted_song_ids.add(song_id)
+                artifact = await _artifact_for_match(session, match)
+                if artifact is not None:
+                    return artifact
+            else:
+                medium_matches.setdefault(song_id, match)
 
-    for song_id, match in medium_matches.items():
-        if song_id in attempted_song_ids:
+    # Best-ranked mediums next: try several so a lyric-less top pick doesn't hide a
+    # good one just below it. Rank by title/artist evidence, then closest duration.
+    def medium_key(match: MatchEvidence) -> tuple[bool, bool, bool, float]:
+        delta = match.duration_delta
+        return (match.title_exact, match.artist_identity, match.artist_evidence,
+                -(delta if delta is not None else 1e9))
+
+    for match in sorted(medium_matches.values(), key=medium_key, reverse=True):
+        if match.candidate.song_id in attempted_song_ids:
             continue
+        attempted_song_ids.add(match.candidate.song_id)
+        if len(attempted_song_ids) > max_medium_fetches:
+            break
         artifact = await _artifact_for_match(session, match)
         if artifact is not None:
             return artifact

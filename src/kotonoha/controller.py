@@ -58,6 +58,7 @@ class AppController:
         self._mpris = MprisProvider(self._state, lyrics_sources=config.lyrics_sources, gate=self._gate)
         self._mpris.set_cache_enabled(config.cache_enabled)
         self._mpris.set_prefer_best(config.prefer_best_lyrics)
+        self._mpris.set_fuzzy(config.fuzzy_match)
         self._settings_dialog: SettingsDialog | None = None
 
         self._tray = KotonohaTray(
@@ -154,6 +155,7 @@ class AppController:
         self._mpris.set_lyrics_sources(config.lyrics_sources)
         self._mpris.set_cache_enabled(config.cache_enabled)
         self._mpris.set_prefer_best(config.prefer_best_lyrics)
+        self._mpris.set_fuzzy(config.fuzzy_match)
         set_language(config.ui_language)  # affects newly-opened dialogs; UI restart for the rest
 
         new_language = resolve_translation_language(config.translation_language)

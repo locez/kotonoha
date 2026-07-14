@@ -417,6 +417,14 @@ def test_effects_controls_roundtrip(qapp):
     dialog.close()
 
 
+def test_fuzzy_match_toggle_roundtrips(qapp):
+    dialog = SettingsDialog(Config(fuzzy_match=False))
+    assert dialog._fuzzy_match.isChecked() is False
+    dialog._fuzzy_match.setChecked(True)
+    assert dialog.current_config().fuzzy_match is True
+    dialog.close()
+
+
 def test_transition_style_roundtrips(qapp):
     dialog = SettingsDialog(Config(fx_transition="zoom"))
     assert dialog._fx_transition.currentData() == "zoom"

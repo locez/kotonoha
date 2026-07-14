@@ -184,6 +184,23 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "有効なソースを同時に照会し、最も確度の高い一致を採用（同点は指定順）。"
               "オフにすると最初に歌詞が見つかったソースで停止。",
     },
+    "set.fuzzy_match": {
+        "en": "Loose matching for noisy titles",
+        "zh-Hans": "宽松匹配嘈杂标题",
+        "zh-Hant": "寬鬆匹配雜亂標題",
+        "ja": "雑多なタイトルを緩く照合",
+    },
+    "set.fuzzy_match_hint": {
+        "en": "Salvage cluttered browser titles by stripping brackets (【HD】, [歌詞]), "
+              "quality tags and channel names, then searching the cleaned name. "
+              "Off = match the title exactly as reported.",
+        "zh-Hans": "清理浏览器的杂乱标题：去掉括号（【HD】、[歌詞]）、画质标签和频道名后再搜索。"
+                   "关闭则严格按上报的标题匹配。",
+        "zh-Hant": "清理瀏覽器的雜亂標題：去掉括號（【HD】、[歌詞]）、畫質標籤與頻道名後再搜尋。"
+                   "關閉則嚴格按回報的標題匹配。",
+        "ja": "ブラウザの雑多なタイトルから括弧（【HD】・[歌詞]）・画質タグ・チャンネル名を"
+              "取り除いて検索。オフにすると報告どおりのタイトルで照合。",
+    },
     "set.cache_enabled": {
         "en": "Enable local lyrics cache",
         "zh-Hans": "启用本地歌词缓存",

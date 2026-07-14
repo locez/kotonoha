@@ -69,6 +69,7 @@ class Config:
     translation_language: str = "auto"  # "auto" -> from system locale, else an Apple tag (zh-Hans/en/ja/...)
     lyrics_sources: list[str] = field(default_factory=lambda: list(DEFAULT_LYRICS_SOURCES))
     prefer_best_lyrics: bool = True  # query sources concurrently and pick the best-quality match
+    fuzzy_match: bool = True          # salvage noisy browser titles (strip 【HD】/[歌詞]/channel tails)
     cache_enabled: bool = True
     ui_language: str = "auto"        # UI language: "auto" -> system locale, else zh-Hans/zh-Hant/ja/en
     theme: str = "auto"              # settings-window theme: "auto" (follow system) | "light" | "dark"
@@ -123,6 +124,7 @@ class Config:
             fx_intensity=self.fx_intensity if self.fx_intensity in ("subtle", "expressive") else "subtle",
             lyrics_sources=_clean_sources(self.lyrics_sources),
             prefer_best_lyrics=bool(self.prefer_best_lyrics),
+            fuzzy_match=bool(self.fuzzy_match),
             cache_enabled=bool(self.cache_enabled),
             ui_language=str(self.ui_language),
             theme=self.theme if self.theme in ("auto", "light", "dark") else "auto",
