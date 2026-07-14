@@ -226,7 +226,7 @@ def test_sidebar_lists_every_section_and_drives_the_stack(qapp):
         qapp.processEvents()
         qapp.processEvents()
         # One sidebar row per content page, and no label is truncated in the sidebar.
-        assert dialog._nav.count() == dialog._stack.count() == 5
+        assert dialog._nav.count() == dialog._stack.count() == 7
         assert dialog._nav.width() >= dialog._nav.sizeHintForColumn(0)
         # Selecting a sidebar row switches the stacked content page.
         dialog._nav.setCurrentRow(3)

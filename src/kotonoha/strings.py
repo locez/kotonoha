@@ -44,16 +44,15 @@ STRINGS: dict[str, dict[str, str]] = {
 
     "settings.title": {"en": "Kotonoha Settings", "zh-Hans": "Kotonoha 设置",
                        "zh-Hant": "Kotonoha 設定", "ja": "Kotonoha 設定"},
-    "tab.appearance": {"en": "Appearance", "zh-Hans": "外观", "zh-Hant": "外觀", "ja": "外観"},
+    "tab.text": {"en": "Text", "zh-Hans": "文字", "zh-Hant": "文字", "ja": "テキスト"},
+    "tab.panel": {"en": "Panel", "zh-Hans": "面板", "zh-Hant": "面板", "ja": "パネル"},
+    "tab.effects": {"en": "Effects", "zh-Hans": "特效", "zh-Hant": "特效", "ja": "エフェクト"},
     "tab.lyrics": {"en": "Lyrics", "zh-Hans": "歌词", "zh-Hant": "歌詞", "ja": "歌詞"},
     "tab.position": {"en": "Position", "zh-Hans": "位置", "zh-Hant": "位置", "ja": "位置"},
     "tab.sources": {"en": "Sources", "zh-Hans": "来源", "zh-Hant": "來源", "ja": "ソース"},
     "tab.general": {"en": "General", "zh-Hans": "通用", "zh-Hant": "通用", "ja": "一般"},
 
     "set.app_icon": {"en": "App icon", "zh-Hans": "应用图标", "zh-Hant": "應用圖示", "ja": "アプリアイコン"},
-    "section.text": {"en": "TEXT", "zh-Hans": "文字", "zh-Hant": "文字", "ja": "テキスト"},
-    "section.panel": {"en": "PANEL", "zh-Hans": "面板", "zh-Hant": "面板", "ja": "パネル"},
-    "section.accent": {"en": "ACCENT", "zh-Hans": "强调色", "zh-Hant": "強調色", "ja": "アクセント"},
     "set.font_family": {"en": "Font", "zh-Hans": "字体", "zh-Hant": "字型", "ja": "フォント"},
     "set.font_weight": {"en": "Weight", "zh-Hans": "字重", "zh-Hant": "字重", "ja": "太さ"},
     "weight.thin": {"en": "Thin", "zh-Hans": "特细", "zh-Hant": "特細", "ja": "シン"},
@@ -102,7 +101,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "ja": "すりガラスは KWin/KDE が必要（他環境では半透明パネルに）。不透明度はスタイルごとに保持"
               "（黒は完全透明、すりガラスは純ぼかしまで）。",
     },
-    "section.fx": {"en": "EFFECTS", "zh-Hans": "特效", "zh-Hant": "特效", "ja": "エフェクト"},
     "set.fx_animate": {"en": "Animations", "zh-Hans": "动画", "zh-Hant": "動畫", "ja": "アニメーション"},
     "set.fx_glow": {"en": "Glow on the active line", "zh-Hans": "当前行发光",
                     "zh-Hant": "當前行發光", "ja": "現在行のグロー"},

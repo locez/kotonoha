@@ -57,7 +57,6 @@ _QSS = """
 QWidget { color: %TEXT%; font-family: 'Inter', 'Segoe UI', 'Microsoft YaHei', sans-serif; font-size: 13px; }
 QLabel { background: transparent; }
 QLabel#hint { color: %HINT%; }
-QLabel#section { color: %TEXT_DIM%; font-size: 11px; font-weight: 700; padding-top: 6px; }
 QLabel#dialogTitle { color: %TEXT_STRONG%; font-size: 15px; font-weight: 600; }
 QPushButton#closeButton {
     background: transparent; border: none; color: %TEXT_DIM%; font-size: 15px; border-radius: 13px;
@@ -275,7 +274,9 @@ class SettingsDialog(QDialog):
         self._nav.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         for key, page in (
             ("tab.general", self._general_tab()),
-            ("tab.appearance", self._appearance_tab()),
+            ("tab.text", self._text_tab()),
+            ("tab.panel", self._panel_tab()),
+            ("tab.effects", self._effects_tab()),
             ("tab.lyrics", self._lyrics_tab()),
             ("tab.position", self._position_tab()),
             ("tab.sources", self._sources_tab()),
@@ -441,14 +442,11 @@ class SettingsDialog(QDialog):
         self._emit()  # persist the new language before relaunching
         self.restart_requested.emit()
 
-    def _appearance_tab(self) -> QWidget:
+    def _text_tab(self) -> QWidget:
         c = self._config
         page, form = self._form_page()
-
-        # --- Text: family, weight (limited to the font's real weights), sizes. ---
-        form.addRow(self._section("section.text"))
         self._font_family = QFontComboBox()
-        # A small preview glyph keeps the field the same height as the other inputs;
+        # A zero preview glyph keeps the field the same height as the other inputs;
         # it stays a dropdown you can also type into to filter the (long) font list.
         self._font_family.setIconSize(QSize(0, 0))
         self._font_family.setCurrentFont(QFont(c.font_family.split(",")[0].strip().strip("'\"")))
@@ -465,9 +463,11 @@ class SettingsDialog(QDialog):
         form.addRow(t("set.context_font_size"), self._context_font_size)
         self._translation_font_size = self._spin(8, 120, c.translation_font_size, " px")
         form.addRow(t("set.translation_font_size"), self._translation_font_size)
+        return page
 
-        # --- Panel: style, size mode, opacity, tint, then the accent colour. ---
-        form.addRow(self._section("section.panel"))
+    def _panel_tab(self) -> QWidget:
+        c = self._config
+        page, form = self._form_page()
         self._panel = QComboBox()
         self._panel.addItem(t("set.panel.pill"), "pill")
         self._panel.addItem(t("set.panel.white"), "white")
@@ -503,8 +503,11 @@ class SettingsDialog(QDialog):
         self._panel_tint.setChecked(c.panel_accent_tint)
         form.addRow(self._panel_tint)
         form.addRow(self._hint(t("set.panel_hint")))
+        return page
 
-        form.addRow(self._section("section.accent"))
+    def _effects_tab(self) -> QWidget:
+        c = self._config
+        page, form = self._form_page()
         self._accent = QComboBox()
         self._custom_index = -1  # single reusable slot for a picked colour
         matched = False
@@ -521,8 +524,6 @@ class SettingsDialog(QDialog):
         self._accent.activated.connect(self._on_accent_activated)
         form.addRow(t("set.accent"), self._accent)
 
-        # --- Effects: each toggleable, with an intensity for the glow/pop. ---
-        form.addRow(self._section("section.fx"))
         self._fx_animate = QCheckBox(t("set.fx_animate"))
         self._fx_animate.setChecked(c.fx_animate)
         form.addRow(self._fx_animate)
@@ -698,12 +699,6 @@ class SettingsDialog(QDialog):
         label = QLabel(text)
         label.setObjectName("hint")  # dimmed by the theme QSS
         label.setWordWrap(True)
-        return label
-
-    def _section(self, key: str) -> QLabel:
-        """A small, bold group heading placed on its own form row."""
-        label = QLabel(t(key))
-        label.setObjectName("section")
         return label
 
     def _build_icon_picker(self) -> QListWidget:
