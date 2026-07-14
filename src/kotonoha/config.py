@@ -59,7 +59,7 @@ class Config:
     panel_width_mode: str = "fit"    # "fit" (hug the text) | "fixed" (constant width)
     panel_width: int = 720           # panel width in px when panel_width_mode == "fixed"
     panel_accent_tint: bool = False  # tint the black panel toward the accent colour
-    icon_name: str = DEFAULT_ICON_NAME
+    icon_name: str = "@leaf-accent"  # default to the accent-following leaf (see leaf_icon.py)
     # Behaviour
     passthrough: bool = False        # start unlocked (interactive) so first-run positioning is easy
     karaoke: bool = True             # per-word sweep when timing == "Word"

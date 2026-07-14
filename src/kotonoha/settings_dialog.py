@@ -61,6 +61,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from . import leaf_icon
 from .config import ACCENT_PRESETS, DEFAULT_ICON_NAME, VALID_LYRICS_SOURCES, Config
 from .native import LayerShellController, default_package_dir
 from .strings import UI_LANGUAGES, t
@@ -845,31 +846,57 @@ class SettingsDialog(QDialog):
         icon_list.setWrapping(True)
         icon_list.setIconSize(QSize(42, 42))
         icon_list.setGridSize(QSize(60, 60))
-        icon_list.setFixedHeight(72)
+        icon_list.setFixedHeight(136)  # two rows so the generated + file icons all fit
         icon_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._icon_items: dict[str, QListWidgetItem] = {}
         selected_item: QListWidgetItem | None = None
         default_item: QListWidgetItem | None = None
+
+        def add(key: str, pixmap: QPixmap) -> QListWidgetItem:
+            item = QListWidgetItem(self._no_tint_icon(pixmap), "")
+            item.setData(Qt.ItemDataRole.UserRole, key)
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            icon_list.addItem(item)
+            self._icon_items[key] = item
+            return item
+
+        # Generated leaf styles first (accent / mono / tile), then the bundled files.
+        # The mono preview follows the dialog theme so it reads on the picker card
+        # (the tray itself renders mono against the system panel at runtime).
+        dark = self._theme == "dark"
+        for key in leaf_icon.GENERATED:
+            item = add(key, leaf_icon.render_leaf(key, self._config.accent_start, dark_panel=dark, size=64))
+            if key == self._config.icon_name:
+                selected_item = item
         for choice in discover_icon_paths():
             source = QIcon(str(choice.path))
             if source.isNull():
                 continue
-            # Reuse the normal pixmap for the Selected/Active modes so Qt does not
-            # tint the chosen icon blue; the accent ring alone marks the selection.
-            pixmap = source.pixmap(QSize(64, 64))
-            icon = QIcon()
-            icon.addPixmap(pixmap, QIcon.Mode.Normal)
-            icon.addPixmap(pixmap, QIcon.Mode.Selected)
-            icon.addPixmap(pixmap, QIcon.Mode.Active)
-            item = QListWidgetItem(icon, "")
-            item.setData(Qt.ItemDataRole.UserRole, choice.key)
-            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            icon_list.addItem(item)
+            item = add(choice.key, source.pixmap(QSize(64, 64)))
             if choice.key == self._config.icon_name:
                 selected_item = item
             if choice.key == DEFAULT_ICON_NAME:
                 default_item = item
         icon_list.setCurrentItem(selected_item or default_item)
         return icon_list
+
+    def _no_tint_icon(self, pixmap: QPixmap) -> QIcon:
+        """A QIcon whose Selected/Active modes reuse the Normal pixmap, so Qt never
+        blue-tints the chosen icon; the accent ring alone marks the selection."""
+        icon = QIcon()
+        for mode in (QIcon.Mode.Normal, QIcon.Mode.Selected, QIcon.Mode.Active):
+            icon.addPixmap(pixmap, mode)
+        return icon
+
+    def _refresh_generated_icons(self) -> None:
+        """Re-render the accent/tile leaf previews to the current accent (called on
+        Apply so the picker keeps up with an accent change)."""
+        dark = self._theme == "dark"
+        for key in leaf_icon.GENERATED:
+            item = self._icon_items.get(key)
+            if item is not None:
+                pixmap = leaf_icon.render_leaf(key, self._config.accent_start, dark_panel=dark, size=64)
+                item.setIcon(self._no_tint_icon(pixmap))
 
     def _available_weights(self, family: str) -> list[int]:
         """The distinct weights the family actually ships (so the picker never
@@ -967,6 +994,7 @@ class SettingsDialog(QDialog):
         self._theme = _resolve_theme(self._config.theme)
         self.setStyleSheet(_skin(self._config.accent_start, self._theme))
         self._update_logo_badge()  # re-tint the leaf logo to the new accent
+        self._refresh_generated_icons()  # re-tint the accent/tile icon previews
         # Toggle the frosted backdrop live: apply/clear the KWin blur and repaint
         # the panel translucent-or-solid to match the new setting.
         frosted = self._blur_capable and self._config.frost_window

@@ -18,6 +18,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import QMenu, QSystemTrayIcon, QWidget
 
+from . import leaf_icon
 from .config import DEFAULT_ICON_NAME
 from .strings import t
 
@@ -90,9 +91,15 @@ def discover_icon_paths(
 def load_icon(
     icon_name: str = DEFAULT_ICON_NAME,
     *,
+    accent: str = "#FF4FA3",
+    dark_panel: bool | None = None,
     icon_dir: Path = ICON_DIR,
     default_icon: Path = DEFAULT_ICON_PATH,
 ) -> QIcon:
+    # Generated leaf styles (accent / mono / tile) are rendered on the fly.
+    if leaf_icon.is_generated(icon_name):
+        dark = leaf_icon.system_is_dark() if dark_panel is None else dark_panel
+        return leaf_icon.leaf_qicon(icon_name, accent, dark_panel=dark)
     choices = discover_icon_paths(icon_dir=icon_dir, default_icon=default_icon)
     selected = next((choice for choice in choices if choice.key == icon_name), None)
     default = next((choice for choice in choices if choice.key == DEFAULT_ICON_NAME), None)
@@ -111,6 +118,7 @@ class KotonohaTray(QSystemTrayIcon):
         parent: QWidget | None = None,
         *,
         icon_name: str = DEFAULT_ICON_NAME,
+        accent: str = "#FF4FA3",
         passthrough: bool,
         on_toggle_passthrough: Callable[[bool], None],
         on_open_settings: Callable[[], None],
@@ -118,7 +126,7 @@ class KotonohaTray(QSystemTrayIcon):
     ) -> None:
         super().__init__(parent)
         self._on_toggle_passthrough = on_toggle_passthrough
-        self.setIcon(load_icon(icon_name))
+        self.setIcon(load_icon(icon_name, accent=accent))
         self.setToolTip(t("tray.tooltip"))
 
         menu = QMenu()
@@ -151,5 +159,5 @@ class KotonohaTray(QSystemTrayIcon):
     def set_passthrough_checked(self, checked: bool) -> None:
         self._lock_action.setChecked(checked)
 
-    def set_icon_name(self, icon_name: str) -> None:
-        self.setIcon(load_icon(icon_name))
+    def set_icon_name(self, icon_name: str, accent: str = "#FF4FA3") -> None:
+        self.setIcon(load_icon(icon_name, accent=accent))

@@ -44,7 +44,7 @@ class AppController:
             config.port = clamped_port
         self._config = config
         set_language(config.ui_language)  # before any UI strings are created
-        self._app.setWindowIcon(load_icon(config.icon_name))
+        self._app.setWindowIcon(load_icon(config.icon_name, accent=config.accent_start))
 
         self._state = LyricsState()
         self._overlay = LyricsOverlay(self._state, config)
@@ -62,6 +62,7 @@ class AppController:
 
         self._tray = KotonohaTray(
             icon_name=config.icon_name,
+            accent=config.accent_start,
             passthrough=config.passthrough,
             on_toggle_passthrough=self._on_toggle_passthrough,
             on_open_settings=self._open_settings,
@@ -148,8 +149,8 @@ class AppController:
         # Push new anchor/margins/passthrough through the layer-shell bridge.
         self._overlay.activate_layer_shell()
         self._tray.set_passthrough_checked(config.passthrough)
-        self._app.setWindowIcon(load_icon(config.icon_name))
-        self._tray.set_icon_name(config.icon_name)
+        self._app.setWindowIcon(load_icon(config.icon_name, accent=config.accent_start))
+        self._tray.set_icon_name(config.icon_name, config.accent_start)
         self._mpris.set_lyrics_sources(config.lyrics_sources)
         self._mpris.set_cache_enabled(config.cache_enabled)
         self._mpris.set_prefer_best(config.prefer_best_lyrics)

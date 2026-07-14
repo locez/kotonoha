@@ -319,6 +319,21 @@ def test_language_change_reveals_restart_button_and_persists(qapp):
     dialog.close()
 
 
+def test_icon_picker_includes_generated_leaf_styles(qapp):
+    from kotonoha import leaf_icon
+
+    dialog = SettingsDialog(Config(icon_name=leaf_icon.TILE))
+    keys = [
+        str(dialog._icon_list.item(i).data(Qt.ItemDataRole.UserRole))
+        for i in range(dialog._icon_list.count())
+    ]
+    for style in leaf_icon.GENERATED:  # accent / mono / tile are offered
+        assert style in keys
+    assert "leaf-pink.svg" in keys  # the bundled files are still offered too
+    assert dialog.current_config().icon_name == leaf_icon.TILE
+    dialog.close()
+
+
 def test_selected_icon_is_not_blue_tinted(qapp):
     from PyQt6.QtCore import QSize
     from PyQt6.QtGui import QIcon
