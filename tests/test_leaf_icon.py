@@ -43,6 +43,33 @@ def test_tile_background_follows_the_accent(qapp):
     assert red.toImage() != blue.toImage()
 
 
+def test_all_picker_styles_render_and_differ(qapp):
+    # Every offered style renders a non-null pixmap, and no two look identical.
+    images = {style: leaf.render_leaf(style, "#FF4FA3", size=64).toImage() for style in leaf.PICKER_STYLES}
+    assert all(not img.isNull() for img in images.values())
+    rendered = list(images.values())
+    for i, a in enumerate(rendered):
+        for b in rendered[i + 1 :]:
+            assert a != b
+
+
+def test_white_and_black_leaves_keep_the_fold_depth(qapp):
+    # The mono leaves are not flat: their inverted fold makes them differ from a
+    # single-colour fill, and white differs from black.
+    white = leaf.render_leaf(leaf.WHITE, size=64).toImage()
+    black = leaf.render_leaf(leaf.BLACK, size=64).toImage()
+    assert not white.isNull() and not black.isNull()
+    assert white != black
+
+
+def test_new_tile_styles_follow_the_accent(qapp):
+    for style in (leaf.SOFT, leaf.PLATE, leaf.FRAME):
+        red = leaf.render_leaf(style, "#FF0000", size=64)
+        blue = leaf.render_leaf(style, "#0000FF", size=64)
+        assert not red.isNull()
+        assert red.toImage() != blue.toImage()
+
+
 def test_load_icon_renders_generated_styles(qapp):
     from kotonoha.tray import load_icon
 

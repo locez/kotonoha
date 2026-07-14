@@ -11,8 +11,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtCore import QByteArray, QRectF, Qt
-from PyQt6.QtGui import QColor, QGuiApplication, QIcon, QPainter, QPixmap
+from PyQt6.QtCore import QByteArray, QPointF, QRectF, Qt
+from PyQt6.QtGui import (
+    QBrush,
+    QColor,
+    QGuiApplication,
+    QIcon,
+    QLinearGradient,
+    QPainter,
+    QPen,
+    QPixmap,
+)
 from PyQt6.QtSvg import QSvgRenderer
 
 _ASSETS = Path(__file__).with_name("assets")
@@ -28,15 +37,19 @@ ACCENT = "@leaf-accent"   # leaf recoloured to the accent
 MONO = "@leaf-mono"       # black/white leaf, adapts to the system theme
 WHITE = "@leaf-white"     # solid white leaf (for a dark tray/taskbar)
 BLACK = "@leaf-black"     # solid black leaf (for a light tray/taskbar)
-TILE = "@leaf-tile"       # white leaf on an accent-coloured rounded tile
+TILE = "@leaf-tile"       # white leaf on a full-accent rounded tile
+SOFT = "@leaf-soft"       # accent leaf on a pastel (light-accent gradient) tile
+PLATE = "@leaf-plate"     # accent leaf on a plain white tile
+FRAME = "@leaf-frame"     # accent leaf on a white tile with an accent border
 
 # Everything renderable on the fly (used by is_generated / load_icon). MONO stays
 # for configs saved before the explicit black/white styles existed.
-GENERATED: tuple[str, ...] = (ACCENT, MONO, WHITE, BLACK, TILE)
-# The order the settings picker offers, and the styles it shows: accent, the two
-# explicit monochromes, then the accent tile. Adaptive MONO is not offered — black
-# and white are clearer to choose than a single "adapts to your theme" swatch.
-PICKER_STYLES: tuple[str, ...] = (ACCENT, WHITE, BLACK, TILE)
+GENERATED: tuple[str, ...] = (ACCENT, MONO, WHITE, BLACK, TILE, SOFT, PLATE, FRAME)
+# The order and set the settings picker offers: the three bare leaves, then the
+# four tile treatments (full accent, soft pastel, white plate, white + frame).
+# Adaptive MONO is not offered — black and white are clearer to choose.
+PICKER_STYLES: tuple[str, ...] = (ACCENT, WHITE, BLACK, TILE, SOFT, PLATE, FRAME)
+_TILE_STYLES = frozenset({TILE, SOFT, PLATE, FRAME})
 
 # Monochrome leaves keep the leaf's depth instead of going flat: the three leaf
 # shades (vein, body, underside fold) map to a grey ramp, and the fold inverts
@@ -118,18 +131,47 @@ def _blit_leaf(painter: QPainter, renderer: QSvgRenderer, size: int, margin_frac
     )
 
 
+def _draw_tile(painter: QPainter, accent: str, size: int, style: str) -> None:
+    """Paint the rounded tile background for a tile style. TILE is the full accent;
+    SOFT is a pale-accent vertical gradient; PLATE is plain white; FRAME is white
+    with an accent border."""
+    tone = QColor(accent)
+    radius = size * 0.22
+    if style == FRAME:
+        border = max(1.5, size * 0.05)
+        inset = 1.0 + border / 2.0
+        rect = QRectF(inset, inset, size - 2 * inset, size - 2 * inset)
+        pen = QPen(tone)
+        pen.setWidthF(border)
+        painter.setPen(pen)
+        painter.setBrush(QColor("#ffffff"))
+        painter.drawRoundedRect(rect, radius, radius)
+        return
+    rect = QRectF(1, 1, size - 2, size - 2)
+    painter.setPen(Qt.PenStyle.NoPen)
+    if style == TILE:
+        painter.setBrush(tone)
+    elif style == PLATE:
+        painter.setBrush(QColor("#ffffff"))
+    else:  # SOFT: near-white at the top easing into a light wash of the accent
+        gradient = QLinearGradient(QPointF(0.0, 0.0), QPointF(0.0, float(size)))
+        gradient.setColorAt(0.0, QColor(_mix_over_white(tone, 0.05)))
+        gradient.setColorAt(1.0, QColor(_mix_over_white(tone, 0.26)))
+        painter.setBrush(QBrush(gradient))
+    painter.drawRoundedRect(rect, radius, radius)
+
+
 def render_leaf(style: str, accent: str = "#FF4FA3", *, dark_panel: bool = True, size: int = 64) -> QPixmap:
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    if style == TILE:
-        # A rounded accent tile with a white (accent-motif) leaf centred on top.
-        painter.setBrush(QColor(accent))
-        painter.setPen(Qt.PenStyle.NoPen)
-        radius = size * 0.22
-        painter.drawRoundedRect(QRectF(1, 1, size - 2, size - 2), radius, radius)
-        renderer = QSvgRenderer(QByteArray(_leaf_svg(TILE, accent, dark_panel).encode("utf-8")))
+    if style in _TILE_STYLES:
+        _draw_tile(painter, accent, size, style)
+        # The full-accent tile carries a white leaf; the light tiles carry the
+        # accent-shaded leaf (a coloured leaf on a pale/white ground).
+        leaf_style = TILE if style == TILE else ACCENT
+        renderer = QSvgRenderer(QByteArray(_leaf_svg(leaf_style, accent, dark_panel).encode("utf-8")))
         _blit_leaf(painter, renderer, size, margin_frac=0.24)
     else:
         renderer = QSvgRenderer(QByteArray(_leaf_svg(style, accent, dark_panel).encode("utf-8")))
