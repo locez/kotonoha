@@ -21,8 +21,8 @@ Design docs: [`docs/SPEC.md`](docs/SPEC.md) (overlay) and [`docs/SPEC-mpris-lyri
 
 ## System dependencies
 
-`uv sync` **compiles a small C++ Wayland bridge** (`libkoto-layer.so`) automatically through CMake
-and a Hatch build hook. Source builds need CMake, a C++ compiler, Qt6, Wayland, and layer-shell-qt:
+`uv sync` **compiles a small C++ Wayland bridge** (`libkoto-layer.so`) automatically through
+scikit-build-core and CMake. Source builds need CMake, a C++ compiler, Qt6, Wayland, and layer-shell-qt:
 
 ```bash
 # Arch
@@ -53,8 +53,8 @@ uv sync                  # also compiles the layer-shell bridge (needs the deps 
 uv run kotonoha          # add -v for verbose logs
 ```
 
-The Hatch hook uses a private `build/hatch-cmake` directory for wheel staging. To build and install
-the bridge directly into the project virtual environment with the standalone CMake path:
+To build and install the bridge directly into the project virtual environment with the standalone
+CMake path:
 
 ```bash
 cmake -S . -B build/cmake \

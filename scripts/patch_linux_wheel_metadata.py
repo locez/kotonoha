@@ -59,9 +59,11 @@ def patch_linux_wheel_metadata(unpacked_dir: Path, qt_version: str) -> None:
 
     wheel_path = _metadata_path(unpacked_dir, "WHEEL")
     wheel = Parser().parsestr(wheel_path.read_text(encoding="utf-8"))
-    if wheel.get_all("Root-Is-Purelib", []) != ["true"]:
-        raise ValueError("wheel must contain exactly one Root-Is-Purelib: true field")
-    wheel.replace_header("Root-Is-Purelib", "false")
+    purelib = wheel.get_all("Root-Is-Purelib", [])
+    if purelib == ["true"]:
+        wheel.replace_header("Root-Is-Purelib", "false")
+    elif purelib != ["false"]:
+        raise ValueError("wheel must contain exactly one Root-Is-Purelib: true or false field")
     _write_message(wheel_path, wheel)
 
     metadata_path = _metadata_path(unpacked_dir, "METADATA")

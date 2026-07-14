@@ -1,4 +1,4 @@
-# build_bridge.sh does not emit source mappings for an RPM debugsource package.
+# The native bridge is installed into the wheel by scikit-build-core.
 %global debug_package %{nil}
 
 Name:           kotonoha
@@ -12,9 +12,10 @@ Source0:        %{name}-%{version}.tar.gz
 Source1:        qasync-0.28.0-py3-none-any.whl
 
 BuildRequires:  python3-devel
-BuildRequires:  python3-hatchling
+BuildRequires:  python3-scikit-build-core
 BuildRequires:  pyproject-rpm-macros
 BuildRequires:  gcc-c++
+BuildRequires:  cmake
 BuildRequires:  qt6-qtbase-devel
 BuildRequires:  qt6-qtbase-private-devel
 BuildRequires:  qt6-qtwayland-devel
@@ -34,11 +35,8 @@ Wayland layer-shell overlay.
 
 %prep
 %autosetup
-sed -i 's/^requires = \["hatchling", "hatch-build-scripts"\]$/requires = ["hatchling"]/' pyproject.toml
-sed -i '/^\[tool\.hatch\.build\.hooks\.build-scripts\]$/,/^artifacts = \["src\/kotonoha\/libkoto-layer\.so"\]$/d' pyproject.toml
 
 %build
-USE_SYSTEM_LIBS=1 bash src/kotonoha/build_bridge.sh
 %pyproject_wheel
 
 %install
