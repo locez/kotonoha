@@ -437,6 +437,19 @@ def test_fuzzy_match_toggle_roundtrips(qapp):
     dialog.close()
 
 
+def test_font_picker_resolves_an_absent_family_to_an_installed_one(qapp):
+    from PyQt6.QtGui import QFontDatabase
+
+    installed = QFontDatabase.families()
+    # A configured, installed family is kept verbatim.
+    assert SettingsDialog._resolve_font_family(installed[0]) == installed[0]
+    # A configured family that is NOT installed resolves to an installed fallback
+    # rather than being handed to fontconfig (which substitutes an arbitrary font).
+    resolved = SettingsDialog._resolve_font_family("__no_such_font__, still fake")
+    assert resolved != "__no_such_font__"
+    assert resolved == "" or resolved in set(installed)
+
+
 def test_transition_style_roundtrips(qapp):
     dialog = SettingsDialog(Config(fx_transition="zoom"))
     assert dialog._fx_transition.currentData() == "zoom"

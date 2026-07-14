@@ -70,6 +70,13 @@ from .tray import discover_icon_paths
 # Dialog corner radius, shared by the painted background and the KWin blur region.
 _RADIUS = 14
 
+# Sensible, widely-installed families to show in the font picker when nothing in the
+# configured list is present — a clean CJK-capable font beats a fontconfig substitute.
+_FONT_FALLBACKS = (
+    "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans CJK JP", "Source Han Sans SC",
+    "Microsoft YaHei", "PingFang SC", "Noto Sans", "DejaVu Sans",
+)
+
 
 class _FontNameDelegate(QStyledItemDelegate):
     """Font-list delegate that previews each family name in its own font but drops
@@ -586,6 +593,23 @@ class SettingsDialog(QDialog):
         self._emit()  # persist the new language before relaunching
         self.restart_requested.emit()
 
+    @staticmethod
+    def _resolve_font_family(font_family: str) -> str:
+        """The family to show in the picker: the first family in the configured list
+        that is actually installed, else the first installed CJK-capable fallback.
+        Without this, a configured-but-absent family (the default "Inter" on a box
+        that lacks it) lets fontconfig substitute an arbitrary, often odd font
+        ("Noto Sans Myanmar SemiCondensed") into the picker."""
+        installed = set(QFontDatabase.families())
+        requested = [name.strip().strip("'\"") for name in font_family.split(",")]
+        for name in requested:
+            if name and name in installed:
+                return name
+        for fallback in _FONT_FALLBACKS:
+            if fallback in installed:
+                return fallback
+        return next((name for name in requested if name), "")
+
     def _text_tab(self) -> QWidget:
         c = self._config
         page, form = self._form_page()
@@ -595,7 +619,7 @@ class SettingsDialog(QDialog):
         self._font_family.setEditable(False)
         self._font_family.setIconSize(QSize(0, 0))
         self._font_family.setItemDelegate(_FontNameDelegate(self._font_family))
-        self._font_family.setCurrentFont(QFont(c.font_family.split(",")[0].strip().strip("'\"")))
+        self._font_family.setCurrentFont(QFont(self._resolve_font_family(c.font_family)))
         form.addRow(t("set.font_family"), self._font_family)
 
         # KDE-style style picker (Regular / Bold / Light / Italic / Condensed …) fed
