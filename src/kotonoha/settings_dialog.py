@@ -16,7 +16,6 @@ from typing import cast
 from PyQt6 import sip
 from PyQt6.QtCore import (
     QAbstractAnimation,
-    QByteArray,
     QEasingCurve,
     QPropertyAnimation,
     QSize,
@@ -26,7 +25,6 @@ from PyQt6.QtCore import (
 from PyQt6.QtGui import (
     QColor,
     QFont,
-    QFontDatabase,
     QGuiApplication,
     QHideEvent,
     QIcon,
@@ -38,7 +36,6 @@ from PyQt6.QtGui import (
     QResizeEvent,
     QShowEvent,
 )
-from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -69,34 +66,6 @@ from .tray import discover_icon_paths
 
 # Dialog corner radius, shared by the painted background and the KWin blur region.
 _RADIUS = 14
-
-# The leaf logo shown in the settings title bar, recoloured to follow the accent.
-# Its three leaf shades (dark, mid, light) are swapped for accent-derived shades;
-# the white "lyrics" motif is left as-is.
-_LOGO_PATH = Path(__file__).with_name("assets") / "logo.svg"
-_LOGO_SHADES = ("#60a65a", "#a4d382", "#def1d3")
-
-
-def _accent_logo(accent: str, size: int) -> QPixmap | None:
-    """The bundled leaf logo recoloured to the accent, or None if the asset is
-    missing. Rendered at 2x for a crisp hi-dpi badge."""
-    if not _LOGO_PATH.is_file():
-        return None
-    svg = _LOGO_PATH.read_text(encoding="utf-8")
-    tone = QColor(accent)
-    shades = (tone.darker(135).name(), tone.name(), tone.lighter(158).name())
-    for old, new in zip(_LOGO_SHADES, shades, strict=True):
-        svg = svg.replace(old, new)
-    renderer = QSvgRenderer(QByteArray(svg.encode("utf-8")))
-    dpr = 2
-    pixmap = QPixmap(size * dpr, size * dpr)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    renderer.render(painter)
-    painter.end()
-    pixmap.setDevicePixelRatio(dpr)
-    return pixmap
 
 # One QSS template, filled from a light or dark palette below. Spacing and radii
 # are generous and the inner borders are soft so the panels don't read as boxes
@@ -259,21 +228,6 @@ _CHECKMARK_PATH = Path(__file__).with_name("assets") / "checkmark.svg"
 _CHEVRON_DOWN_PATH = Path(__file__).with_name("assets") / "chevron-down.svg"
 _CHEVRON_UP_PATH = Path(__file__).with_name("assets") / "chevron-up.svg"
 
-# Standard QFont weights (100..900) mapped to a label key, used to name whatever
-# weights a font actually reports. When a family exposes no style info at all, the
-# picker falls back to this full ladder so the user still has choices.
-_WEIGHT_KEYS: dict[int, str] = {
-    100: "weight.thin",
-    200: "weight.extralight",
-    300: "weight.light",
-    400: "weight.regular",
-    500: "weight.medium",
-    600: "weight.semibold",
-    700: "weight.bold",
-    800: "weight.extrabold",
-    900: "weight.black",
-}
-_FALLBACK_WEIGHTS: tuple[int, ...] = (100, 200, 300, 400, 500, 600, 700, 800, 900)
 
 
 def _resolve_theme(value: str) -> str:
@@ -537,18 +491,10 @@ class SettingsDialog(QDialog):
         return page
 
     def _update_logo_badge(self) -> None:
-        """Set the title-bar badge to the accent-tinted leaf logo, or fall back to
-        the chosen app icon if the logo asset is missing."""
-        logo = _accent_logo(self._config.accent_start, 22)
-        if logo is not None:
-            self._logo_badge.setPixmap(logo)
-            return
-        icon_path = next(
-            (choice.path for choice in discover_icon_paths() if choice.key == self._config.icon_name),
-            None,
-        )
-        if icon_path is not None:
-            self._logo_badge.setPixmap(QIcon(str(icon_path)).pixmap(QSize(22, 22)))
+        """Set the title-bar badge to the accent-tinted leaf logo (centred, crisp)."""
+        pixmap = leaf_icon.render_leaf(leaf_icon.ACCENT, self._config.accent_start, size=44)
+        pixmap.setDevicePixelRatio(2.0)  # 44px @2x -> a crisp 22px badge
+        self._logo_badge.setPixmap(pixmap)
 
     def _on_nav_changed(self, row: int) -> None:
         self._stack.setCurrentIndex(row)
@@ -587,11 +533,7 @@ class SettingsDialog(QDialog):
         self._font_family.setIconSize(QSize(0, 0))
         self._font_family.setCurrentFont(QFont(c.font_family.split(",")[0].strip().strip("'\"")))
         form.addRow(t("set.font_family"), self._font_family)
-
-        self._font_weight = QComboBox()
-        self._rebuild_weight_options(self._font_family.currentFont().family(), prefer=c.font_weight)
-        self._font_family.currentFontChanged.connect(lambda font: self._rebuild_weight_options(font.family()))
-        form.addRow(t("set.font_weight"), self._font_weight)
+        form.addRow(self._hint(t("set.font_family_hint")))
 
         self._font_size = self._spin(8, 120, c.font_size, " px")
         form.addRow(t("set.font_size"), self._font_size)
@@ -900,37 +842,6 @@ class SettingsDialog(QDialog):
                 pixmap = leaf_icon.render_leaf(key, self._config.accent_start, dark_panel=dark, size=64)
                 item.setIcon(self._no_tint_icon(pixmap))
 
-    def _available_weights(self, family: str) -> list[int]:
-        """The distinct weights the family actually ships (so the picker never
-        offers a weight Qt would have to fake). Falls back to the standard ladder
-        when a family reports no style metadata."""
-        weights = sorted(
-            {int(QFontDatabase.weight(family, style)) for style in QFontDatabase.styles(family)}
-            - {0}
-        )
-        return weights or list(_FALLBACK_WEIGHTS)
-
-    def _weight_label(self, weight: int) -> str:
-        key = _WEIGHT_KEYS.get(weight)
-        if key is not None:
-            return t(key)
-        nearest = min(_WEIGHT_KEYS, key=lambda standard: abs(standard - weight))
-        return f"{t(_WEIGHT_KEYS[nearest])} ({weight})"
-
-    def _rebuild_weight_options(self, family: str, prefer: int | None = None) -> None:
-        """Repopulate the weight picker with the family's real weights, keeping the
-        selection (or `prefer`) by snapping to the nearest available weight."""
-        target = prefer if prefer is not None else self._font_weight.currentData()
-        target = int(target) if target is not None else self._config.font_weight
-        weights = self._available_weights(family)
-        self._font_weight.blockSignals(True)
-        self._font_weight.clear()
-        for weight in weights:
-            self._font_weight.addItem(self._weight_label(weight), weight)
-        nearest = min(weights, key=lambda weight: abs(weight - target))
-        self._font_weight.setCurrentIndex(weights.index(nearest))
-        self._font_weight.blockSignals(False)
-
     def _spin(self, low: int, high: int, value: int, suffix: str) -> QSpinBox:
         spin = QSpinBox()
         spin.setRange(low, high)
@@ -959,7 +870,6 @@ class SettingsDialog(QDialog):
             lyrics_script=str(self._lyrics_script.currentData()),
             icon_name=icon_name,
             font_family=self._font_family.currentFont().family(),
-            font_weight=int(self._font_weight.currentData()),
             font_size=self._font_size.value(),
             context_font_size=self._context_font_size.value(),
             translation_font_size=self._translation_font_size.value(),

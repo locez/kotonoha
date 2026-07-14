@@ -49,8 +49,7 @@ class Config:
     margin_x: int = 0                # horizontal nudge (px)
     # Typography / appearance
     font_family: str = "Inter, 'Segoe UI', 'Microsoft YaHei', sans-serif"
-    font_weight: int = 800           # main-line weight on the QFont 100..900 scale (800 = extra bold)
-    font_size: int = 24             # main (current) line size (px)
+    font_size: int = 20             # main (current) line size (px)
     context_font_size: int = 14      # previous/next line size (px)
     translation_font_size: int = 13  # translation line size (px)
     opacity: float = 1.0            # black-panel fill opacity 0.0..1.0
@@ -91,10 +90,9 @@ class Config:
             margin_edge=_clamp_int(self.margin_edge, 0, 4000, 64),
             margin_x=_clamp_int(self.margin_x, -4000, 4000, 0),
             font_family=str(self.font_family),
-            font_weight=_clamp_int(self.font_weight, 100, 900, 800),
             # All three ranges match the Appearance spin boxes (8..120), so opening
             # Settings and pressing Apply can never silently truncate a saved size.
-            font_size=_clamp_int(self.font_size, 8, 120, 24),
+            font_size=_clamp_int(self.font_size, 8, 120, 20),
             context_font_size=_clamp_int(self.context_font_size, 8, 120, 14),
             translation_font_size=_clamp_int(self.translation_font_size, 8, 120, 13),
             opacity=_clamp_float(self.opacity, 0.0, 1.0, 1.0),

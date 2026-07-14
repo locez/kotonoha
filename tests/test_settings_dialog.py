@@ -165,11 +165,10 @@ def test_content_sits_in_a_raised_card_and_page_switch_is_safe(qapp):
 
 
 def test_title_logo_follows_the_accent(qapp):
-    from kotonoha.settings_dialog import _accent_logo
+    from kotonoha import leaf_icon
 
-    red = _accent_logo("#FF0000", 22)
-    green = _accent_logo("#00FF00", 22)
-    assert red is not None and green is not None
+    red = leaf_icon.render_leaf(leaf_icon.ACCENT, "#FF0000", size=22)
+    green = leaf_icon.render_leaf(leaf_icon.ACCENT, "#00FF00", size=22)
     assert not red.isNull() and not green.isNull()
     assert red.toImage() != green.toImage()  # the leaf recolours to the accent
     # The title badge re-tints on Apply when the accent changes.
@@ -224,50 +223,18 @@ def test_font_picker_is_a_dropdown_not_a_text_box(qapp):
 
 
 def test_typography_controls_roundtrip(qapp):
+    # No weight picker: weight comes from the chosen font family. The sizes and the
+    # (non-editable) font family round-trip.
     dialog = SettingsDialog(Config(
-        font_family="DejaVu Sans", font_weight=600,
-        context_font_size=17, translation_font_size=11,
+        font_family="DejaVu Sans", context_font_size=17, translation_font_size=11,
     ))
     assert dialog._context_font_size.value() == 17
     assert dialog._translation_font_size.value() == 11
-    # The weight picker offers at least one weight; selecting one round-trips.
-    assert dialog._font_weight.count() >= 1
-    last = dialog._font_weight.count() - 1
-    dialog._font_weight.setCurrentIndex(last)
-    chosen = dialog._font_weight.itemData(last)
+    assert not hasattr(dialog, "_font_weight")  # the weight picker is gone
     cfg = dialog.current_config()
-    assert cfg.font_weight == chosen
     assert cfg.context_font_size == 17
     assert cfg.translation_font_size == 11
     assert cfg.font_family  # a concrete family is stored (QFontComboBox resolves it)
-    dialog.close()
-
-
-def test_weight_picker_lists_only_the_fonts_real_weights(qapp):
-    from PyQt6.QtGui import QFontDatabase
-
-    from kotonoha.settings_dialog import _FALLBACK_WEIGHTS
-
-    dialog = SettingsDialog(Config())
-    # A family with no reported styles falls back to the standard weight ladder,
-    # so the user is never left with an empty picker.
-    assert dialog._available_weights("___no_such_font___") == list(_FALLBACK_WEIGHTS)
-    # A family that DOES report styles is offered exactly its own weights (a subset
-    # of the standard ladder) — never a weight Qt would have to synthesize.
-    for family in QFontDatabase.families():
-        styles = QFontDatabase.styles(family)
-        if styles:
-            real = sorted({QFontDatabase.weight(family, s) for s in styles} - {0})
-            assert dialog._available_weights(family) == real
-            break
-    dialog.close()
-
-
-def test_weight_label_names_standard_and_off_ladder_weights(qapp):
-    dialog = SettingsDialog(Config())
-    assert dialog._weight_label(700)  # a standard weight -> a plain name
-    labelled = dialog._weight_label(316)  # DemiLight-ish -> nearest name + the value
-    assert "316" in labelled
     dialog.close()
 
 

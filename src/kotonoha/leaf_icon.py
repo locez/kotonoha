@@ -19,6 +19,10 @@ _ASSETS = Path(__file__).with_name("assets")
 _LEAF = _ASSETS / "logo.svg"        # bare leaf: 3 green shades + a white "lyrics" motif
 _LEAF_SHADES = ("#60a65a", "#a4d382", "#def1d3")  # dark, mid, light
 _WHITE = "#fcfcfc"
+# Tight bounds of the leaf inside logo.svg's 1254x1254 viewBox (the leaf sits high
+# and doesn't fill the box, so rendering the whole viewBox looks tilted upward).
+_VIEWBOX = 1254.0
+_LEAF_BBOX = (242.0, 134.0, 770.0, 711.0)  # x, y, w, h
 
 ACCENT = "@leaf-accent"   # leaf recoloured to the accent
 MONO = "@leaf-mono"       # black/white leaf, adapts to the system theme
@@ -58,24 +62,35 @@ def _leaf_svg(accent: str, dark_panel: bool, *, mono: bool = False, on_tile: boo
     return svg
 
 
+def _blit_leaf(painter: QPainter, renderer: QSvgRenderer, size: int, margin_frac: float) -> None:
+    """Render the leaf so its OWN bounding box (not the whole viewBox) is centred in
+    the pixmap with a margin, so it never looks shifted up or crooked."""
+    _bx, _by, bw, bh = _LEAF_BBOX
+    scale = (size * (1.0 - 2.0 * margin_frac)) / max(bw, bh)
+    leaf_cx = (_bx + bw / 2.0) * scale
+    leaf_cy = (_by + bh / 2.0) * scale
+    renderer.render(
+        painter,
+        QRectF(size / 2.0 - leaf_cx, size / 2.0 - leaf_cy, _VIEWBOX * scale, _VIEWBOX * scale),
+    )
+
+
 def render_leaf(style: str, accent: str = "#FF4FA3", *, dark_panel: bool = True, size: int = 64) -> QPixmap:
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     if style == TILE:
-        # A rounded accent tile with a white (accent-motif) leaf composited on top.
+        # A rounded accent tile with a white (accent-motif) leaf centred on top.
         painter.setBrush(QColor(accent))
         painter.setPen(Qt.PenStyle.NoPen)
         radius = size * 0.22
         painter.drawRoundedRect(QRectF(1, 1, size - 2, size - 2), radius, radius)
         renderer = QSvgRenderer(QByteArray(_leaf_svg(accent, dark_panel, on_tile=True).encode("utf-8")))
-        inset = size * 0.15
-        renderer.render(painter, QRectF(inset, inset, size - 2 * inset, size - 2 * inset))
+        _blit_leaf(painter, renderer, size, margin_frac=0.24)
     else:
         renderer = QSvgRenderer(QByteArray(_leaf_svg(accent, dark_panel, mono=(style == MONO)).encode("utf-8")))
-        inset = size * 0.08  # breathing room so the diagonal leaf isn't jammed into the corners
-        renderer.render(painter, QRectF(inset, inset, size - 2 * inset, size - 2 * inset))
+        _blit_leaf(painter, renderer, size, margin_frac=0.10)
     painter.end()
     return pixmap
 
