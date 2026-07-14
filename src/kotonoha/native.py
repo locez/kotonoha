@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import ctypes
 import logging
-import os
+import sysconfig
+from pathlib import Path
 
 from .lyrics_loader import find_layer_shell_library, overlay_mode_available, should_disable_layer_shell
 
@@ -33,7 +34,7 @@ class LayerShellController:
 
         lib_path = find_layer_shell_library(package_dir)
         if not lib_path:
-            self._disabled_reason = "libkoto-layer.so not found; run build_bridge.sh."
+            self._disabled_reason = "libkoto-layer.so not found; run uv sync or build the wheel."
             logger.info("%s", self._disabled_reason)
             return
 
@@ -103,4 +104,8 @@ class LayerShellController:
 
 
 def default_package_dir() -> str:
-    return os.path.dirname(__file__)
+    source_dir = Path(__file__).parent
+    installed_dir = Path(sysconfig.get_path("platlib")) / source_dir.name
+    if find_layer_shell_library(installed_dir) is not None:
+        return str(installed_dir)
+    return str(source_dir)

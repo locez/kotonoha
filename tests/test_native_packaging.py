@@ -104,6 +104,10 @@ def test_cmake_is_documented_and_verified_by_ci() -> None:
     assert "cmake --install build/cmake --config Release" in readme
     assert "scikit-build-core" in readme
     assert "build_bridge.sh" in readme
+    assert "sysconfig.get_path(\"platlib\")" in test_workflow
+    assert "bridge=src/kotonoha/libkoto-layer.so" not in test_workflow
+    assert 'bridge="${unpacked_dirs[0]}/kotonoha/libkoto-layer.so"' in package_workflow
+    assert "bridge=src/kotonoha/libkoto-layer.so" not in package_workflow
     assert "Verify standalone CMake install" in test_workflow
     assert "-DCMAKE_BUILD_TYPE=Release" in test_workflow
     assert 'cmake --build "$cmake_build" --config Release' in test_workflow
