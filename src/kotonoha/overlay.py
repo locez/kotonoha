@@ -229,6 +229,10 @@ class LyricsOverlay(QWidget):
         self._current.set_style(
             current_font, config.accent_start, config.accent_end, config.accent_sweep, base, shadow
         )
+        self._current.set_effects(
+            glow=config.fx_glow, word_pop=config.fx_word_pop,
+            intensity=config.fx_intensity, animate=config.fx_animate,
+        )
         self._current.set_max_width(avail)
 
         family_stack = ", ".join(f"'{name}'" for name in families)
@@ -251,6 +255,10 @@ class LyricsOverlay(QWidget):
         trans_font.setItalic(True)
         self._translation.set_style(
             trans_font, config.accent_start, config.accent_end, config.accent_sweep, base, shadow
+        )
+        # Secondary line: no glow/pop, but honour the animation toggle.
+        self._translation.set_effects(
+            glow=False, word_pop=False, intensity=config.fx_intensity, animate=config.fx_animate
         )
         self._translation.set_max_width(avail)
         self._translation.setVisible(config.show_translation)

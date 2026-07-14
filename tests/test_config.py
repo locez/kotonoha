@@ -64,6 +64,18 @@ def test_all_font_sizes_clamp_to_the_spin_box_range():
     assert Config(translation_font_size=200).clamped().translation_font_size == 120
 
 
+def test_effects_defaults_clamp_and_roundtrip(tmp_path):
+    assert Config().fx_animate and Config().fx_glow and Config().fx_word_pop
+    assert Config().fx_intensity == "subtle"
+    assert Config(fx_intensity="expressive").clamped().fx_intensity == "expressive"
+    assert Config(fx_intensity="bogus").clamped().fx_intensity == "subtle"
+    path = tmp_path / "c.json"
+    save_config(Config(fx_animate=False, fx_glow=False, fx_word_pop=False, fx_intensity="expressive"), path)
+    loaded = load_config(path)
+    assert not loaded.fx_animate and not loaded.fx_glow and not loaded.fx_word_pop
+    assert loaded.fx_intensity == "expressive"
+
+
 def test_theme_and_white_panel_clamp_and_roundtrip(tmp_path):
     assert Config().theme == "auto"
     assert Config(theme="light").clamped().theme == "light"

@@ -76,6 +76,11 @@ class Config:
     accent_start: str = "#FF4FA3"
     accent_end: str = "#FF8FCB"
     accent_sweep: str = "#FF6EC7"
+    # Visual effects (all user-toggleable)
+    fx_animate: bool = True          # line reveal + settings fade-in animations
+    fx_glow: bool = True             # soft accent glow behind the current line
+    fx_word_pop: bool = True         # brighten the word currently being sung
+    fx_intensity: str = "subtle"     # "subtle" | "expressive"
 
     def clamped(self) -> Config:
         """Return a copy with values forced into sane ranges."""
@@ -106,6 +111,10 @@ class Config:
             accent_start=str(self.accent_start),
             accent_end=str(self.accent_end),
             accent_sweep=str(self.accent_sweep),
+            fx_animate=bool(self.fx_animate),
+            fx_glow=bool(self.fx_glow),
+            fx_word_pop=bool(self.fx_word_pop),
+            fx_intensity=self.fx_intensity if self.fx_intensity in ("subtle", "expressive") else "subtle",
             lyrics_sources=_clean_sources(self.lyrics_sources),
             prefer_best_lyrics=bool(self.prefer_best_lyrics),
             cache_enabled=bool(self.cache_enabled),

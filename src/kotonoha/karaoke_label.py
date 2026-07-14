@@ -29,6 +29,15 @@ SHADOW_OFFSET = 1.5
 REVEAL_RISE_PX = 9.0
 REVEAL_DURATION_MS = 320
 
+# Effect strength per intensity: glow alpha (of the accent), glow radius (px), and
+# the active-word brightening (QColor.lighter percent).
+_FX = {
+    "subtle": {"glow_alpha": 0.22, "glow_radius": 2.0, "pop": 128},
+    "expressive": {"glow_alpha": 0.42, "glow_radius": 3.0, "pop": 155},
+}
+# Unit ring of 8 directions; scaled by the glow radius to fake a cheap bloom.
+_GLOW_OFFSETS = ((1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1))
+
 class _PyqtPropertyFactory(Protocol):
     def __call__(self, type_: object, *, fget: object, fset: object) -> Any: ...
 
@@ -57,6 +66,11 @@ class KaraokeLabel(QWidget):
         # dark text with a soft light halo instead of white text on a dark shadow.
         self._base_color = QColor(UNSUNG_COLOR)
         self._shadow_color = QColor(SHADOW_COLOR)
+        # Effects (set per-label by the overlay from config; off for context/plain).
+        self._glow = False
+        self._word_pop = False
+        self._intensity = "subtle"
+        self._animate = True
         self._reveal = 1.0
         self._anim: QPropertyAnimation | None = None
         # Cached text measurements (rebuilt only when font/line changes, never per
@@ -91,6 +105,13 @@ class KaraokeLabel(QWidget):
         self._fm = QFontMetrics(self._font)
         self._rebuild_layout()
         self.updateGeometry()
+        self.update()
+
+    def set_effects(self, *, glow: bool, word_pop: bool, intensity: str, animate: bool) -> None:
+        self._glow = glow
+        self._word_pop = word_pop
+        self._intensity = intensity if intensity in _FX else "subtle"
+        self._animate = animate
         self.update()
 
     def set_line(self, line: LyricLine | None, word_mode: bool) -> None:
@@ -136,6 +157,13 @@ class KaraokeLabel(QWidget):
     reveal = pyqt_property(float, fget=_get_reveal, fset=_set_reveal)
 
     def _start_reveal(self) -> None:
+        # Effects off -> show the new line immediately (no fade/rise).
+        if not self._animate:
+            if self._anim is not None:
+                self._anim.stop()
+            self._reveal = 1.0
+            self.update()
+            return
         # Reuse a single animation instance; creating a new one per line change
         # leaked a stopped QPropertyAnimation (parented to this label) every time.
         if self._anim is None:
@@ -248,6 +276,17 @@ class KaraokeLabel(QWidget):
         painter.setPen(QPen(_scale_alpha(self._base_color, a)))
         painter.drawText(rect, align, self.text)
 
+        # 1.5) Soft accent glow behind the sung portion (grows with the sweep).
+        if self._glow and sweep_x > text_left:
+            fx = _FX[self._intensity]
+            painter.save()
+            painter.setClipRect(QRectF(text_left, 0.0, sweep_x - text_left, height), Qt.ClipOperation.IntersectClip)
+            painter.setPen(QPen(_scale_alpha(self._accent_sweep, a * fx["glow_alpha"])))
+            radius = fx["glow_radius"]
+            for dx, dy in _GLOW_OFFSETS:
+                painter.drawText(rect.translated(dx * radius, dy * radius), align, self.text)
+            painter.restore()
+
         # 2) Sung text, clipped to the sweep boundary, filled with the accent gradient.
         if sweep_x > text_left:
             painter.save()
@@ -259,13 +298,22 @@ class KaraokeLabel(QWidget):
             painter.drawText(rect, align, self.text)
             painter.restore()
 
-        # 3) Currently-sung word: brighten its sung sub-range with the sweep colour.
+        # 3) Currently-sung word: brighten its sung sub-range with the sweep colour,
+        #    with an optional brighter "pop" core + glow to draw the eye to the beat.
         if active_rel is not None:
             x0 = active_rel[0] + text_left
             x1 = active_rel[1] + text_left
             if x1 > x0:
                 painter.save()
                 painter.setClipRect(QRectF(x0, 0.0, x1 - x0, height), Qt.ClipOperation.IntersectClip)
-                painter.setPen(QPen(_scale_alpha(self._accent_sweep, a)))
+                color = self._accent_sweep
+                if self._word_pop:
+                    fx = _FX[self._intensity]
+                    painter.setPen(QPen(_scale_alpha(self._accent_sweep, a * fx["glow_alpha"])))
+                    radius = fx["glow_radius"]
+                    for dx, dy in _GLOW_OFFSETS:
+                        painter.drawText(rect.translated(dx * radius, dy * radius), align, self.text)
+                    color = self._accent_sweep.lighter(fx["pop"])
+                painter.setPen(QPen(_scale_alpha(color, a)))
                 painter.drawText(rect, align, self.text)
                 painter.restore()

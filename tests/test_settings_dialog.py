@@ -277,6 +277,22 @@ def test_selected_icon_is_not_blue_tinted(qapp):
     dialog.close()
 
 
+def test_effects_controls_roundtrip(qapp):
+    dialog = SettingsDialog(Config(fx_animate=False, fx_glow=True, fx_word_pop=False, fx_intensity="expressive"))
+    assert dialog._fx_animate.isChecked() is False
+    assert dialog._fx_glow.isChecked() is True
+    assert dialog._fx_word_pop.isChecked() is False
+    assert dialog._fx_intensity.currentData() == "expressive"
+    dialog._fx_glow.setChecked(False)
+    dialog._fx_word_pop.setChecked(True)
+    cfg = dialog.current_config()
+    assert cfg.fx_animate is False
+    assert cfg.fx_glow is False
+    assert cfg.fx_word_pop is True
+    assert cfg.fx_intensity == "expressive"
+    dialog.close()
+
+
 def test_max_font_sizes_survive_opening_settings(qapp):
     # With the spin range aligned to the config clamp, a config already at the max
     # is not truncated merely by opening the dialog and reading it back.

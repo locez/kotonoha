@@ -59,6 +59,42 @@ def test_font_fallback_chain_keeps_cjk_after_a_latin_family(qapp):
     qapp.processEvents()
 
 
+def test_effects_apply_to_current_line_only_and_paint_safely(qapp):
+    from kotonoha.model import LyricLine, LyricsSnapshot, LyricWord
+
+    overlay = LyricsOverlay(
+        LyricsState(),
+        Config(fx_glow=True, fx_word_pop=True, fx_intensity="expressive"),
+        UnavailableController(),
+    )
+    # Effects land on the main line; the translation stays plain.
+    assert overlay._current._glow is True and overlay._current._word_pop is True
+    assert overlay._translation._glow is False and overlay._translation._word_pop is False
+    # A word-timed line paints (glow + pop path) without raising.
+    line = LyricLine(
+        index=1, id="c", start=0.0, end=6.0, text="あの日の 空へ", translation="",
+        words=(LyricWord(0.0, 3.0, "あの日の"), LyricWord(3.0, 6.0, "空へ")),
+    )
+    overlay._on_snapshot(LyricsSnapshot(found=True, current=line, current_time=2.0, is_playing=True, timing="Word"))
+    overlay._current.set_media_time(2.0)
+    overlay._current.grab()  # force a paint pass through the effect code
+    overlay.deleteLater()
+    qapp.processEvents()
+
+
+def test_disabling_animations_reveals_lines_instantly(qapp):
+    from kotonoha.karaoke_label import KaraokeLabel
+    from kotonoha.model import LyricLine
+
+    label = KaraokeLabel()
+    label.set_effects(glow=False, word_pop=False, intensity="subtle", animate=False)
+    label.set_line(LyricLine(0, "a", 0.0, 3.0, "x", "", ()), False)
+    label.set_line(LyricLine(1, "b", 0.0, 3.0, "y", "", ()), False)  # a line change
+    assert label._reveal == 1.0  # animations off -> shown immediately, no fade/rise
+    label.deleteLater()
+    qapp.processEvents()
+
+
 def test_white_panel_flips_text_and_context_shadow_to_light(qapp):
     from PyQt6.QtWidgets import QGraphicsDropShadowEffect
 

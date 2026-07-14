@@ -12,7 +12,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
-from PyQt6.QtCore import QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QAbstractAnimation, QEasingCurve, QPropertyAnimation, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import (
     QColor,
     QFont,
@@ -218,7 +218,7 @@ _WEIGHT_KEYS: dict[int, str] = {
     800: "weight.extrabold",
     900: "weight.black",
 }
-_FALLBACK_WEIGHTS: tuple[int, ...] = (300, 400, 500, 600, 700, 800, 900)
+_FALLBACK_WEIGHTS: tuple[int, ...] = (100, 200, 300, 400, 500, 600, 700, 800, 900)
 
 
 def _resolve_theme(value: str) -> str:
@@ -262,6 +262,7 @@ class SettingsDialog(QDialog):
         # effect now to decide when to offer the restart button.
         self._initial_ui_language = config.ui_language
         self._theme = _resolve_theme(config.theme)
+        self._did_fade_in = False
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setStyleSheet(_skin(config.accent_start, self._theme))
@@ -389,6 +390,15 @@ class SettingsDialog(QDialog):
             self.setMinimumWidth(needed)
         if self.width() < needed:
             self.resize(needed, self.height())
+        # Gentle fade-in on first show (once), if animations are enabled.
+        if self._config.fx_animate and not self._did_fade_in:
+            self._did_fade_in = True
+            anim = QPropertyAnimation(self, b"windowOpacity", self)
+            anim.setDuration(160)
+            anim.setStartValue(0.0)
+            anim.setEndValue(1.0)
+            anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+            anim.start(QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
 
     # --- tabs ---
 
@@ -510,6 +520,24 @@ class SettingsDialog(QDialog):
         self._accent_last_index = self._accent.currentIndex()
         self._accent.activated.connect(self._on_accent_activated)
         form.addRow(t("set.accent"), self._accent)
+
+        # --- Effects: each toggleable, with an intensity for the glow/pop. ---
+        form.addRow(self._section("section.fx"))
+        self._fx_animate = QCheckBox(t("set.fx_animate"))
+        self._fx_animate.setChecked(c.fx_animate)
+        form.addRow(self._fx_animate)
+        self._fx_glow = QCheckBox(t("set.fx_glow"))
+        self._fx_glow.setChecked(c.fx_glow)
+        form.addRow(self._fx_glow)
+        self._fx_word_pop = QCheckBox(t("set.fx_word_pop"))
+        self._fx_word_pop.setChecked(c.fx_word_pop)
+        form.addRow(self._fx_word_pop)
+        self._fx_intensity = QComboBox()
+        for value, key in (("subtle", "fxintensity.subtle"), ("expressive", "fxintensity.expressive")):
+            self._fx_intensity.addItem(t(key), value)
+        fx_idx = self._fx_intensity.findData(c.fx_intensity)
+        self._fx_intensity.setCurrentIndex(fx_idx if fx_idx >= 0 else 0)
+        form.addRow(t("set.fx_intensity"), self._fx_intensity)
         return page
 
     def _set_custom_accent(self, triple: tuple[str, str, str]) -> None:
@@ -786,6 +814,10 @@ class SettingsDialog(QDialog):
             accent_start=accent_start,
             accent_end=accent_end,
             accent_sweep=accent_sweep,
+            fx_animate=self._fx_animate.isChecked(),
+            fx_glow=self._fx_glow.isChecked(),
+            fx_word_pop=self._fx_word_pop.isChecked(),
+            fx_intensity=str(self._fx_intensity.currentData()),
             karaoke=self._karaoke.isChecked(),
             lead_ms=self._lead.value(),
             show_translation=self._translation.isChecked(),
