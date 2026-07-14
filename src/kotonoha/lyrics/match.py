@@ -21,6 +21,11 @@ _ARTIST_SEPARATOR = re.compile(
 # ("初音ミク和鏡音リン"). CJK has no word boundaries, so split on it only when it sits
 # between two runs of >=2 non-space characters — that separates a genuinely fused
 # list without fragmenting a single name that merely contains 和 (山田和樹, 大和).
+# NOTE: the katakana middle dot "・" is deliberately NOT a separator here. Unlike 和
+# (which joins whole names, so two different people stay distinct tokens), "・"
+# separates the forename and surname WITHIN one katakana name (テイラー・スウィフト),
+# so splitting it makes two different artists who merely share a given name
+# (ジョン・レノン / ジョン・デンバー) collide — a confident wrong-lyrics match.
 _AND_SEPARATOR = re.compile(r"(?<=\S\S)和(?=\S\S)")
 _KEEP = re.compile(r"[^\w一-鿿]+")
 _VERSION_TAGS = {
@@ -78,14 +83,31 @@ class MatchEvidence:
     version_conflict: bool
 
 
+def _fold_latin_accents(text: str) -> str:
+    """Strip accents from Latin letters only (é->e, ö->o, ñ->n) so an accented
+    title matches its unaccented spelling (Déjà Vu vs Deja Vu, Motörhead vs
+    Motorhead). A Japanese dakuten (が = か + U+3099) or any non-Latin base is
+    left untouched: only a character whose NFD base is an ASCII letter is folded,
+    so kana/hangul/cyrillic/CJK are never mangled."""
+    folded: list[str] = []
+    for char in text:
+        decomposed = unicode_normalize("NFD", char)
+        base = decomposed[0]
+        folded.append(base if len(decomposed) > 1 and base.isascii() and base.isalpha() else char)
+    return "".join(folded)
+
+
 def normalize(text: str) -> str:
     """Return a comparison form without changing version semantics elsewhere.
 
     Traditional Chinese is folded to Simplified so a traditional-tagged track
     (李榮浩 / 麻雀 from a zh-Hant browser) compares equal to Netease's simplified
-    catalogue (李荣浩). The fold is applied to both the track and the candidate,
-    so it is symmetric and only ever affects this comparison key."""
-    value = fold_to_simplified(unicode_normalize("NFKC", text).casefold())
+    catalogue (李荣浩), and Latin accents are folded so accented Western titles
+    match their plain spelling. Both folds are applied to the track and the
+    candidate alike, so they are symmetric and only ever affect this comparison
+    key (never display, search queries, or version semantics)."""
+    value = _fold_latin_accents(unicode_normalize("NFKC", text).casefold())
+    value = fold_to_simplified(value)
     value = _PARENS.sub("", value)
     value = _FEAT_SUFFIX.sub("", value)
     return _KEEP.sub("", value).strip()

@@ -192,6 +192,42 @@ def test_query_variants_add_simplified_fold_for_traditional_input():
     assert "麻雀 李荣浩" in query_variants(TrackMetadata("麻雀", "李榮浩"))
 
 
+def test_middle_dot_is_not_split_so_different_same_forename_artists_do_not_match():
+    # "・" separates the forename/surname inside ONE katakana name, so it must not
+    # be a token separator: two different people who share a given name (ジョン・レノン
+    # vs ジョン・デンバー) must not collide into a confident wrong-artist match.
+    track = TrackMetadata("Imagine", "ジョン・レノン", "", None)
+    candidate = Candidate("1", "Imagine", "ジョン・デンバー", None)
+    assert evaluate_match(candidate, track).confidence is MatchConfidence.NONE
+
+
+def test_full_katakana_name_still_matches_itself():
+    # The same katakana name (dot and all) is still an exact artist identity.
+    track = TrackMetadata("Beat It", "マイケル・ジャクソン", "", 258.0)
+    candidate = Candidate("1", "Beat It", "マイケル・ジャクソン", 258.0)
+    assert evaluate_match(candidate, track).confidence is MatchConfidence.HIGH
+
+
+def test_normalize_folds_latin_accents():
+    # Accented Western titles/artists match their plain spelling (comparison-only).
+    assert normalize("Déjà Vu") == normalize("Deja Vu")
+    assert normalize("Motörhead") == normalize("Motorhead")
+    assert normalize("Beyoncé") == normalize("Beyonce")
+
+
+def test_accent_fold_does_not_touch_japanese_dakuten():
+    # が (か + combining voiced mark) must NOT fold to か: they are different sounds.
+    # The fold only strips accents whose base is an ASCII letter.
+    assert normalize("がっこう") != normalize("かっこう")
+    assert normalize("バラ") != normalize("ハラ")
+
+
+def test_accented_title_reaches_high_confidence():
+    track = TrackMetadata("Déjà Vu", "Olivia Rodrigo", "", 215.0)
+    candidate = Candidate("1", "Deja Vu", "Olivia Rodrigo", 215.0)
+    assert evaluate_match(candidate, track).confidence is MatchConfidence.HIGH
+
+
 def test_remaster_is_not_a_version_conflict():
     # A remaster shares the studio lyrics, so it must not be rejected as a conflict.
     track = TrackMetadata("Song", "Artist", "", 180.0)
