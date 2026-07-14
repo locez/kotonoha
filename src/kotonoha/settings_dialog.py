@@ -34,6 +34,7 @@ from PyQt6.QtWidgets import (
     QDialogButtonBox,
     QFontComboBox,
     QFormLayout,
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QListView,
@@ -76,9 +77,10 @@ QListWidget#nav::item {
     border-radius: 8px;
     margin: 2px 0;
 }
-QListWidget#nav::item:hover { color: %TEXT_STRONG%; background: %ITEM_SEL%; }
+QListWidget#nav::item:hover { color: %TEXT_STRONG%; background: %NAV_HOVER%; }
 QListWidget#nav::item:selected { color: %TEXT_STRONG%; background: %ACCENT_SOFT%; }
-QWidget#navDivider { background: %PANE_BORDER%; }
+/* Raised content surface (a card) for depth over the base dialog + sidebar. */
+QWidget#contentCard { background: %CARD_BG%; border: 1px solid %CARD_BORDER%; border-radius: 12px; }
 QCheckBox { background: transparent; spacing: 8px; }
 QCheckBox::indicator, QListWidget::indicator {
     width: 16px; height: 16px;
@@ -104,8 +106,9 @@ QSpinBox, QComboBox, QFontComboBox {
     color: %TEXT%;
     min-height: 24px;
 }
-QSpinBox:hover, QComboBox:hover, QFontComboBox:hover,
-QSpinBox:focus, QComboBox:focus, QFontComboBox:focus { border-color: %FIELD_BORDER_HOVER%; }
+QSpinBox:hover, QComboBox:hover, QFontComboBox:hover { border-color: %FIELD_BORDER_HOVER%; }
+/* Accent focus ring — clear interactive feedback on the control you're editing. */
+QSpinBox:focus, QComboBox:focus, QFontComboBox:focus { border: 1px solid %ACCENT%; }
 QSpinBox:disabled, QComboBox:disabled { color: %TEXT_DIM%; }
 QComboBox::drop-down, QFontComboBox::drop-down {
     subcontrol-origin: padding; subcontrol-position: center right;
@@ -169,6 +172,9 @@ _PALETTES: dict[str, dict[str, object]] = {
         "TEXT": "#E6E6E8", "TEXT_STRONG": "#FFFFFF", "TEXT_DIM": "rgba(255,255,255,140)",
         "HINT": "rgba(255,255,255,120)",
         "PANE_BG": "rgba(255,255,255,8)", "PANE_BORDER": "rgba(255,255,255,20)",
+        # Raised content surface (a card) over the base dialog + sidebar, for depth.
+        "CARD_BG": "rgba(255,255,255,7)", "CARD_BORDER": "rgba(255,255,255,14)",
+        "NAV_HOVER": "rgba(255,255,255,12)",
         "FIELD_BG": "rgba(255,255,255,18)", "FIELD_BORDER": "rgba(255,255,255,32)",
         "FIELD_BORDER_HOVER": "rgba(255,255,255,80)", "POPUP_BG": "#1e2027",
         "IND_BORDER": "rgba(255,255,255,60)", "IND_BG": "rgba(255,255,255,15)",
@@ -182,6 +188,9 @@ _PALETTES: dict[str, dict[str, object]] = {
         "TEXT": "#24272B", "TEXT_STRONG": "#0E1013", "TEXT_DIM": "rgba(0,0,0,135)",
         "HINT": "rgba(0,0,0,115)",
         "PANE_BG": "rgba(0,0,0,4)", "PANE_BORDER": "rgba(0,0,0,14)",
+        # A white content card over the light-grey dialog + sidebar, for depth.
+        "CARD_BG": "#FFFFFF", "CARD_BORDER": "rgba(0,0,0,12)",
+        "NAV_HOVER": "rgba(0,0,0,7)",
         "FIELD_BG": "rgba(0,0,0,6)", "FIELD_BORDER": "rgba(0,0,0,28)",
         "FIELD_BORDER_HOVER": "rgba(0,0,0,65)", "POPUP_BG": "#FFFFFF",
         "IND_BORDER": "rgba(0,0,0,50)", "IND_BG": "rgba(0,0,0,6)",
@@ -283,8 +292,9 @@ class SettingsDialog(QDialog):
         ):
             self._nav.addItem(QListWidgetItem(t(key)))
             self._stack.addWidget(page)
-        self._nav.currentRowChanged.connect(self._stack.setCurrentIndex)
         self._nav.setCurrentRow(0)
+        self._stack.setCurrentIndex(0)
+        self._nav.currentRowChanged.connect(self._on_nav_changed)  # after the initial row
         self.setMinimumWidth(560)
 
         buttons = QDialogButtonBox(
@@ -307,16 +317,20 @@ class SettingsDialog(QDialog):
         if apply_button is not None:
             apply_button.clicked.connect(self._emit)
 
-        divider = QWidget()
-        divider.setObjectName("navDivider")
-        divider.setFixedWidth(1)
+        # The content sits in a raised "card" surface while the sidebar stays on the
+        # base dialog colour, so the two read as distinct layers (depth) without a
+        # hard divider line between them.
+        card = QWidget()
+        card.setObjectName("contentCard")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(0, 0, 0, 0)
+        card_layout.addWidget(self._stack)
 
         body = QHBoxLayout()
         body.setContentsMargins(0, 0, 0, 0)
-        body.setSpacing(14)
+        body.setSpacing(12)
         body.addWidget(self._nav)
-        body.addWidget(divider)
-        body.addWidget(self._stack, 1)
+        body.addWidget(card, 1)
 
         header_line = QWidget()
         header_line.setObjectName("navDivider")
@@ -434,6 +448,25 @@ class SettingsDialog(QDialog):
         # Connect after the button exists so the handler never runs before it.
         self._ui_language.currentIndexChanged.connect(self._update_restart_hint)
         return page
+
+    def _on_nav_changed(self, row: int) -> None:
+        self._stack.setCurrentIndex(row)
+        # A quick fade of the incoming page makes switching categories feel alive
+        # (only when animations are on; the effect is removed once it settles).
+        if not self._config.fx_animate:
+            return
+        page = self._stack.currentWidget()
+        if page is None:
+            return
+        effect = QGraphicsOpacityEffect(page)
+        page.setGraphicsEffect(effect)
+        anim = QPropertyAnimation(effect, b"opacity", page)
+        anim.setDuration(150)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        anim.finished.connect(lambda: page.setGraphicsEffect(None))
+        anim.start(QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
 
     def _update_restart_hint(self) -> None:
         self._restart_btn.setVisible(self._ui_language.currentData() != self._initial_ui_language)

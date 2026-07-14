@@ -125,6 +125,20 @@ def test_white_panel_option_present_and_roundtrips(qapp):
     dialog.close()
 
 
+def test_content_sits_in_a_raised_card_and_page_switch_is_safe(qapp):
+    from PyQt6.QtWidgets import QWidget
+
+    # Depth: the content lives in a distinct "card" surface layered over the base.
+    dialog = SettingsDialog(Config(fx_animate=False))
+    assert dialog.findChild(QWidget, "contentCard") is not None
+    # Switching category updates the stack, and with animations off no graphics
+    # effect is left on the page (it can never be stuck dim/blank).
+    dialog._nav.setCurrentRow(2)
+    assert dialog._stack.currentIndex() == 2
+    assert dialog._stack.currentWidget().graphicsEffect() is None
+    dialog.close()
+
+
 def test_theme_selector_roundtrips_and_switches_palette(qapp):
     from kotonoha.settings_dialog import _PALETTES
 
