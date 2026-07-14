@@ -61,10 +61,13 @@ QLabel#section { color: %TEXT_DIM%; font-size: 11px; font-weight: 700; padding-t
 QLabel#dialogTitle { color: %TEXT_STRONG%; font-size: 15px; font-weight: 600; }
 QPushButton#closeButton { background: transparent; border: none; color: %TEXT_DIM%; font-size: 16px; padding: 0; }
 QPushButton#closeButton:hover { color: %TEXT_STRONG%; }
+/* No content box: just a full-width divider under the tabs that the selected
+   tab's accent underline sits on. Removes the rounded-corner-vs-underline clash
+   and the box-in-box look; the dialog's own rounded frame is the only container. */
 QTabWidget::pane {
-    border: 1px solid %PANE_BORDER%;
-    border-radius: 12px;
-    background: %PANE_BG%;
+    border: none;
+    border-top: 1px solid %PANE_BORDER%;
+    background: transparent;
     top: -1px;
 }
 QTabBar { qproperty-drawBase: 0; }
@@ -346,6 +349,11 @@ class SettingsDialog(QDialog):
         needed = self._tabs.tabBar().sizeHint().width() + 52
         if self.minimumWidth() < needed:
             self.setMinimumWidth(needed)
+        # Size the content area to the TALLEST tab so switching tabs never resizes
+        # the window; shorter tabs just show empty space below their top-pinned rows.
+        pages = [self._tabs.widget(i) for i in range(self._tabs.count())]
+        tallest = max((page.sizeHint().height() for page in pages if page is not None), default=0)
+        self._tabs.setMinimumHeight(tallest + self._tabs.tabBar().sizeHint().height() + 6)
         if self.width() < needed:
             self.resize(needed, self.height())
 
@@ -569,7 +577,7 @@ class SettingsDialog(QDialog):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(20, 18, 20, 18)
-        layout.setSpacing(10)
+        layout.setSpacing(12)
         layout.addWidget(self._hint(t("set.sources_hint")))
 
         self._sources_list = QListWidget()
