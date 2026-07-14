@@ -99,12 +99,19 @@ class TrackCommit:
     generation: int
     player_name: str
     info: TrackInfo
+    # Player position (seconds) at the moment this track started, captured only on
+    # a genuine A->B transition. For a player that reports a cumulative
+    # playlist/video timeline instead of a song-relative one, subtracting this
+    # realigns the position with the (0-based) lyric timestamps. ~0 for normal
+    # players, so it is a no-op there. None on the first track (join point unknown).
+    start_position: float | None = None
 
 
 class TrackStabilizer:
     def __init__(self) -> None:
         self._candidate_key: tuple[object, ...] | None = None
         self._candidate: TrackObservation | None = None
+        self._candidate_start: float | None = None
         self._changed_at = 0.0
         self._committed_key: tuple[object, ...] | None = None
         self._generation = 0
@@ -122,6 +129,7 @@ class TrackStabilizer:
         if key != self._candidate_key:
             self._candidate_key = key
             self._candidate = observation
+            self._candidate_start = observation.position_s  # position when this track first appeared
             self._changed_at = observation.observed_at
             self._transitioning = key != self._committed_key
             return None
@@ -138,10 +146,13 @@ class TrackStabilizer:
             self._transitioning = False
             return None
 
+        # Only a genuine A->B change yields a start offset; the very first track has
+        # no known join point, so leave it None (no correction).
+        start_position = self._candidate_start if self._committed_key is not None else None
         self._committed_key = key
         self._generation += 1
         self._transitioning = False
-        return TrackCommit(self._generation, observation.player_name, info)
+        return TrackCommit(self._generation, observation.player_name, info, start_position)
 
     @property
     def transitioning(self) -> bool:
@@ -150,6 +161,7 @@ class TrackStabilizer:
     def reset(self) -> None:
         self._candidate_key = None
         self._candidate = None
+        self._candidate_start = None
         self._changed_at = 0.0
         self._committed_key = None
         self._transitioning = False

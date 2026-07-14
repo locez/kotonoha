@@ -124,6 +124,7 @@ class MprisProvider:
         self._poll_wakeup = asyncio.Event()
         self._stabilizer = TrackStabilizer()
         self._empty_since: float | None = None
+        self._song_offset = 0.0  # subtract from a cumulative playlist/video position
         self._lines: list[LyricLine] = []
         self._last_index = -2
         self._current_name: str | None = None
@@ -391,9 +392,11 @@ class MprisProvider:
         if current is None:
             return
         playing = status == "Playing"
+        if position is not None:
+            position = max(0.0, position - self._song_offset)  # song-relative (no-op when offset ~0)
         cider_timing = self._gate.current_timing(current.info.metadata())
         if cider_timing is not None and cider_timing.current_time is not None:
-            position = cider_timing.current_time
+            position = cider_timing.current_time  # already song-relative; ignore the offset
             if cider_timing.is_playing is not None:
                 playing = cider_timing.is_playing
         if position is None:
@@ -416,9 +419,14 @@ class MprisProvider:
     def _schedule_load(self, commit: TrackCommit) -> None:
         current = self._current_commit
         if current is not None and commit != current and commit.generation <= current.generation:
-            commit = TrackCommit(current.generation + 1, commit.player_name, commit.info)
+            commit = TrackCommit(current.generation + 1, commit.player_name, commit.info, commit.start_position)
         if self._load_task is not None and not self._load_task.done():
             self._load_task.cancel()
+        # A transition carries the song's start position; adopt it as the offset so
+        # the sweep uses song-relative time. Reloads of the same song (start_position
+        # None, e.g. a source/cache change) keep the current offset.
+        if commit.start_position is not None:
+            self._song_offset = commit.start_position
         self._current_commit = commit
         self._content_owner = "resolving"
         task = asyncio.create_task(self._load_song(commit))
@@ -552,6 +560,7 @@ class MprisProvider:
         self._content_owner = "none"
         self._provider_name = ""
         self._empty_since = None
+        self._song_offset = 0.0
         self._gate.select_standalone()
         self._gate_revision = self._gate.revision
         self._state.clear()

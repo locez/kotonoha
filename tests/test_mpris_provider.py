@@ -317,6 +317,30 @@ async def test_external_result_uses_actual_provider_label():
     assert state.snapshot.provider == "MPRIS:lrclib"
 
 
+async def test_cumulative_position_offset_realigns_the_sweep():
+    lines = (
+        LyricLine(0, "L0", 0.0, 5.0, "first", ""),
+        LyricLine(1, "L1", 5.0, 10.0, "second", ""),
+    )
+    state = LyricsState()
+    resolver = RecordingResolver(ResolvedLyrics(source="netease", lines=lines))
+    provider = MprisProvider(state, resolver=resolver)
+    # Player reports a cumulative playlist position of 507s; the song started at 500s.
+    prepare_poll(provider, FakePlayer(metadata=VALID_METADATA, position=507_000_000))
+
+    await provider._poll_once(now=0.0)
+    await provider._poll_once(now=0.5)
+    assert provider._load_task is not None
+    await provider._load_task
+    provider._song_offset = 500.0  # captured from the track-transition
+    await provider._poll_once(now=1.0)
+
+    # song-relative time = 507 - 500 = 7s -> the second line, not stuck at the end.
+    assert state.snapshot.current is not None
+    assert state.snapshot.current.text == "second"
+    assert state.snapshot.current_time == 7.0
+
+
 async def test_matching_cider_tick_drives_external_line_selection():
     lines = (
         LyricLine(0, "L0", 0.0, 5.0, "first", ""),
