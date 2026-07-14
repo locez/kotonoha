@@ -351,6 +351,9 @@ class SettingsDialog(QDialog):
         platform = QGuiApplication.platformName() or ""
         self._blur = LayerShellController(default_package_dir(), platform, desktop)
         self._blur_capable = self._blur.available and "wayland" in platform.lower() and "KDE" in desktop.upper()
+        # Wayland has no client-side window-opacity protocol, so animating/setting
+        # windowOpacity there does nothing but spam "plugin does not support…".
+        self._window_opacity_ok = "wayland" not in platform.lower()
         self._frosted = self._blur_capable and config.frost_window
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -529,8 +532,9 @@ class SettingsDialog(QDialog):
             self.setMinimumWidth(needed)
         if self.width() < needed:
             self.resize(needed, self.height())
-        # Gentle fade-in on first show (once), if animations are enabled.
-        if self._config.fx_animate and not self._did_fade_in:
+        # Gentle fade-in on first show (once), if animations are enabled. Skipped on
+        # Wayland, where windowOpacity is a no-op that only logs a warning per frame.
+        if self._config.fx_animate and not self._did_fade_in and self._window_opacity_ok:
             self._did_fade_in = True
             anim = QPropertyAnimation(self, b"windowOpacity", self)
             anim.setDuration(160)
