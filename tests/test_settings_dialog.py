@@ -348,6 +348,41 @@ def test_tray_and_window_icons_are_chosen_independently(qapp):
     dialog.close()
 
 
+def test_reset_tab_restores_only_current_page(qapp):
+    dialog = SettingsDialog(
+        Config(font_size=90, context_font_size=80, margin_edge=999, karaoke=False)
+    )
+    dialog._nav.setCurrentRow(1)  # Text page
+    dialog._reset_current_page()
+    cfg = dialog.current_config()
+    defaults = Config()
+    # Text fields reset...
+    assert cfg.font_size == defaults.font_size
+    assert cfg.context_font_size == defaults.context_font_size
+    # ...but other pages' edits are untouched.
+    assert cfg.margin_edge == 999
+    assert cfg.karaoke is False
+    dialog.close()
+
+
+def test_reset_general_tab_rebuilds_icon_pickers_without_doubling(qapp):
+    from kotonoha import leaf_icon
+
+    dialog = SettingsDialog(
+        Config(icon_name=leaf_icon.WHITE, window_icon_name=leaf_icon.BLACK, theme="light")
+    )
+    dialog._nav.setCurrentRow(0)  # General page owns the two icon strips
+    dialog._reset_current_page()
+    cfg = dialog.current_config()
+    defaults = Config()
+    assert cfg.icon_name == defaults.icon_name
+    assert cfg.window_icon_name == defaults.window_icon_name
+    assert cfg.theme == defaults.theme
+    # The strips were rebuilt, not appended a second time.
+    assert len(dialog._icon_pickers) == 2
+    dialog.close()
+
+
 def test_selected_icon_is_not_blue_tinted(qapp):
     from PyQt6.QtCore import QSize
     from PyQt6.QtGui import QIcon

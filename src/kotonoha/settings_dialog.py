@@ -298,6 +298,19 @@ def _skin(accent: str, theme: str = "dark", frosted: bool = False) -> str:
     )
 
 
+# The Config fields each sidebar page owns, in nav order. Used by "Reset this tab"
+# to restore just the current page's fields to their defaults, leaving the rest.
+_PAGE_FIELDS: tuple[tuple[str, ...], ...] = (
+    ("ui_language", "theme", "frost_window", "icon_name", "window_icon_name"),          # General
+    ("font_family", "font_style", "font_size", "context_font_size", "translation_font_size"),  # Text
+    ("panel_style", "panel_width_mode", "panel_width", "opacity", "frost_opacity", "panel_accent_tint"),  # Panel
+    ("accent_start", "accent_end", "accent_sweep", "fx_animate", "fx_glow", "fx_word_pop", "fx_intensity"),  # Effects
+    ("karaoke", "lead_ms", "show_translation", "lyrics_script"),                         # Lyrics
+    ("anchor_top", "margin_edge", "margin_x", "passthrough"),                            # Position
+    ("lyrics_sources", "prefer_best_lyrics", "cache_enabled"),                           # Sources
+)
+
+
 class SettingsDialog(QDialog):
     applied = pyqtSignal(object)  # emits Config
     clear_cache_requested = pyqtSignal()
@@ -333,17 +346,23 @@ class SettingsDialog(QDialog):
         self._nav.setObjectName("nav")
         self._nav.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._nav.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        for key, page in (
-            ("tab.general", self._general_tab()),
-            ("tab.text", self._text_tab()),
-            ("tab.panel", self._panel_tab()),
-            ("tab.effects", self._effects_tab()),
-            ("tab.lyrics", self._lyrics_tab()),
-            ("tab.position", self._position_tab()),
-            ("tab.sources", self._sources_tab()),
+        # Builders kept so "Reset this tab" can rebuild a single page from defaults.
+        self._page_builders = (
+            self._general_tab,
+            self._text_tab,
+            self._panel_tab,
+            self._effects_tab,
+            self._lyrics_tab,
+            self._position_tab,
+            self._sources_tab,
+        )
+        for key, builder in zip(
+            ("tab.general", "tab.text", "tab.panel", "tab.effects", "tab.lyrics", "tab.position", "tab.sources"),
+            self._page_builders,
+            strict=True,
         ):
             self._nav.addItem(QListWidgetItem(t(key)))
-            self._stack.addWidget(page)
+            self._stack.addWidget(builder())
         self._nav.setCurrentRow(0)
         self._stack.setCurrentIndex(0)
         self._nav.currentRowChanged.connect(self._stack.setCurrentIndex)
@@ -353,6 +372,7 @@ class SettingsDialog(QDialog):
             QDialogButtonBox.StandardButton.Ok
             | QDialogButtonBox.StandardButton.Cancel
             | QDialogButtonBox.StandardButton.Apply
+            | QDialogButtonBox.StandardButton.RestoreDefaults
         )
         buttons.accepted.connect(self._accept)
         buttons.rejected.connect(self.reject)
@@ -360,6 +380,7 @@ class SettingsDialog(QDialog):
             (QDialogButtonBox.StandardButton.Ok, "btn.ok"),
             (QDialogButtonBox.StandardButton.Cancel, "btn.cancel"),
             (QDialogButtonBox.StandardButton.Apply, "btn.apply"),
+            (QDialogButtonBox.StandardButton.RestoreDefaults, "btn.reset_tab"),
         ):
             btn = buttons.button(std)
             if btn is not None:
@@ -368,6 +389,11 @@ class SettingsDialog(QDialog):
         apply_button = buttons.button(QDialogButtonBox.StandardButton.Apply)
         if apply_button is not None:
             apply_button.clicked.connect(self._emit)
+        reset_button = buttons.button(QDialogButtonBox.StandardButton.RestoreDefaults)
+        if reset_button is not None:
+            # ResetRole sits on the left of the box, away from OK/Apply — a reset is
+            # per-tab (just this page's fields), not the whole config.
+            reset_button.clicked.connect(self._reset_current_page)
 
         # The content sits in a raised "card" surface while the sidebar stays on the
         # base dialog colour, so the two read as distinct layers (depth) without a
@@ -959,6 +985,26 @@ class SettingsDialog(QDialog):
             prefer_best_lyrics=self._prefer_best.isChecked(),
             cache_enabled=self._cache_enabled.isChecked(),
         ).clamped()
+
+    def _reset_current_page(self) -> None:
+        """Restore only the current page's fields to their defaults, keeping every
+        other page's edits, then rebuild that page from the reset config. The change
+        is staged like any other edit — the user still applies or cancels it."""
+        idx = self._nav.currentRow()
+        if not 0 <= idx < len(self._page_builders):
+            return
+        defaults = Config()
+        reset_fields = {field: getattr(defaults, field) for field in _PAGE_FIELDS[idx]}
+        self._config = replace(self.current_config(), **reset_fields).clamped()
+        if idx == 0:  # General owns the two icon strips; drop their registry entries
+            self._icon_pickers.clear()
+        new_page = self._page_builders[idx]()
+        old_page = self._stack.widget(idx)
+        self._stack.insertWidget(idx, new_page)
+        if old_page is not None:
+            self._stack.removeWidget(old_page)
+            old_page.deleteLater()
+        self._stack.setCurrentIndex(idx)
 
     def _emit(self) -> None:
         self._config = self.current_config()

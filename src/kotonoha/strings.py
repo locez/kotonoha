@@ -221,6 +221,7 @@ STRINGS: dict[str, dict[str, str]] = {
     "btn.ok": {"en": "OK", "zh-Hans": "确定", "zh-Hant": "確定", "ja": "OK"},
     "btn.cancel": {"en": "Cancel", "zh-Hans": "取消", "zh-Hant": "取消", "ja": "キャンセル"},
     "btn.apply": {"en": "Apply", "zh-Hans": "应用", "zh-Hant": "套用", "ja": "適用"},
+    "btn.reset_tab": {"en": "Reset tab", "zh-Hans": "重置本页", "zh-Hant": "重設本頁", "ja": "タブを既定に"},
 }
 
 
