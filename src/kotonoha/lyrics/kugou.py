@@ -9,7 +9,6 @@ artist and duration.
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import binascii
 import logging
@@ -168,18 +167,3 @@ async def fetch_artifact(
             confidence=confidence,
         )
     return None
-
-
-async def fetch(
-    session: aiohttp.ClientSession,
-    title: str,
-    artist: str,
-    duration_s: float | None,
-) -> list[LyricLine] | None:
-    """Compatibility wrapper mirroring the other providers."""
-    try:
-        artifact = await fetch_artifact(session, TrackMetadata(title, artist, duration_s=duration_s))
-    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
-        logger.warning("Kugou fetch failed: %s", exc)
-        return None
-    return list(artifact.lines) if artifact is not None else None

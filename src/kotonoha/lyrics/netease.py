@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Mapping
 
@@ -139,25 +138,28 @@ async def fetch_artifact(
     *,
     fuzzy: bool = False,
 ) -> LyricsArtifact | None:
-    # Cap on lower-confidence candidates we'll actually fetch lyrics for, so a query
-    # that returns a pile of UGC re-uploads doesn't fan out into dozens of requests.
-    max_medium_fetches = 5
-    medium_matches: dict[str, MatchEvidence] = {}
+    # A single budget for lyric downloads across HIGH and lower-confidence
+    # candidates, so a popular title with a pile of UGC re-uploads (all scoring the
+    # same) can't fan out into dozens of separate 6s-timeout fetches.
+    max_fetches = 6
     attempted_song_ids: set[str] = set()
+
+    async def try_fetch(match: MatchEvidence) -> LyricsArtifact | None:
+        song_id = match.candidate.song_id
+        if song_id in attempted_song_ids or len(attempted_song_ids) >= max_fetches:
+            return None
+        attempted_song_ids.add(song_id)
+        return await _artifact_for_match(session, match)
+
+    medium_matches: dict[str, MatchEvidence] = {}
     for query in query_variants(track, fuzzy=fuzzy):
         for match in ranked_matches(await search(session, query), track, fuzzy=fuzzy):
-            song_id = match.candidate.song_id
             if match.confidence is MatchConfidence.HIGH:
-                # A HIGH is almost certainly the song; fetch it right away, but keep
-                # trying the next HIGH if this one has no timed lyrics.
-                if song_id in attempted_song_ids:
-                    continue
-                attempted_song_ids.add(song_id)
-                artifact = await _artifact_for_match(session, match)
+                artifact = await try_fetch(match)  # a HIGH is almost certainly the song
                 if artifact is not None:
                     return artifact
             else:
-                medium_matches.setdefault(song_id, match)
+                medium_matches.setdefault(match.candidate.song_id, match)
 
     # Best-ranked mediums next: try several so a lyric-less top pick doesn't hide a
     # good one just below it. Rank by title/artist evidence, then closest duration.
@@ -167,12 +169,7 @@ async def fetch_artifact(
                 -(delta if delta is not None else 1e9))
 
     for match in sorted(medium_matches.values(), key=medium_key, reverse=True):
-        if match.candidate.song_id in attempted_song_ids:
-            continue
-        attempted_song_ids.add(match.candidate.song_id)
-        if len(attempted_song_ids) > max_medium_fetches:
-            break
-        artifact = await _artifact_for_match(session, match)
+        artifact = await try_fetch(match)
         if artifact is not None:
             return artifact
     return None
@@ -180,18 +177,3 @@ async def fetch_artifact(
 
 async def fetch_lyrics(session: aiohttp.ClientSession, song_id: str) -> list[LyricLine]:
     return list(parse_payload(await fetch_payload(session, song_id)))
-
-
-async def fetch(
-    session: aiohttp.ClientSession,
-    title: str,
-    artist: str,
-    duration_s: float | None,
-) -> list[LyricLine] | None:
-    """Compatibility wrapper used until all callers consume artifacts."""
-    try:
-        artifact = await fetch_artifact(session, TrackMetadata(title, artist, duration_s=duration_s))
-    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
-        logger.warning("Netease fetch failed: %s", exc)
-        return None
-    return list(artifact.lines) if artifact is not None else None

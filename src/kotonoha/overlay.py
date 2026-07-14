@@ -415,7 +415,6 @@ class LyricsOverlay(QWidget):
             artist = f" — {snapshot.artist}" if snapshot.artist else ""
             # Show the now-playing title in the main line at full size (it used to
             # go in the tiny translation label, which read as uncomfortably small).
-            # end far in the future so it stays un-swept (plain) while idle.
             text = convert_script(f"♪ {snapshot.title}{artist}", self._config.lyrics_script)
         else:
             # Nothing playing: a default line so the panel isn't a blank box.

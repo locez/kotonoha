@@ -43,6 +43,12 @@ _VERSION_TAGS = {
 # words as the studio take, so it must not force a version conflict that rejects
 # the only correct candidate. (live/acoustic/instrumental/remix/etc. can differ.)
 _LYRIC_NEUTRAL_TAGS = frozenset({"remaster"})
+# One compiled word-boundary matcher per tag, built once — _extract_version_tags
+# runs for every candidate, so per-call re.search(f"\\b{marker}\\b") was needless.
+_VERSION_TAG_PATTERNS = {
+    tag: re.compile(r"\b(?:" + "|".join(re.escape(marker) for marker in markers) + r")\b")
+    for tag, markers in _VERSION_TAGS.items()
+}
 
 NORMALIZER_VERSION = 1
 
@@ -85,7 +91,6 @@ class MatchEvidence:
     artist_identity: bool
     album_match: bool
     duration_delta: float | None
-    version_conflict: bool
 
 
 def _fold_latin_accents(text: str) -> str:
@@ -136,11 +141,7 @@ def split_title(title: str) -> tuple[str, frozenset[str]]:
 
 def _extract_version_tags(value: str) -> set[str]:
     normalized_value = value.casefold()
-    return {
-        tag
-        for tag, markers in _VERSION_TAGS.items()
-        if any(re.search(rf"\b{re.escape(marker)}\b", normalized_value) for marker in markers)
-    }
+    return {tag for tag, pattern in _VERSION_TAG_PATTERNS.items() if pattern.search(normalized_value)}
 
 
 def base_title(title: str) -> str:
@@ -235,8 +236,12 @@ def evaluate_match(candidate: Candidate, track: TrackMetadata, *, fuzzy: bool = 
 
     confidence = MatchConfidence.NONE
     if not version_conflict and artist_overlap:
+        # Duration alone only corroborates a title match when the track actually
+        # names an artist. Otherwise (the common empty-artist browser case) a short
+        # generic alias like "Lemon"/"Rain" plus a coincidental ±3s duration would
+        # promote an unrelated song to HIGH and cache it as authoritative.
         supporting_identity = artist_evidence or album_match or (
-            duration_delta is not None and duration_delta <= 3.0
+            duration_delta is not None and duration_delta <= 3.0 and bool(track_artists)
         )
         if title_exact and artist_identity and (duration_delta is None or duration_delta <= 8.0):
             # Exact title AND the exact same artist set is a strong identity even
@@ -284,7 +289,6 @@ def evaluate_match(candidate: Candidate, track: TrackMetadata, *, fuzzy: bool = 
         artist_identity=artist_identity,
         album_match=album_match,
         duration_delta=duration_delta,
-        version_conflict=version_conflict,
     )
 
 
@@ -350,12 +354,17 @@ _DELIMITERS = re.compile(r"[「」『』《》〈〉|/_~•・\-–—]+")
 # Pure upload noise that is never part of a song name — stripped case-insensitively.
 # Version words (cover/live/remix/acoustic/…) are deliberately NOT here: they change
 # the recording and are handled by the version-tag logic, not thrown away.
-_UPLOAD_NOISE = re.compile(
+# Latin terms use \b so they don't eat substrings of real words; the CJK terms get
+# no \b — adjacent Han characters are all \w, so a word boundary never sits between
+# them and "官方MV" / "完整版" would otherwise never strip out of a fused title.
+_UPLOAD_NOISE_LATIN = re.compile(
     r"\b(?:officical|official|mv|m/v|hd|hq|uhd|sd|4k|8k|60fps|1080p|720p|480p|"
     r"lyrics?|lyric video|audio|music video|official (?:music )?video|official audio|"
-    r"visualizer|vevo|topic|full version|hi-?res|high quality|完整版|无损|無損|"
-    r"高清|超清|画质|畫質|字幕|歌词|歌詞|官方|试听|試聽|现场|現場|直播)\b",
+    r"visualizer|vevo|topic|full version|hi-?res|high quality)\b",
     re.IGNORECASE,
+)
+_UPLOAD_NOISE_CJK = re.compile(
+    r"完整版|无损|無損|高清|超清|画质|畫質|字幕|歌词|歌詞|官方|试听|試聽|现场|現場|直播"
 )
 _CJK_CLASS = "㐀-鿿豈-﫿぀-ヿ가-힯"
 _CJK_TOKEN = re.compile(rf"[{_CJK_CLASS}]+")
@@ -372,7 +381,8 @@ def noisy_title_queries(track: TrackMetadata) -> tuple[str, ...]:
     BELLA PING MUSIC CHANNEL" still yields "陳一發兒 童話鎮" and "Chen Yifa Fairy
     Town" to search on. A trailing ALL-CAPS channel/uploader tail is dropped."""
     stripped = _BRACKETED.sub(" ", track.title)
-    stripped = _UPLOAD_NOISE.sub(" ", stripped)
+    stripped = _UPLOAD_NOISE_LATIN.sub(" ", stripped)
+    stripped = _UPLOAD_NOISE_CJK.sub(" ", stripped)
     stripped = _DELIMITERS.sub(" ", stripped)
     queries: list[str] = []
     # Combined query first (both scripts, cleaned) — the best shot when the title
@@ -384,7 +394,15 @@ def noisy_title_queries(track: TrackMetadata) -> tuple[str, ...]:
     if len(cjk) >= 2:
         queries.append(cjk)
     latin_tokens = _LATIN_TOKEN.findall(stripped)
-    while len(latin_tokens) > 2 and latin_tokens[-1].isupper() and len(latin_tokens[-1]) >= 2:
+    # Drop a trailing ALL-CAPS uploader/channel tail (BELLA PING MUSIC CHANNEL), but
+    # not when every remaining token is also caps — that is a genuinely all-caps
+    # title (TALK THAT TALK), which we must keep whole.
+    while (
+        len(latin_tokens) > 2
+        and latin_tokens[-1].isupper()
+        and len(latin_tokens[-1]) >= 2
+        and not all(token.isupper() for token in latin_tokens[:-1])
+    ):
         latin_tokens.pop()
     latin = " ".join(latin_tokens).strip()
     if len(latin) >= 2:

@@ -1,14 +1,15 @@
-"""Generate the Kotonoha leaf tray icon in three styles, on demand.
+"""Generate the Kotonoha leaf tray/window icon in several styles, on demand.
 
-The bundled ``logo.svg`` (bare leaf) and ``logo-tile.svg`` (leaf on a rounded
-tile) are re-coloured at runtime so the tray/window icon can follow the custom
-accent or adapt to the system light/dark theme, instead of shipping a fixed
-pixmap per variant. Keys are prefixed ``@`` so they never collide with the
-file-based icon choices.
+The one bundled ``logo.svg`` (bare leaf) is re-coloured at runtime — accent-shaded,
+an explicit or theme-adaptive monochrome, or the accent-motif white leaf sitting on
+a painted tile — so the icon can follow the custom accent or the system light/dark
+theme instead of shipping a fixed pixmap per variant. Keys are prefixed ``@`` so
+they never collide with the file-based icon choices.
 """
 
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 
 from PyQt6.QtCore import QByteArray, QPointF, QRectF, Qt
@@ -85,10 +86,19 @@ def _mix_over_white(color: QColor, frac: float) -> str:
     return QColor(red, green, blue).name()
 
 
+@lru_cache(maxsize=1)
+def _leaf_source() -> str:
+    """The raw bundled SVG, read from disk once (it never changes)."""
+    return _LEAF.read_text(encoding="utf-8")
+
+
+@lru_cache(maxsize=64)
 def _leaf_svg(style: str, accent: str, dark_panel: bool) -> str:
     """The bare leaf SVG re-coloured for a style: accent-shaded, an explicit or
-    theme-adaptive monochrome, or white-with-accent-motif for use on a tile."""
-    svg = _LEAF.read_text(encoding="utf-8")
+    theme-adaptive monochrome, or white-with-accent-motif for use on a tile.
+    Memoised since opening Settings recolours the same handful of style/accent
+    combinations many times over."""
+    svg = _leaf_source()
     if style == TILE:
         # White leaf on the accent tile, but not a flat blob: the vein and fold take
         # a faint wash of the tile colour so the leaf reads with depth (the tile hue

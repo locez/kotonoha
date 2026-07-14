@@ -180,18 +180,3 @@ def _artifact_from_records(
         lines=lines,
         confidence=match.confidence,
     )
-
-
-async def fetch(
-    session: aiohttp.ClientSession,
-    title: str,
-    artist: str,
-    duration_s: float | None,
-) -> list[LyricLine] | None:
-    """Compatibility wrapper used until all callers consume artifacts."""
-    try:
-        artifact = await fetch_artifact(session, TrackMetadata(title, artist, duration_s=duration_s))
-    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
-        logger.warning("LRCLIB fetch failed: %s", exc)
-        return None
-    return list(artifact.lines) if artifact is not None else None

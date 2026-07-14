@@ -96,7 +96,7 @@ def load_icon(
     icon_dir: Path = ICON_DIR,
     default_icon: Path = DEFAULT_ICON_PATH,
 ) -> QIcon:
-    # Generated leaf styles (accent / mono / tile) are rendered on the fly.
+    # Generated leaf styles (accent / mono / white / black / the tiles) render live.
     if leaf_icon.is_generated(icon_name):
         dark = leaf_icon.system_is_dark() if dark_panel is None else dark_panel
         return leaf_icon.leaf_qicon(icon_name, accent, dark_panel=dark)

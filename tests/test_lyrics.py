@@ -206,6 +206,35 @@ def test_noisy_title_queries_salvage_cluttered_browser_titles():
     assert any("Lemon" in q and "米津玄師" in q for q in lemon)
 
 
+def test_generic_alias_without_track_artist_does_not_reach_high():
+    # A track with no artist (the common browser case) must not be promoted to HIGH
+    # by a short generic alias + a coincidental duration — that would cache the wrong
+    # song's lyrics as authoritative.
+    track = TrackMetadata("Lemon", "", "", 240.0)
+    candidate = Candidate("1", "檸檬", "某歌手", 238.0, aliases=("Lemon",))
+    assert evaluate_match(candidate, track).confidence is not MatchConfidence.HIGH
+    # With a matching artist it is trustworthy again.
+    track2 = TrackMetadata("Lemon", "米津玄師", "", 240.0)
+    candidate2 = Candidate("2", "檸檬", "米津玄師", 238.0, aliases=("Lemon",))
+    assert evaluate_match(candidate2, track2).confidence is MatchConfidence.HIGH
+
+
+def test_noisy_title_queries_strip_fused_cjk_upload_noise():
+    from kotonoha.lyrics.match import noisy_title_queries
+
+    # CJK upload noise fused to real text (官方MV, 完整版, 歌詞) must be stripped even
+    # with no surrounding spaces — \b never sits between two Han characters.
+    q = noisy_title_queries(TrackMetadata("周杰倫 晴天 官方MV 完整版", ""))
+    assert any("晴天" in item and "官方" not in item and "完整版" not in item for item in q)
+
+
+def test_noisy_title_queries_keep_a_genuinely_all_caps_title():
+    from kotonoha.lyrics.match import noisy_title_queries
+
+    q = noisy_title_queries(TrackMetadata("TALK THAT TALK", "TWICE"))
+    assert any("TALK THAT TALK" in item for item in q)  # not truncated to "TALK THAT"
+
+
 def test_fuzzy_matches_a_title_that_fuses_artist_and_song():
     # A cluttered title carrying both names; only fuzzy mode rescues it, and only
     # when an artist token co-occurs (so a bare title substring can't match).

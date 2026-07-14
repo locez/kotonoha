@@ -295,9 +295,11 @@ class LyricsResolver:
 
     def set_prefer_best(self, enabled: bool) -> None:
         self._prefer_best = bool(enabled)
+        self.reset_memory()  # a wider search could now succeed where a miss was cached
 
     def set_fuzzy(self, enabled: bool) -> None:
         self._fuzzy = bool(enabled)
+        self.reset_memory()  # the negative cache ignores the fuzzy flag; let it retry
 
     def set_cache_enabled(self, enabled: bool) -> None:
         self._cache_enabled = bool(enabled)

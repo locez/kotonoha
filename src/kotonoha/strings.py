@@ -196,7 +196,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Salvage cluttered browser titles by stripping brackets (【HD】, [歌詞]), "
               "quality tags and channel names, then searching the cleaned name. "
               "Off = match the title exactly as reported.",
-        "zh-Hans": "清理浏览器的杂乱标题：去掉括号（【HD】、[歌詞]）、画质标签和频道名后再搜索。"
+        "zh-Hans": "清理浏览器的杂乱标题：去掉括号（【HD】、[歌词]）、画质标签和频道名后再搜索。"
                    "关闭则严格按上报的标题匹配。",
         "zh-Hant": "清理瀏覽器的雜亂標題：去掉括號（【HD】、[歌詞]）、畫質標籤與頻道名後再搜尋。"
                    "關閉則嚴格按回報的標題匹配。",

@@ -305,7 +305,8 @@ _PAGE_FIELDS: tuple[tuple[str, ...], ...] = (
     ("icon_name", "window_icon_name"),                                                   # Icon
     ("font_family", "font_style", "font_size", "context_font_size", "translation_font_size"),  # Text
     ("panel_style", "panel_width_mode", "panel_width", "opacity", "frost_opacity", "panel_accent_tint"),  # Panel
-    ("accent_start", "accent_end", "accent_sweep", "fx_animate", "fx_glow", "fx_word_pop", "fx_intensity"),  # Effects
+    ("accent_start", "accent_end", "accent_sweep", "fx_animate", "fx_transition",
+     "fx_glow", "fx_word_pop", "fx_intensity"),                                          # Effects
     ("karaoke", "lead_ms", "show_translation", "lyrics_script"),                         # Lyrics
     ("anchor_top", "margin_edge", "margin_x", "passthrough"),                            # Position
     ("lyrics_sources", "prefer_best_lyrics", "fuzzy_match", "cache_enabled"),             # Sources

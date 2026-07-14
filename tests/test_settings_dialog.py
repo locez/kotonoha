@@ -433,6 +433,14 @@ def test_transition_style_roundtrips(qapp):
     dialog.close()
 
 
+def test_reset_effects_tab_also_resets_the_transition_style(qapp):
+    dialog = SettingsDialog(Config(fx_transition="zoom"))
+    dialog._nav.setCurrentRow(4)  # 0 General,1 Icon,2 Text,3 Panel,4 Effects
+    dialog._reset_current_page()
+    assert dialog.current_config().fx_transition == Config().fx_transition  # "rise"
+    dialog.close()
+
+
 def test_max_font_sizes_survive_opening_settings(qapp):
     # With the spin range aligned to the config clamp, a config already at the max
     # is not truncated merely by opening the dialog and reading it back.
