@@ -14,7 +14,7 @@ import aiohttp
 
 from ..model import LyricLine, LyricsSnapshot
 from ..providers.gate import CiderMatch, SourceGate
-from . import lrclib, netease
+from . import kugou, lrclib, netease
 from .artifact import LyricsArtifact
 from .cache import LyricsCache
 from .match import MatchConfidence, TrackMetadata, artist_tokens, normalize, split_title
@@ -100,6 +100,7 @@ class LyricsResolver:
         self._providers = dict(providers) if providers is not None else {
             "netease": NetworkProvider("netease", netease.fetch_artifact, netease.parse_payload),
             "lrclib": NetworkProvider("lrclib", lrclib.fetch_artifact, lrclib.parse_payload),
+            "kugou": NetworkProvider("kugou", kugou.fetch_artifact, kugou.parse_payload),
         }
         self._cache_enabled = cache_enabled
         self._prefer_best = prefer_best

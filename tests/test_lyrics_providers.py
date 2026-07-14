@@ -3,7 +3,7 @@ from typing import cast
 
 import aiohttp
 
-from kotonoha.lyrics import lrclib, netease
+from kotonoha.lyrics import kugou, lrclib, netease
 from kotonoha.lyrics.match import Candidate, MatchConfidence, TrackMetadata
 
 SESSION = cast(aiohttp.ClientSession, None)
@@ -234,3 +234,42 @@ async def test_lrclib_slow_exact_does_not_block_high_search(monkeypatch):
     assert result is not None
     assert result.provider_song_id == "right"
     assert exact_cancelled.is_set()
+
+
+class _KugouSession:
+    """Dispatches Kugou's two endpoints (search, download) to canned responses."""
+
+    def __init__(self, search_data, download_data):
+        self._search = search_data
+        self._download = download_data
+
+    def get(self, url, params=None, headers=None, timeout=None):
+        return _Resp(self._search if "search" in url else self._download)
+
+
+async def test_kugou_matches_by_title_and_duration_and_decodes_lrc():
+    import base64
+
+    lrc = "[00:01.00]line one\n[00:02.00]line two"
+    search = {
+        "candidates": [
+            # The "singer" field is wrong (Kugou often mislabels it), but the title
+            # and duration still identify the song.
+            {"id": "1", "accesskey": "K", "song": "晴天", "singer": "晴天", "duration": 269000},
+        ]
+    }
+    download = {"fmt": "lrc", "content": base64.b64encode(lrc.encode()).decode()}
+    session = cast(aiohttp.ClientSession, _KugouSession(search, download))
+    art = await kugou.fetch_artifact(session, TrackMetadata("晴天", "周杰伦", "", 269.0))
+    assert art is not None
+    assert art.provider == "kugou"
+    assert art.confidence is MatchConfidence.HIGH  # exact title + matching duration
+    assert [line.text for line in art.lines] == ["line one", "line two"]
+
+
+async def test_kugou_skips_a_candidate_whose_lyrics_are_empty():
+    search = {"candidates": [{"id": "1", "accesskey": "K", "song": "晴天", "singer": "x", "duration": 269000}]}
+    download = {"fmt": "lrc", "content": ""}  # no lyrics to decode
+    session = cast(aiohttp.ClientSession, _KugouSession(search, download))
+    art = await kugou.fetch_artifact(session, TrackMetadata("晴天", "周杰伦", "", 269.0))
+    assert art is None

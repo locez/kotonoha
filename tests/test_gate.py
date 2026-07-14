@@ -104,7 +104,7 @@ def test_current_match_reports_medium_confidence_for_a_title_only_match():
 
 
 def test_lyrics_sources_default():
-    assert Config().lyrics_sources == ["netease", "lrclib", "cider"]
+    assert Config().lyrics_sources == ["netease", "lrclib", "kugou", "cider"]
 
 
 def test_lyrics_sources_cleaned():
@@ -113,8 +113,8 @@ def test_lyrics_sources_cleaned():
 
 
 def test_lyrics_sources_empty_falls_back():
-    assert Config(lyrics_sources=[]).clamped().lyrics_sources == ["netease", "lrclib", "cider"]
-    assert Config(lyrics_sources=["nope"]).clamped().lyrics_sources == ["netease", "lrclib", "cider"]
+    assert Config(lyrics_sources=[]).clamped().lyrics_sources == ["netease", "lrclib", "kugou", "cider"]
+    assert Config(lyrics_sources=["nope"]).clamped().lyrics_sources == ["netease", "lrclib", "kugou", "cider"]
 
 
 def test_lyrics_sources_roundtrip():
