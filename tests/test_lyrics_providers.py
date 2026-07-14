@@ -273,3 +273,68 @@ async def test_kugou_skips_a_candidate_whose_lyrics_are_empty():
     session = cast(aiohttp.ClientSession, _KugouSession(search, download))
     art = await kugou.fetch_artifact(session, TrackMetadata("晴天", "周杰伦", "", 269.0))
     assert art is None
+
+
+class _KugouMultiSession:
+    """Kugou mock that returns a per-id download body, so an empty first candidate
+    and a good second candidate can be distinguished."""
+
+    def __init__(self, search_data, downloads):
+        self._search = search_data
+        self._downloads = downloads
+        self.download_ids = []
+
+    def get(self, url, params=None, headers=None, timeout=None):
+        if "search" in url:
+            return _Resp(self._search)
+        cand_id = (params or {}).get("id")
+        self.download_ids.append(cand_id)
+        return _Resp({"fmt": "lrc", "content": self._downloads.get(cand_id, "")})
+
+
+async def test_kugou_falls_through_to_the_next_candidate_when_the_first_is_empty():
+    import base64
+
+    lrc = "[00:01.00]real line"
+    search = {
+        "candidates": [
+            {"id": "1", "accesskey": "A", "song": "晴天", "singer": "x", "duration": 269000},
+            {"id": "2", "accesskey": "B", "song": "晴天", "singer": "y", "duration": 269000},
+        ]
+    }
+    downloads = {"1": "", "2": base64.b64encode(lrc.encode()).decode()}
+    session = _KugouMultiSession(search, downloads)
+    art = await kugou.fetch_artifact(cast(aiohttp.ClientSession, session), TrackMetadata("晴天", "周杰伦", "", 269.0))
+    assert art is not None
+    assert art.provider_song_id == "2"  # skipped the empty "1", used "2"
+    assert session.download_ids == ["1", "2"]
+
+
+async def test_kugou_caps_the_number_of_downloads():
+    search = {
+        "candidates": [
+            {"id": str(i), "accesskey": "A", "song": "晴天", "singer": "x", "duration": 269000}
+            for i in range(8)
+        ]
+    }
+    session = _KugouMultiSession(search, {})  # every download is empty
+    art = await kugou.fetch_artifact(cast(aiohttp.ClientSession, session), TrackMetadata("晴天", "周杰伦", "", 269.0))
+    assert art is None
+    assert len(session.download_ids) == kugou._MAX_FETCHES  # capped, not all 8
+
+
+async def test_netease_caps_total_lyric_fetches(monkeypatch):
+    async def fake_search(_session, _query, limit=10):
+        return [Candidate(str(i), "Song", "Artist", 180.0) for i in range(8)]
+
+    fetched = []
+
+    async def fake_payload(_session, song_id):
+        fetched.append(song_id)
+        return {"yrc": "", "lrc": "", "tlyric": ""}  # no timed lyrics -> keep trying
+
+    monkeypatch.setattr(netease, "search", fake_search)
+    monkeypatch.setattr(netease, "fetch_payload", fake_payload)
+    result = await netease.fetch_artifact(SESSION, TrackMetadata("Song", "Artist", duration_s=180.0))
+    assert result is None
+    assert len(fetched) == 6  # the shared fetch budget, not all 8 HIGH candidates

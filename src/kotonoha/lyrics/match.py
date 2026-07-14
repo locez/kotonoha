@@ -381,8 +381,10 @@ def noisy_title_queries(track: TrackMetadata) -> tuple[str, ...]:
     BELLA PING MUSIC CHANNEL" still yields "陳一發兒 童話鎮" and "Chen Yifa Fairy
     Town" to search on. A trailing ALL-CAPS channel/uploader tail is dropped."""
     stripped = _BRACKETED.sub(" ", track.title)
-    stripped = _UPLOAD_NOISE_LATIN.sub(" ", stripped)
+    # CJK noise first: removing 官方 from "官方MV" isolates the "MV" so the Latin pass
+    # can then strip it (running Latin first would leave "MV" fused to 官方).
     stripped = _UPLOAD_NOISE_CJK.sub(" ", stripped)
+    stripped = _UPLOAD_NOISE_LATIN.sub(" ", stripped)
     stripped = _DELIMITERS.sub(" ", stripped)
     queries: list[str] = []
     # Combined query first (both scripts, cleaned) — the best shot when the title
@@ -393,15 +395,17 @@ def noisy_title_queries(track: TrackMetadata) -> tuple[str, ...]:
     cjk = _WHITESPACE.sub(" ", " ".join(_CJK_TOKEN.findall(stripped))).strip()
     if len(cjk) >= 2:
         queries.append(cjk)
+    has_cjk = bool(cjk)
     latin_tokens = _LATIN_TOKEN.findall(stripped)
-    # Drop a trailing ALL-CAPS uploader/channel tail (BELLA PING MUSIC CHANNEL), but
-    # not when every remaining token is also caps — that is a genuinely all-caps
-    # title (TALK THAT TALK), which we must keep whole.
+    # Drop a trailing ALL-CAPS uploader/channel tail (BELLA PING MUSIC CHANNEL). When
+    # the title is pure Latin, keep an all-caps run whole if EVERYTHING is caps — that
+    # is a genuinely all-caps title (TALK THAT TALK), not a tail. When the title also
+    # has CJK, the Latin run is secondary, so strip the tail freely.
     while (
         len(latin_tokens) > 2
         and latin_tokens[-1].isupper()
         and len(latin_tokens[-1]) >= 2
-        and not all(token.isupper() for token in latin_tokens[:-1])
+        and (has_cjk or not all(token.isupper() for token in latin_tokens[:-1]))
     ):
         latin_tokens.pop()
     latin = " ".join(latin_tokens).strip()

@@ -235,6 +235,15 @@ def test_noisy_title_queries_keep_a_genuinely_all_caps_title():
     assert any("TALK THAT TALK" in item for item in q)  # not truncated to "TALK THAT"
 
 
+def test_fuzzy_containment_rejects_a_too_short_title_even_when_contained():
+    # A 1-char CJK candidate title sitting inside the noisy track title, with its
+    # artist token co-occurring, is still rejected — a single common character must
+    # not match a long title by coincidence (the length guard is the safety net).
+    track = TrackMetadata("周杰伦 爱 官方现场", "", "", None)
+    candidate = Candidate("1", "爱", "周杰伦", None)
+    assert evaluate_match(candidate, track, fuzzy=True).confidence is MatchConfidence.NONE
+
+
 def test_fuzzy_matches_a_title_that_fuses_artist_and_song():
     # A cluttered title carrying both names; only fuzzy mode rescues it, and only
     # when an artist token co-occurs (so a bare title substring can't match).

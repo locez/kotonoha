@@ -329,6 +329,18 @@ def test_icon_picker_includes_generated_leaf_styles(qapp):
     dialog.close()
 
 
+def test_legacy_mono_icon_stays_selectable_and_is_not_reset(qapp):
+    from kotonoha import leaf_icon
+
+    # A config saved before white/black existed uses the adaptive "@leaf-mono", which
+    # the picker no longer offers by default. It must still show + stay selected, so
+    # Apply preserves it instead of silently resetting to the default icon.
+    dialog = SettingsDialog(Config(icon_name=leaf_icon.MONO))
+    assert dialog._picked_icon(dialog._tray_icon_list) == leaf_icon.MONO
+    assert dialog.current_config().icon_name == leaf_icon.MONO
+    dialog.close()
+
+
 def test_tray_and_window_icons_are_chosen_independently(qapp):
     from kotonoha import leaf_icon
 

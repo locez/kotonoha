@@ -93,6 +93,22 @@ def resolver_with_fakes(
     )
 
 
+async def test_set_fuzzy_clears_the_negative_cache_so_a_miss_can_retry():
+    calls = []
+    resolver = resolver_with_fakes(calls, cache_enabled=False)  # providers miss (no network_hits)
+
+    assert await resolver.resolve(SESSION, TRACK, ["netease"]) is None
+    first = calls.count("network:netease")
+    assert first == 1
+    # Re-resolving is short-circuited by the negative cache — the provider isn't hit.
+    assert await resolver.resolve(SESSION, TRACK, ["netease"]) is None
+    assert calls.count("network:netease") == first
+    # Toggling fuzzy clears the negative cache, so the (now wider) search runs again.
+    resolver.set_fuzzy(True)
+    assert await resolver.resolve(SESSION, TRACK, ["netease"]) is None
+    assert calls.count("network:netease") == first + 1
+
+
 async def test_default_order_is_cache_network_per_provider_then_cider():
     calls = []
     resolver = resolver_with_fakes(

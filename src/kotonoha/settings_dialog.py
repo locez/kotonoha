@@ -900,8 +900,13 @@ class SettingsDialog(QDialog):
             return item
 
         # Generated leaf styles first (accent / white / black / tile), then the files.
+        # A saved generated key that isn't offered (a legacy "@leaf-mono") is still
+        # shown so choosing it stays representable and Apply doesn't silently reset it.
         dark = self._theme == "dark"
-        for key in leaf_icon.PICKER_STYLES:
+        offered = leaf_icon.PICKER_STYLES
+        if leaf_icon.is_generated(selected_key) and selected_key not in offered:
+            offered = (*offered, selected_key)
+        for key in offered:
             item = add(key, leaf_icon.render_leaf(key, self._config.accent_start, dark_panel=dark, size=64))
             if key == selected_key:
                 selected_item = item

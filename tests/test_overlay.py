@@ -111,6 +111,12 @@ def test_long_title_marquee_scrolls_then_holds(qapp):
     # ...and reaches the far end fully scrolled.
     label.set_media_time(_MARQUEE_PAUSE_S + travel)
     assert label._marquee_offset(overflow) == overflow
+    # Holds at the far end through the second pause...
+    label.set_media_time(_MARQUEE_PAUSE_S + travel + _MARQUEE_PAUSE_S / 2.0)
+    assert label._marquee_offset(overflow) == overflow
+    # ...then glides back on the return leg (partway back, not at either end).
+    label.set_media_time(2 * _MARQUEE_PAUSE_S + travel + travel / 2.0)
+    assert 0.0 < label._marquee_offset(overflow) < overflow
     # No media clock yet (truly idle) -> no scrolling.
     label.set_media_time(None)
     assert label._marquee_offset(overflow) == 0.0
