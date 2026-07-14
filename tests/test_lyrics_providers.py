@@ -65,6 +65,29 @@ async def test_lrclib_search_uses_provider_timeout():
     assert session.timeouts == [lrclib.TIMEOUT]
 
 
+async def test_netease_search_captures_aliases_and_trans_names():
+    payload = {
+        "result": {
+            "songs": [
+                {
+                    "id": 1,
+                    "name": "生如夏花",
+                    "artists": [{"name": "朴树"}],
+                    "album": {"name": "生如夏花"},
+                    "duration": 272000,
+                    "alias": ["生如夏花 现场版"],
+                    "transNames": ["Life Like Summer Flowers"],
+                }
+            ]
+        }
+    }
+    session = _RecordingSession(payload)
+    candidates = await netease.search(cast(aiohttp.ClientSession, session), "q")
+    assert len(candidates) == 1
+    assert "Life Like Summer Flowers" in candidates[0].aliases
+    assert "生如夏花 现场版" in candidates[0].aliases
+
+
 async def test_netease_empty_parsed_yrc_falls_back_to_lrc(monkeypatch):
     async def fake_search(_session, _query, limit=10):
         return [Candidate("42", "Song", "Artist", 180.0, album="Album")]

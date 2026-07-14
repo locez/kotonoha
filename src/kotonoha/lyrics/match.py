@@ -68,6 +68,11 @@ class Candidate:
     artist: str
     duration_s: float | None
     album: str = ""
+    # Alternate/translated names the provider lists for this song (Netease's
+    # ``alias`` + ``transNames``), e.g. a song titled 生如夏花 that also carries
+    # "Life Like Summer Flowers". Matched alongside the primary title so a track
+    # reported under one name still matches a candidate indexed under the other.
+    aliases: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -163,18 +168,27 @@ def evaluate_match(candidate: Candidate, track: TrackMetadata) -> MatchEvidence:
     track_base, track_tags = split_title(track.title)
     candidate_base, candidate_tags = split_title(candidate.title)
     normalized_track = normalize(track_base)
-    normalized_candidate = normalize(candidate_base)
-    title_exact = bool(normalized_track) and normalized_track == normalized_candidate
+    # Compare against the candidate's primary title AND any alias/translated name,
+    # keeping the best evidence: a track reported as "Life Like Summer Flowers"
+    # matches a candidate named 生如夏花 that lists that English alias.
+    candidate_forms = [normalize(candidate_base)]
+    candidate_forms += [normalize(alias) for alias in candidate.aliases]
+    candidate_forms = [form for form in candidate_forms if form]
+    title_exact = bool(normalized_track) and normalized_track in candidate_forms
     # SequenceMatcher("", "") is 1.0, so two titles that normalize to empty (all
     # punctuation / parenthetical like "(intro)") would score a perfect fuzzy
     # ratio and wrongly match. Only trust the ratio when both sides are non-empty.
-    title_ratio = (
-        SequenceMatcher(None, normalized_track, normalized_candidate).ratio()
-        if normalized_track and normalized_candidate
-        else 0.0
-    )
+    # Keep the best-scoring form and gauge the length guard against THAT form.
+    title_ratio = 0.0
+    best_form_len = 0
+    if normalized_track:
+        for form in candidate_forms:
+            ratio = SequenceMatcher(None, normalized_track, form).ratio()
+            if ratio > title_ratio:
+                title_ratio = ratio
+                best_form_len = len(form)
     title_strong = title_exact or (
-        min(len(normalized_track), len(normalized_candidate)) >= 4 and title_ratio >= 0.88
+        min(len(normalized_track), best_form_len) >= 4 and title_ratio >= 0.88
     )
 
     track_artists = artist_tokens(track.artist)
@@ -207,6 +221,20 @@ def evaluate_match(candidate: Candidate, track: TrackMetadata) -> MatchEvidence:
         elif title_strong and supporting_identity and (duration_delta is None or duration_delta <= 3.0):
             confidence = MatchConfidence.HIGH
         elif catalog_identity:
+            confidence = MatchConfidence.MEDIUM
+        elif (
+            title_exact
+            and artist_identity
+            and duration_delta is not None
+            and duration_delta > min(track.duration_s or 0.0, candidate.duration_s or 0.0)
+        ):
+            # Exact title AND exact artist, but the durations differ by more than the
+            # whole shorter track (one is >2x the other). That is not a slightly
+            # different edit — it is a browser/stream reporting a container length (a
+            # 27-min video for a 5-min song). The lyrics are still the right ones, so
+            # accept as MEDIUM; a duration-accurate candidate, if any, still outranks
+            # it. A merely moderate duration gap stays rejected (it may be a real
+            # different recording), preserving the album-identity requirement there.
             confidence = MatchConfidence.MEDIUM
         elif title_strong and (duration_delta is None or duration_delta <= 8.0):
             confidence = MatchConfidence.MEDIUM

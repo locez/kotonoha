@@ -192,6 +192,40 @@ def test_query_variants_add_simplified_fold_for_traditional_input():
     assert "麻雀 李荣浩" in query_variants(TrackMetadata("麻雀", "李榮浩"))
 
 
+def test_english_title_matches_candidate_via_translated_alias():
+    # A browser reports the English name; Netease lists the song under 生如夏花 with
+    # "Life Like Summer Flowers" among its transNames. The alias bridges them.
+    track = TrackMetadata("Life Like Summer Flowers", "朴树", "", 272.0)
+    candidate = Candidate(
+        "1", "生如夏花", "朴树", 272.0, aliases=("Life Like Summer Flowers",)
+    )
+    assert evaluate_match(candidate, track).confidence is MatchConfidence.HIGH
+
+
+def test_alias_does_not_manufacture_a_match_for_a_different_song():
+    # An unrelated alias must not turn a wrong candidate into a match.
+    track = TrackMetadata("Blue Bird", "Anna", "", 200.0)
+    candidate = Candidate("1", "青鸟", "别人", 120.0, aliases=("Green Sky",))
+    assert evaluate_match(candidate, track).confidence is MatchConfidence.NONE
+
+
+def test_exact_title_and_artist_survive_a_wildly_wrong_duration():
+    # A browser reported a 27-minute container length for a 5-minute song; the exact
+    # title + exact artist must still match (as MEDIUM) so the lyrics are not dropped.
+    track = TrackMetadata("Life Like Summer Flowers", "Pu Shu", "", 1644.0)
+    candidate = Candidate("1", "Life Like Summer Flowers", "Pu Shu", 295.0)
+    assert evaluate_match(candidate, track).confidence is MatchConfidence.MEDIUM
+
+
+def test_duration_accurate_candidate_still_outranks_the_duration_skewed_one():
+    # When both share the exact title+artist, the one whose duration matches wins.
+    track = TrackMetadata("Song", "Band", "", 300.0)
+    good = Candidate("good", "Song", "Band", 300.0)
+    skewed = Candidate("skew", "Song", "Band", 1644.0)
+    best = best_match([skewed, good], track)
+    assert best is not None and best.candidate.song_id == "good"
+
+
 def test_middle_dot_is_not_split_so_different_same_forename_artists_do_not_match():
     # "・" separates the forename/surname inside ONE katakana name, so it must not
     # be a token separator: two different people who share a given name (ジョン・レノン

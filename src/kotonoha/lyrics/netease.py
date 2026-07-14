@@ -56,9 +56,22 @@ async def search(session: aiohttp.ClientSession, query: str, limit: int = 10) ->
                 artist=" / ".join(name for name in artist_names if name),
                 duration_s=duration / 1000.0 if isinstance(duration, (int, float)) else None,
                 album=album,
+                aliases=_song_aliases(song),
             )
         )
     return candidates
+
+
+def _song_aliases(song: Mapping[str, object]) -> tuple[str, ...]:
+    """Alternate names Netease lists for a song: ``alias`` (same-language akas)
+    and ``transNames`` (translated titles, e.g. an English name for a CJK song),
+    deduplicated and non-empty."""
+    names: list[str] = []
+    for key in ("alias", "transNames"):
+        value = song.get(key)
+        if isinstance(value, list):
+            names.extend(str(item) for item in value if isinstance(item, str) and item.strip())
+    return tuple(dict.fromkeys(names))
 
 
 def lyric_text(data: Mapping[str, object], key: str) -> str:
