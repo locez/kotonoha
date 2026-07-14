@@ -141,6 +141,15 @@ def test_frost_only_on_kwin_wayland_and_blur_lifecycle_is_safe(qapp):
     qapp.processEvents()
 
 
+def test_frost_window_toggle_roundtrips_and_applies_safely(qapp):
+    dialog = SettingsDialog(Config(frost_window=False))
+    assert dialog._frost_window.isChecked() is False
+    dialog._frost_window.setChecked(True)
+    assert dialog.current_config().frost_window is True
+    dialog._emit()  # applying the toggle must not raise (blur is a no-op in headless)
+    dialog.close()
+
+
 def test_content_sits_in_a_raised_card_and_page_switch_is_safe(qapp):
     from PyQt6.QtWidgets import QWidget
 

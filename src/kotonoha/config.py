@@ -71,6 +71,7 @@ class Config:
     cache_enabled: bool = True
     ui_language: str = "auto"        # UI language: "auto" -> system locale, else zh-Hans/zh-Hant/ja/en
     theme: str = "auto"              # settings-window theme: "auto" (follow system) | "light" | "dark"
+    frost_window: bool = True        # frosted-glass settings window (KDE Wayland only)
     lyrics_script: str = "off"       # display-convert lyrics: "off" | "zh-Hans" | "zh-Hant"
     # Pink accent (sung text gradient + sweep highlight)
     accent_start: str = "#FF4FA3"
@@ -120,6 +121,7 @@ class Config:
             cache_enabled=bool(self.cache_enabled),
             ui_language=str(self.ui_language),
             theme=self.theme if self.theme in ("auto", "light", "dark") else "auto",
+            frost_window=bool(self.frost_window),
             lyrics_script=self.lyrics_script if self.lyrics_script in ("off", "zh-Hans", "zh-Hant") else "off",
         )
 

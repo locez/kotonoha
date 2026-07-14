@@ -88,6 +88,14 @@ def test_theme_and_white_panel_clamp_and_roundtrip(tmp_path):
     assert loaded.panel_style == "white"
 
 
+def test_frost_window_defaults_and_roundtrips(tmp_path):
+    assert Config().frost_window is True
+    assert Config(frost_window=0).clamped().frost_window is False  # coerced to bool
+    path = tmp_path / "c.json"
+    save_config(Config(frost_window=False), path)
+    assert load_config(path).frost_window is False
+
+
 def test_frost_opacity_and_full_transparency(tmp_path):
     path = tmp_path / "c.json"
     save_config(Config(opacity=0.0, frost_opacity=0.35), path)

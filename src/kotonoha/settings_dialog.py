@@ -286,7 +286,8 @@ class SettingsDialog(QDialog):
         desktop = os.environ.get("XDG_CURRENT_DESKTOP", "")
         platform = QGuiApplication.platformName() or ""
         self._blur = LayerShellController(default_package_dir(), platform, desktop)
-        self._frosted = self._blur.available and "wayland" in platform.lower() and "KDE" in desktop.upper()
+        self._blur_capable = self._blur.available and "wayland" in platform.lower() and "KDE" in desktop.upper()
+        self._frosted = self._blur_capable and config.frost_window
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setStyleSheet(_skin(config.accent_start, self._theme))
@@ -478,6 +479,13 @@ class SettingsDialog(QDialog):
         theme_idx = self._theme_combo.findData(self._config.theme)
         self._theme_combo.setCurrentIndex(theme_idx if theme_idx >= 0 else 0)
         form.addRow(t("set.theme"), self._theme_combo)
+
+        # Frosted-glass settings window (real KWin blur; no effect off KDE Wayland).
+        self._frost_window = QCheckBox(t("set.frost_window"))
+        self._frost_window.setChecked(self._config.frost_window)
+        form.addRow(self._frost_window)
+        if not self._blur_capable:
+            form.addRow(self._hint(t("set.frost_window_hint")))
 
         # App identity lives with the other app-wide options, not with the lyric look.
         self._icon_list = self._build_icon_picker()
@@ -870,6 +878,7 @@ class SettingsDialog(QDialog):
             self._config,
             ui_language=str(self._ui_language.currentData()),
             theme=str(self._theme_combo.currentData()),
+            frost_window=self._frost_window.isChecked(),
             lyrics_script=str(self._lyrics_script.currentData()),
             icon_name=icon_name,
             font_family=self._font_family.currentFont().family(),
@@ -909,7 +918,18 @@ class SettingsDialog(QDialog):
         # after Settings is closed and reopened.
         self._theme = _resolve_theme(self._config.theme)
         self.setStyleSheet(_skin(self._config.accent_start, self._theme))
-        self.update()  # repaint the frameless background in the new theme
+        # Toggle the frosted backdrop live: apply/clear the KWin blur and repaint
+        # the panel translucent-or-solid to match the new setting.
+        frosted = self._blur_capable and self._config.frost_window
+        if frosted != self._frosted:
+            self._frosted = frosted
+            ptr = self._window_ptr()
+            if ptr is not None:
+                if frosted:
+                    self._apply_blur()
+                else:
+                    self._blur.clear_blur(ptr)
+        self.update()  # repaint the frameless background (theme / frost)
         self.applied.emit(self._config)
 
     def _accept(self) -> None:
