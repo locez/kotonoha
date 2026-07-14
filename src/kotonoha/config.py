@@ -76,10 +76,11 @@ class Config:
     accent_start: str = "#FF4FA3"
     accent_end: str = "#FF8FCB"
     accent_sweep: str = "#FF6EC7"
-    # Visual effects (all user-toggleable)
+    # Visual effects (all user-toggleable). Default to a calm look: animations on,
+    # the flashier glow / word-pop off.
     fx_animate: bool = True          # line reveal + settings fade-in animations
-    fx_glow: bool = True             # soft accent glow behind the current line
-    fx_word_pop: bool = True         # brighten the word currently being sung
+    fx_glow: bool = False            # soft accent glow behind the current line
+    fx_word_pop: bool = False        # brighten the word currently being sung
     fx_intensity: str = "subtle"     # "subtle" | "expressive"
 
     def clamped(self) -> Config:

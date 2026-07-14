@@ -61,7 +61,10 @@ def test_all_font_sizes_clamp_to_the_spin_box_range():
 
 
 def test_effects_defaults_clamp_and_roundtrip(tmp_path):
-    assert Config().fx_animate and Config().fx_glow and Config().fx_word_pop
+    # Calm defaults: animations on, glow / word-pop off.
+    assert Config().fx_animate is True
+    assert Config().fx_glow is False
+    assert Config().fx_word_pop is False
     assert Config().fx_intensity == "subtle"
     assert Config(fx_intensity="expressive").clamped().fx_intensity == "expressive"
     assert Config(fx_intensity="bogus").clamped().fx_intensity == "subtle"

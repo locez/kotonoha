@@ -45,7 +45,6 @@ from PyQt6.QtWidgets import (
     QDialogButtonBox,
     QFontComboBox,
     QFormLayout,
-    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QListView,
@@ -121,6 +120,7 @@ QSpinBox, QComboBox, QFontComboBox {
     padding: 4px 9px;
     color: %TEXT%;
     min-height: 24px;
+    max-height: 24px;  /* combos and spin boxes end up exactly the same height (~34px) */
 }
 QSpinBox:hover, QComboBox:hover, QFontComboBox:hover { border-color: %FIELD_BORDER_HOVER%; }
 /* Accent focus ring — clear interactive feedback on the control you're editing. */
@@ -304,7 +304,7 @@ class SettingsDialog(QDialog):
             self._stack.addWidget(page)
         self._nav.setCurrentRow(0)
         self._stack.setCurrentIndex(0)
-        self._nav.currentRowChanged.connect(self._on_nav_changed)  # after the initial row
+        self._nav.currentRowChanged.connect(self._stack.setCurrentIndex)
         self.setMinimumWidth(560)
 
         buttons = QDialogButtonBox(
@@ -495,25 +495,6 @@ class SettingsDialog(QDialog):
         pixmap = leaf_icon.render_leaf(leaf_icon.ACCENT, self._config.accent_start, size=44)
         pixmap.setDevicePixelRatio(2.0)  # 44px @2x -> a crisp 22px badge
         self._logo_badge.setPixmap(pixmap)
-
-    def _on_nav_changed(self, row: int) -> None:
-        self._stack.setCurrentIndex(row)
-        # A quick fade of the incoming page makes switching categories feel alive
-        # (only when animations are on; the effect is removed once it settles).
-        if not self._config.fx_animate:
-            return
-        page = self._stack.currentWidget()
-        if page is None:
-            return
-        effect = QGraphicsOpacityEffect(page)
-        page.setGraphicsEffect(effect)
-        anim = QPropertyAnimation(effect, b"opacity", page)
-        anim.setDuration(150)
-        anim.setStartValue(0.0)
-        anim.setEndValue(1.0)
-        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-        anim.finished.connect(lambda: page.setGraphicsEffect(None))
-        anim.start(QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
 
     def _update_restart_hint(self) -> None:
         self._restart_btn.setVisible(self._ui_language.currentData() != self._initial_ui_language)

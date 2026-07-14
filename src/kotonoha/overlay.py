@@ -624,16 +624,21 @@ class LyricsOverlay(QWidget):
     def _panel_base_color(self) -> QColor:
         """Fill colour for the panel (alpha applied separately from the slider).
 
-        Black panel is a near-black slab, optionally tinted toward the accent
-        colour; white is a near-white slab (dark lyrics ride on top). Frosted is a
-        cool translucent dark that the KWin backdrop-blur (when available) shows
-        through."""
+        "Panel follows accent" tints whatever style is active toward the accent —
+        a dark accent slab (black), a very light accent wash (white), or an
+        accent-cool tint (frosted) — so the option is independent of the black
+        style. Otherwise: near-black, near-white, or a cool frosted dark."""
+        accent = QColor(self._config.accent_start)
+        tint = self._config.panel_accent_tint
         if self._config.panel_style == "white":
-            return QColor(244, 245, 248)
+            return accent.lighter(190) if tint else QColor(244, 245, 248)
         if self._config.panel_style == "frost":
+            if tint:
+                return QColor(
+                    accent.red() * 22 // 100 + 8, accent.green() * 22 // 100 + 10, accent.blue() * 22 // 100 + 16
+                )
             return QColor(26, 30, 40)
-        if self._config.panel_accent_tint:
-            accent = QColor(self._config.accent_start)
+        if tint:  # black panel
             return QColor(accent.red() * 30 // 100, accent.green() * 30 // 100, accent.blue() * 30 // 100)
         return QColor(15, 17, 22)
 
