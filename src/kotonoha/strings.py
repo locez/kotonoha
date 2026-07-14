@@ -53,6 +53,7 @@ STRINGS: dict[str, dict[str, str]] = {
     "tab.position": {"en": "Position", "zh-Hans": "位置", "zh-Hant": "位置", "ja": "位置"},
     "tab.sources": {"en": "Sources", "zh-Hans": "来源", "zh-Hant": "來源", "ja": "ソース"},
     "tab.general": {"en": "General", "zh-Hans": "通用", "zh-Hant": "通用", "ja": "一般"},
+    "tab.icon": {"en": "Icon", "zh-Hans": "图标", "zh-Hant": "圖示", "ja": "アイコン"},
 
     "set.tray_icon": {"en": "Tray icon", "zh-Hans": "托盘图标", "zh-Hant": "系統匣圖示", "ja": "トレイアイコン"},
     "set.tray_icon_hint": {"en": "Shown in the system tray. White or black suit a dark or light panel.",

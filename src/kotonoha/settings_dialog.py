@@ -301,7 +301,8 @@ def _skin(accent: str, theme: str = "dark", frosted: bool = False) -> str:
 # The Config fields each sidebar page owns, in nav order. Used by "Reset this tab"
 # to restore just the current page's fields to their defaults, leaving the rest.
 _PAGE_FIELDS: tuple[tuple[str, ...], ...] = (
-    ("ui_language", "theme", "frost_window", "icon_name", "window_icon_name"),          # General
+    ("ui_language", "theme", "frost_window"),                                            # General
+    ("icon_name", "window_icon_name"),                                                   # Icon
     ("font_family", "font_style", "font_size", "context_font_size", "translation_font_size"),  # Text
     ("panel_style", "panel_width_mode", "panel_width", "opacity", "frost_opacity", "panel_accent_tint"),  # Panel
     ("accent_start", "accent_end", "accent_sweep", "fx_animate", "fx_glow", "fx_word_pop", "fx_intensity"),  # Effects
@@ -349,6 +350,7 @@ class SettingsDialog(QDialog):
         # Builders kept so "Reset this tab" can rebuild a single page from defaults.
         self._page_builders = (
             self._general_tab,
+            self._icon_tab,
             self._text_tab,
             self._panel_tab,
             self._effects_tab,
@@ -357,7 +359,8 @@ class SettingsDialog(QDialog):
             self._sources_tab,
         )
         for key, builder in zip(
-            ("tab.general", "tab.text", "tab.panel", "tab.effects", "tab.lyrics", "tab.position", "tab.sources"),
+            ("tab.general", "tab.icon", "tab.text", "tab.panel", "tab.effects",
+             "tab.lyrics", "tab.position", "tab.sources"),
             self._page_builders,
             strict=True,
         ):
@@ -543,10 +546,21 @@ class SettingsDialog(QDialog):
         if not self._blur_capable:
             form.addRow(self._hint(t("set.frost_window_hint")))
 
-        # App identity lives with the other app-wide options, not with the lyric look.
-        # Tray and window/taskbar icons are chosen separately: each picker spans the
-        # full width (label above) so all styles fit one row and the hint sits right
-        # under them, instead of being pushed down by a wrap.
+        # Hidden until the language selection differs from what is running; the UI
+        # is only rebuilt on restart, so offer to do it right here.
+        self._restart_btn = QPushButton(t("btn.restart"))
+        self._restart_btn.setVisible(False)
+        self._restart_btn.clicked.connect(self._request_restart)
+        form.addRow(self._restart_btn)
+        # Connect after the button exists so the handler never runs before it.
+        self._ui_language.currentIndexChanged.connect(self._update_restart_hint)
+        return page
+
+    def _icon_tab(self) -> QWidget:
+        # Tray and window/taskbar icons are chosen separately (their own tab so the
+        # two full-width strips don't stretch General). Each picker spans the width
+        # with its label above, so the styles fit a row and the hint sits under them.
+        page, form = self._form_page()
         self._tray_icon_list = self._build_icon_picker(self._config.icon_name)
         form.addRow(QLabel(t("set.tray_icon")))
         form.addRow(self._tray_icon_list)
@@ -556,15 +570,6 @@ class SettingsDialog(QDialog):
         form.addRow(QLabel(t("set.window_icon")))
         form.addRow(self._window_icon_list)
         form.addRow(self._hint(t("set.window_icon_hint")))
-
-        # Hidden until the language selection differs from what is running; the UI
-        # is only rebuilt on restart, so offer to do it right here.
-        self._restart_btn = QPushButton(t("btn.restart"))
-        self._restart_btn.setVisible(False)
-        self._restart_btn.clicked.connect(self._request_restart)
-        form.addRow(self._restart_btn)
-        # Connect after the button exists so the handler never runs before it.
-        self._ui_language.currentIndexChanged.connect(self._update_restart_hint)
         return page
 
     def _update_logo_badge(self) -> None:
@@ -1015,7 +1020,10 @@ class SettingsDialog(QDialog):
         defaults = Config()
         reset_fields = {field: getattr(defaults, field) for field in _PAGE_FIELDS[idx]}
         self._config = replace(self.current_config(), **reset_fields).clamped()
-        if idx == 0:  # General owns the two icon strips; drop their registry entries
+        # Drop the icon strips the page being rebuilt had registered, so _icon_tab
+        # re-adding them doesn't leave stale duplicates. (Compare the underlying
+        # function — a bound method is a fresh object on every attribute access.)
+        if self._page_builders[idx].__func__ is SettingsDialog._icon_tab:
             self._icon_pickers.clear()
         new_page = self._page_builders[idx]()
         old_page = self._stack.widget(idx)

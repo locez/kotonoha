@@ -280,7 +280,7 @@ def test_sidebar_lists_every_section_and_drives_the_stack(qapp):
         qapp.processEvents()
         qapp.processEvents()
         # One sidebar row per content page, and no label is truncated in the sidebar.
-        assert dialog._nav.count() == dialog._stack.count() == 7
+        assert dialog._nav.count() == dialog._stack.count() == 8
         assert dialog._nav.width() >= dialog._nav.sizeHintForColumn(0)
         # Selecting a sidebar row switches the stacked content page.
         dialog._nav.setCurrentRow(3)
@@ -352,7 +352,7 @@ def test_reset_tab_restores_only_current_page(qapp):
     dialog = SettingsDialog(
         Config(font_size=90, context_font_size=80, margin_edge=999, karaoke=False)
     )
-    dialog._nav.setCurrentRow(1)  # Text page
+    dialog._nav.setCurrentRow(2)  # Text page (0 General, 1 Icon, 2 Text)
     dialog._reset_current_page()
     cfg = dialog.current_config()
     defaults = Config()
@@ -365,19 +365,19 @@ def test_reset_tab_restores_only_current_page(qapp):
     dialog.close()
 
 
-def test_reset_general_tab_rebuilds_icon_pickers_without_doubling(qapp):
+def test_reset_icon_tab_rebuilds_icon_pickers_without_doubling(qapp):
     from kotonoha import leaf_icon
 
     dialog = SettingsDialog(
         Config(icon_name=leaf_icon.WHITE, window_icon_name=leaf_icon.BLACK, theme="light")
     )
-    dialog._nav.setCurrentRow(0)  # General page owns the two icon strips
+    dialog._nav.setCurrentRow(1)  # Icon page owns the two icon strips
     dialog._reset_current_page()
     cfg = dialog.current_config()
     defaults = Config()
     assert cfg.icon_name == defaults.icon_name
     assert cfg.window_icon_name == defaults.window_icon_name
-    assert cfg.theme == defaults.theme
+    assert cfg.theme == "light"  # a different tab's edit is untouched by the Icon reset
     # The strips were rebuilt, not appended a second time.
     assert len(dialog._icon_pickers) == 2
     dialog.close()
