@@ -6,6 +6,7 @@ import logging
 import os
 import signal
 import sys
+import tempfile
 from typing import Any, cast
 
 # Guard against accidental PyQt5 import conflicts before importing PyQt6.
@@ -43,6 +44,20 @@ async def _cancel_pending(loop) -> None:
         await asyncio.gather(*pending, return_exceptions=True)
 
 
+def _single_instance_lock(path: str | None = None):
+    """Return a held QLockFile, or None if another Kotonoha instance owns it.
+
+    Prevents the stacked tray icons / duplicate overlays from launching it twice."""
+    from PyQt6.QtCore import QLockFile
+
+    if path is None:
+        runtime = os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir()
+        path = os.path.join(runtime, "kotonoha.lock")
+    lock = QLockFile(path)
+    lock.setStaleLockTime(30_000)  # reclaim after 30s if a previous instance crashed
+    return lock if lock.tryLock(50) else None
+
+
 def entry_point() -> int:
     parser = argparse.ArgumentParser(description="Kotonoha desktop lyrics overlay")
     parser.add_argument("--port", "-p", type=int, default=None, help="Override WebSocket receiver port")
@@ -53,6 +68,12 @@ def entry_point() -> int:
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+
+    # Single instance: a second launch would just stack another tray icon + overlay.
+    instance_lock = _single_instance_lock()  # noqa: F841 - held for the process lifetime
+    if instance_lock is None:
+        logging.getLogger(__name__).warning("Kotonoha is already running; exiting.")
+        return 0
 
     os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "0"
     os.environ.setdefault("QT_SCALE_FACTOR", "1")
