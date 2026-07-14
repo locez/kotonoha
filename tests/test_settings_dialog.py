@@ -452,7 +452,9 @@ def test_settings_window_opacity_applies_and_roundtrips(qapp):
     assert dialog._settings_opacity.value() == 80
     assert dialog._win_opacity == 0.8
     assert "rgba(255, 255, 255, 204)" in dialog.styleSheet()  # 0.8 * 255 card alpha
-    dialog._settings_opacity.setValue(70)  # live preview while changing
+    dialog._settings_opacity.setValue(70)  # not applied until OK/Apply (no live preview)
+    assert dialog._win_opacity == 0.8  # still the opened value
+    dialog._emit()  # Apply
     assert dialog._win_opacity == 0.7
     assert "rgba(255, 255, 255, 178)" in dialog.styleSheet()  # re-skinned to 0.7
     assert dialog.current_config().settings_opacity == 0.7
@@ -469,6 +471,7 @@ def test_settings_opacity_100_is_fully_opaque_and_range_is_full(qapp):
     opaque = dialog.grab().toImage().pixelColor(100, 100).alpha()
     assert opaque == 255  # fully solid at 100%
     dialog._settings_opacity.setValue(50)
+    dialog._emit()  # applied on Apply, not live
     assert dialog.grab().toImage().pixelColor(100, 100).alpha() < 200  # clearly see-through
     dialog.close()
 

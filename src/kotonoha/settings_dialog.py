@@ -572,11 +572,9 @@ class SettingsDialog(QDialog):
             form.addRow(self._hint(t("set.frost_window_hint")))
 
         # How see-through this settings window is (whole window; text stays legible).
+        # Applied on OK/Apply like every other setting (no live preview) — a live
+        # preview flashed the window near-invisible while typing "95" passed the "9".
         self._settings_opacity = self._spin(0, 100, round(self._config.settings_opacity * 100), " %")
-        # Only preview once editing settles, so typing "95" doesn't flash the window
-        # near-invisible as it passes through the intermediate "9". Arrows still preview.
-        self._settings_opacity.setKeyboardTracking(False)
-        self._settings_opacity.valueChanged.connect(self._preview_window_opacity)  # live while changing
         form.addRow(t("set.settings_opacity"), self._settings_opacity)
 
         # Hidden until the language selection differs from what is running; the UI
@@ -617,13 +615,6 @@ class SettingsDialog(QDialog):
     def _request_restart(self) -> None:
         self._emit()  # persist the new language before relaunching
         self.restart_requested.emit()
-
-    def _preview_window_opacity(self, percent: int) -> None:
-        """Live see-through preview: re-thin the window fill (repaint) and, in the
-        light theme, the card (re-skin), so dragging the spin box shows immediately."""
-        self._win_opacity = percent / 100.0
-        self.setStyleSheet(_skin(self._config.accent_start, self._theme, self._frosted, self._win_opacity))
-        self.update()
 
     @staticmethod
     def _resolve_font_family(font_family: str) -> str:
