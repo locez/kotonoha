@@ -53,6 +53,7 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/kotonoha.desktop
 
 %files -f %{pyproject_files}
 %doc README.md
+%license %{python3_sitearch}/share/licenses/kotonoha/LICENSE
 %{_bindir}/kotonoha
 %{python3_sitelib}/qasync/
 %dir %{python3_sitelib}/qasync-0.28.0.dist-info

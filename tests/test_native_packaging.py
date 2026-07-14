@@ -108,6 +108,9 @@ def test_cmake_is_documented_and_verified_by_ci() -> None:
     assert "bridge=src/kotonoha/libkoto-layer.so" not in test_workflow
     assert 'bridge="${unpacked_dirs[0]}/kotonoha/libkoto-layer.so"' in package_workflow
     assert "bridge=src/kotonoha/libkoto-layer.so" not in package_workflow
+    assert "--python-tag py3" in package_workflow
+    assert "--abi-tag none" in package_workflow
+    assert "libkoto-layer*.so" in package_workflow
     assert "Verify standalone CMake install" in test_workflow
     assert "-DCMAKE_BUILD_TYPE=Release" in test_workflow
     assert 'cmake --build "$cmake_build" --config Release' in test_workflow
@@ -231,6 +234,7 @@ def test_fedora_spec_declares_metadata_and_dependencies() -> None:
             "Requires:       python3-dbus-fast",
             "Requires:       layer-shell-qt",
             "Provides:       bundled(python3dist(qasync)) = 0.28.0",
+            "%license %{python3_sitearch}/share/licenses/kotonoha/LICENSE",
         ),
     )
     assert "Requires:       python3-qt6" not in spec
@@ -273,7 +277,10 @@ def test_fedora_spec_only_packages_existing_documentation() -> None:
 
     for documentation_path in documentation_paths:
         if documentation_path.startswith("%{"):
-            assert documentation_path == "%{python3_sitelib}/qasync-0.28.0.dist-info/licenses/LICENSE"
+            assert documentation_path in {
+                "%{python3_sitelib}/qasync-0.28.0.dist-info/licenses/LICENSE",
+                "%{python3_sitearch}/share/licenses/kotonoha/LICENSE",
+            }
             continue
         assert (PROJECT_ROOT / documentation_path).is_file()
 
