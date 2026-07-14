@@ -80,7 +80,7 @@ jobs:
         run: uv sync --locked --extra test
       - name: Verify native bridge linkage
         run: |
-          bridge=src/kotonoha/libkoto-layer.so
+          bridge=$(uv run python -c 'import sysconfig; from pathlib import Path; print(Path(sysconfig.get_path("platlib")) / "kotonoha" / "libkoto-layer.so")')
           test -f "$bridge"
           ldd "$bridge" | tee /tmp/libkoto-layer.ldd
           grep -F "libQt6Core.so" /tmp/libkoto-layer.ldd

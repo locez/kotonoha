@@ -1,8 +1,24 @@
+import sysconfig
+
+import kotonoha.native as native
 from kotonoha.lyrics_loader import (
     find_layer_shell_library,
     overlay_mode_available,
     should_disable_layer_shell,
 )
+
+
+def test_default_package_dir_uses_editable_install_native_library(tmp_path, monkeypatch):
+    source_package = tmp_path / "src" / "kotonoha"
+    installed_package = tmp_path / "venv" / "site-packages" / "kotonoha"
+    source_package.mkdir(parents=True)
+    installed_package.mkdir(parents=True)
+    (installed_package / "libkoto-layer.so").touch()
+
+    monkeypatch.setattr(native, "__file__", str(source_package / "native.py"))
+    monkeypatch.setattr(sysconfig, "get_path", lambda name: str(installed_package.parent))
+
+    assert native.default_package_dir() == str(installed_package)
 
 
 def test_find_layer_shell_library_prefers_unsuffixed_name(tmp_path):

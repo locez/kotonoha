@@ -321,7 +321,9 @@ jobs:
           if tags != ["py3-none-linux_x86_64"]:
               raise SystemExit(f"unexpected wheel tags: {tags}")
           PY
-          bridge=src/kotonoha/libkoto-layer.so
+          unpacked_dirs=(dist/unpacked/*)
+          test "${#unpacked_dirs[@]}" -eq 1
+          bridge="${unpacked_dirs[0]}/kotonoha/libkoto-layer.so"
           test -f "$bridge"
           ldd "$bridge" | tee /tmp/libkoto-layer.ldd
           grep -F "libQt6Core.so" /tmp/libkoto-layer.ldd
