@@ -59,7 +59,8 @@ class Config:
     panel_width_mode: str = "fit"    # "fit" (hug the text) | "fixed" (constant width)
     panel_width: int = 720           # panel width in px when panel_width_mode == "fixed"
     panel_accent_tint: bool = False  # tint the black panel toward the accent colour
-    icon_name: str = "@leaf-accent"  # default to the accent-following leaf (see leaf_icon.py)
+    icon_name: str = "@leaf-accent"  # system-tray icon; accent-following leaf by default (see leaf_icon.py)
+    window_icon_name: str = "@leaf-accent"  # taskbar/window icon; chosen separately from the tray
     # Behaviour
     passthrough: bool = False        # start unlocked (interactive) so first-run positioning is easy
     karaoke: bool = True             # per-word sweep when timing == "Word"
@@ -105,6 +106,7 @@ class Config:
             panel_width=_clamp_int(self.panel_width, 240, 2400, 720),
             panel_accent_tint=bool(self.panel_accent_tint),
             icon_name=_clean_icon_name(self.icon_name),
+            window_icon_name=_clean_icon_name(self.window_icon_name),
             passthrough=bool(self.passthrough),
             karaoke=bool(self.karaoke),
             lead_ms=_clamp_int(self.lead_ms, -2000, 2000, 120),

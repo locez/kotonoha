@@ -26,8 +26,24 @@ _LEAF_BBOX = (242.0, 134.0, 770.0, 711.0)  # x, y, w, h
 
 ACCENT = "@leaf-accent"   # leaf recoloured to the accent
 MONO = "@leaf-mono"       # black/white leaf, adapts to the system theme
+WHITE = "@leaf-white"     # solid white leaf (for a dark tray/taskbar)
+BLACK = "@leaf-black"     # solid black leaf (for a light tray/taskbar)
 TILE = "@leaf-tile"       # white leaf on an accent-coloured rounded tile
-GENERATED: tuple[str, ...] = (ACCENT, MONO, TILE)
+
+# Everything renderable on the fly (used by is_generated / load_icon). MONO stays
+# for configs saved before the explicit black/white styles existed.
+GENERATED: tuple[str, ...] = (ACCENT, MONO, WHITE, BLACK, TILE)
+# The order the settings picker offers, and the styles it shows: accent, the two
+# explicit monochromes, then the accent tile. Adaptive MONO is not offered — black
+# and white are clearer to choose than a single "adapts to your theme" swatch.
+PICKER_STYLES: tuple[str, ...] = (ACCENT, WHITE, BLACK, TILE)
+
+# Solid monochrome tones: (leaf, lyrics-motif). White reads on a dark panel, black
+# on a light one; the motif is a touch softer so the "lyrics" mark stays legible.
+_MONO_TONES = {
+    WHITE: ("#F5F5F5", "#C4C9CE"),
+    BLACK: ("#2B2B2B", "#6B6B6B"),
+}
 
 
 def is_generated(key: str) -> bool:
@@ -43,16 +59,19 @@ def system_is_dark() -> bool:
     return scheme != Qt.ColorScheme.Light
 
 
-def _leaf_svg(accent: str, dark_panel: bool, *, mono: bool = False, on_tile: bool = False) -> str:
-    """The bare leaf SVG re-coloured for a style: accent-shaded, flat mono (theme
-    adaptive), or white-with-accent-motif for use on a tile."""
+def _leaf_svg(style: str, accent: str, dark_panel: bool) -> str:
+    """The bare leaf SVG re-coloured for a style: accent-shaded, an explicit or
+    theme-adaptive monochrome, or white-with-accent-motif for use on a tile."""
     svg = _LEAF.read_text(encoding="utf-8")
-    if on_tile:
-        for shade in _LEAF_SHADES:  # white leaf, accent lyrics-motif, sits on the tile
+    if style == TILE:  # white leaf, accent lyrics-motif, sits on the tile
+        for shade in _LEAF_SHADES:
             svg = svg.replace(shade, "#ffffff")
         return svg.replace(_WHITE, QColor(accent).name())
-    if mono:
-        leaf, motif = ("#ECECEC", "#9AA0A6") if dark_panel else ("#3A3A3A", "#8A8A8A")
+    if style in _MONO_TONES or style == MONO:
+        if style == MONO:  # adapt to the panel behind the tray (legacy configs)
+            leaf, motif = ("#ECECEC", "#9AA0A6") if dark_panel else ("#3A3A3A", "#8A8A8A")
+        else:
+            leaf, motif = _MONO_TONES[style]
         for shade in _LEAF_SHADES:
             svg = svg.replace(shade, leaf)
         return svg.replace(_WHITE, motif)
@@ -86,10 +105,10 @@ def render_leaf(style: str, accent: str = "#FF4FA3", *, dark_panel: bool = True,
         painter.setPen(Qt.PenStyle.NoPen)
         radius = size * 0.22
         painter.drawRoundedRect(QRectF(1, 1, size - 2, size - 2), radius, radius)
-        renderer = QSvgRenderer(QByteArray(_leaf_svg(accent, dark_panel, on_tile=True).encode("utf-8")))
+        renderer = QSvgRenderer(QByteArray(_leaf_svg(TILE, accent, dark_panel).encode("utf-8")))
         _blit_leaf(painter, renderer, size, margin_frac=0.24)
     else:
-        renderer = QSvgRenderer(QByteArray(_leaf_svg(accent, dark_panel, mono=(style == MONO)).encode("utf-8")))
+        renderer = QSvgRenderer(QByteArray(_leaf_svg(style, accent, dark_panel).encode("utf-8")))
         _blit_leaf(painter, renderer, size, margin_frac=0.10)
     painter.end()
     return pixmap

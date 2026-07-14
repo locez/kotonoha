@@ -318,13 +318,33 @@ def test_icon_picker_includes_generated_leaf_styles(qapp):
 
     dialog = SettingsDialog(Config(icon_name=leaf_icon.TILE))
     keys = [
-        str(dialog._icon_list.item(i).data(Qt.ItemDataRole.UserRole))
-        for i in range(dialog._icon_list.count())
+        str(dialog._tray_icon_list.item(i).data(Qt.ItemDataRole.UserRole))
+        for i in range(dialog._tray_icon_list.count())
     ]
-    for style in leaf_icon.GENERATED:  # accent / mono / tile are offered
+    for style in leaf_icon.PICKER_STYLES:  # accent / white / black / tile are offered
         assert style in keys
+    assert leaf_icon.WHITE in keys and leaf_icon.BLACK in keys  # explicit monochromes
     assert "leaf-pink.svg" in keys  # the bundled files are still offered too
     assert dialog.current_config().icon_name == leaf_icon.TILE
+    dialog.close()
+
+
+def test_tray_and_window_icons_are_chosen_independently(qapp):
+    from kotonoha import leaf_icon
+
+    dialog = SettingsDialog(Config(icon_name=leaf_icon.WHITE, window_icon_name=leaf_icon.TILE))
+    # Each picker starts on its own saved style, not a shared one.
+    assert dialog._picked_icon(dialog._tray_icon_list) == leaf_icon.WHITE
+    assert dialog._picked_icon(dialog._window_icon_list) == leaf_icon.TILE
+    # Changing one does not move the other.
+    window_keys = [
+        str(dialog._window_icon_list.item(i).data(Qt.ItemDataRole.UserRole))
+        for i in range(dialog._window_icon_list.count())
+    ]
+    dialog._window_icon_list.setCurrentRow(window_keys.index(leaf_icon.BLACK))
+    cfg = dialog.current_config()
+    assert cfg.icon_name == leaf_icon.WHITE
+    assert cfg.window_icon_name == leaf_icon.BLACK
     dialog.close()
 
 
@@ -333,7 +353,7 @@ def test_selected_icon_is_not_blue_tinted(qapp):
     from PyQt6.QtGui import QIcon
 
     dialog = SettingsDialog(Config())
-    item = dialog._icon_list.item(0)
+    item = dialog._tray_icon_list.item(0)
     assert item is not None
     icon = item.icon()
     size = QSize(48, 48)
@@ -375,15 +395,15 @@ def test_icon_picker_shows_preview_only_and_updates_config(qapp):
     dialog = SettingsDialog(Config(icon_name="leaf-pink.svg"))
 
     items = [
-        cast(QListWidgetItem, dialog._icon_list.item(index))
-        for index in range(dialog._icon_list.count())
+        cast(QListWidgetItem, dialog._tray_icon_list.item(index))
+        for index in range(dialog._tray_icon_list.count())
     ]
     keys = [str(item.data(Qt.ItemDataRole.UserRole)) for item in items]
-    assert keys[dialog._icon_list.currentRow()] == "leaf-pink.svg"
+    assert keys[dialog._tray_icon_list.currentRow()] == "leaf-pink.svg"
     assert all(item.text() == "" for item in items)
     assert "leaf-green.svg" in keys
 
-    dialog._icon_list.setCurrentRow(keys.index("leaf-green.svg"))
+    dialog._tray_icon_list.setCurrentRow(keys.index("leaf-green.svg"))
 
     assert dialog.current_config().icon_name == "leaf-green.svg"
     dialog.close()

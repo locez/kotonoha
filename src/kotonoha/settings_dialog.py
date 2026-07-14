@@ -306,6 +306,9 @@ class SettingsDialog(QDialog):
     def __init__(self, config: Config, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._config = config
+        # Every icon strip built (tray + window), each with its own {key: item} map,
+        # so accent re-renders can refresh all of them. Populated by _build_icon_picker.
+        self._icon_pickers: list[tuple[_IconStrip, dict[str, QListWidgetItem]]] = []
         # The UI language only takes effect on restart, so remember what is in
         # effect now to decide when to offer the restart button.
         self._initial_ui_language = config.ui_language
@@ -515,12 +518,18 @@ class SettingsDialog(QDialog):
             form.addRow(self._hint(t("set.frost_window_hint")))
 
         # App identity lives with the other app-wide options, not with the lyric look.
-        # The picker spans the full width (label above) so all styles fit one row and
-        # the hint sits right under them, instead of being pushed down by a wrap.
-        self._icon_list = self._build_icon_picker()
-        form.addRow(QLabel(t("set.app_icon")))
-        form.addRow(self._icon_list)
-        form.addRow(self._hint(t("set.app_icon_hint")))
+        # Tray and window/taskbar icons are chosen separately: each picker spans the
+        # full width (label above) so all styles fit one row and the hint sits right
+        # under them, instead of being pushed down by a wrap.
+        self._tray_icon_list = self._build_icon_picker(self._config.icon_name)
+        form.addRow(QLabel(t("set.tray_icon")))
+        form.addRow(self._tray_icon_list)
+        form.addRow(self._hint(t("set.tray_icon_hint")))
+
+        self._window_icon_list = self._build_icon_picker(self._config.window_icon_name)
+        form.addRow(QLabel(t("set.window_icon")))
+        form.addRow(self._window_icon_list)
+        form.addRow(self._hint(t("set.window_icon_hint")))
 
         # Hidden until the language selection differs from what is running; the UI
         # is only rebuilt on restart, so offer to do it right here.
@@ -808,7 +817,15 @@ class SettingsDialog(QDialog):
         label.setWordWrap(True)
         return label
 
-    def _build_icon_picker(self) -> QListWidget:
+    @staticmethod
+    def _picked_icon(icon_list: _IconStrip) -> str:
+        item = icon_list.currentItem()
+        return str(item.data(Qt.ItemDataRole.UserRole)) if item is not None else DEFAULT_ICON_NAME
+
+    def _build_icon_picker(self, selected_key: str) -> _IconStrip:
+        """One icon strip: the generated leaf styles (accent / white / black / tile)
+        then the bundled files, with `selected_key` pre-selected. Tray and window
+        each get their own strip so they can be chosen independently."""
         icon_list = _IconStrip()
         icon_list.setObjectName("iconPicker")
         icon_list.setViewMode(QListView.ViewMode.IconMode)
@@ -821,7 +838,7 @@ class SettingsDialog(QDialog):
         icon_list.setGridSize(QSize(54, 54))
         icon_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         icon_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._icon_items: dict[str, QListWidgetItem] = {}
+        items: dict[str, QListWidgetItem] = {}
         selected_item: QListWidgetItem | None = None
         default_item: QListWidgetItem | None = None
 
@@ -830,27 +847,26 @@ class SettingsDialog(QDialog):
             item.setData(Qt.ItemDataRole.UserRole, key)
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             icon_list.addItem(item)
-            self._icon_items[key] = item
+            items[key] = item
             return item
 
-        # Generated leaf styles first (accent / mono / tile), then the bundled files.
-        # The mono preview follows the dialog theme so it reads on the picker card
-        # (the tray itself renders mono against the system panel at runtime).
+        # Generated leaf styles first (accent / white / black / tile), then the files.
         dark = self._theme == "dark"
-        for key in leaf_icon.GENERATED:
+        for key in leaf_icon.PICKER_STYLES:
             item = add(key, leaf_icon.render_leaf(key, self._config.accent_start, dark_panel=dark, size=64))
-            if key == self._config.icon_name:
+            if key == selected_key:
                 selected_item = item
         for choice in discover_icon_paths():
             source = QIcon(str(choice.path))
             if source.isNull():
                 continue
             item = add(choice.key, source.pixmap(QSize(64, 64)))
-            if choice.key == self._config.icon_name:
+            if choice.key == selected_key:
                 selected_item = item
             if choice.key == DEFAULT_ICON_NAME:
                 default_item = item
         icon_list.setCurrentItem(selected_item or default_item)
+        self._icon_pickers.append((icon_list, items))
         return icon_list
 
     def _no_tint_icon(self, pixmap: QPixmap) -> QIcon:
@@ -863,13 +879,14 @@ class SettingsDialog(QDialog):
 
     def _refresh_generated_icons(self) -> None:
         """Re-render the accent/tile leaf previews to the current accent (called on
-        Apply so the picker keeps up with an accent change)."""
+        Apply so both pickers keep up with an accent change)."""
         dark = self._theme == "dark"
-        for key in leaf_icon.GENERATED:
-            item = self._icon_items.get(key)
-            if item is not None:
-                pixmap = leaf_icon.render_leaf(key, self._config.accent_start, dark_panel=dark, size=64)
-                item.setIcon(self._no_tint_icon(pixmap))
+        for _list, items in self._icon_pickers:
+            for key in leaf_icon.PICKER_STYLES:
+                item = items.get(key)
+                if item is not None:
+                    pixmap = leaf_icon.render_leaf(key, self._config.accent_start, dark_panel=dark, size=64)
+                    item.setIcon(self._no_tint_icon(pixmap))
 
     def _available_styles(self, family: str) -> list[str]:
         """The family's real styles (Regular/Bold/Light/Italic/Condensed …), plain
@@ -905,19 +922,14 @@ class SettingsDialog(QDialog):
             accent_data = (self._config.accent_start, self._config.accent_end, self._config.accent_sweep)
         accent_start, accent_end, accent_sweep = accent_data
         self._panel_opacity[self._opacity_active_key] = self._opacity.value() / 100.0  # save the active slider
-        icon_item = self._icon_list.currentItem()
-        icon_name = (
-            str(icon_item.data(Qt.ItemDataRole.UserRole))
-            if icon_item is not None
-            else DEFAULT_ICON_NAME
-        )
         return replace(
             self._config,
             ui_language=str(self._ui_language.currentData()),
             theme=str(self._theme_combo.currentData()),
             frost_window=self._frost_window.isChecked(),
             lyrics_script=str(self._lyrics_script.currentData()),
-            icon_name=icon_name,
+            icon_name=self._picked_icon(self._tray_icon_list),
+            window_icon_name=self._picked_icon(self._window_icon_list),
             font_family=self._font_family.currentFont().family(),
             font_style=self._font_style.currentText(),
             font_size=self._font_size.value(),
