@@ -80,7 +80,8 @@ class Config:
     accent_sweep: str = "#FF6EC7"
     # Visual effects (all user-toggleable). Default to a calm look: animations on,
     # the flashier glow / word-pop off.
-    fx_animate: bool = True          # line reveal + settings fade-in animations
+    fx_animate: bool = True          # master switch: line-change + settings fade-in animations
+    fx_transition: str = "rise"      # line-change style when fx_animate: "fade"|"rise"|"slide"|"zoom"
     fx_glow: bool = False            # soft accent glow behind the current line
     fx_word_pop: bool = False        # brighten the word currently being sung
     fx_intensity: str = "subtle"     # "subtle" | "expressive"
@@ -116,6 +117,7 @@ class Config:
             accent_end=str(self.accent_end),
             accent_sweep=str(self.accent_sweep),
             fx_animate=bool(self.fx_animate),
+            fx_transition=self.fx_transition if self.fx_transition in ("fade", "rise", "slide", "zoom") else "rise",
             fx_glow=bool(self.fx_glow),
             fx_word_pop=bool(self.fx_word_pop),
             fx_intensity=self.fx_intensity if self.fx_intensity in ("subtle", "expressive") else "subtle",

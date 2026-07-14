@@ -68,6 +68,10 @@ def test_effects_defaults_clamp_and_roundtrip(tmp_path):
     assert Config().fx_intensity == "subtle"
     assert Config(fx_intensity="expressive").clamped().fx_intensity == "expressive"
     assert Config(fx_intensity="bogus").clamped().fx_intensity == "subtle"
+    # Line-change transition: "rise" default, known values kept, junk falls back.
+    assert Config().fx_transition == "rise"
+    assert Config(fx_transition="zoom").clamped().fx_transition == "zoom"
+    assert Config(fx_transition="bogus").clamped().fx_transition == "rise"
     path = tmp_path / "c.json"
     save_config(Config(fx_animate=False, fx_glow=False, fx_word_pop=False, fx_intensity="expressive"), path)
     loaded = load_config(path)

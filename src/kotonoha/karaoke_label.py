@@ -28,6 +28,15 @@ SHADOW_COLOR = QColor(0, 0, 0, 170)
 SHADOW_OFFSET = 1.5
 REVEAL_RISE_PX = 9.0
 REVEAL_DURATION_MS = 320
+# Line-change transition styles (chosen in Settings). "rise" is the calm default;
+# the others trade the small upward rise for a pure fade, a larger slide, or a
+# gentle zoom. "none" is expressed by the fx_animate master switch being off.
+_TRANSITIONS = ("fade", "rise", "slide", "zoom")
+
+# A long now-playing title (line id "title", no karaoke sweep) scrolls back and
+# forth so the whole name is legible instead of being clipped.
+_MARQUEE_SPEED_PX_S = 42.0   # travel speed
+_MARQUEE_PAUSE_S = 1.6       # hold at each end before reversing
 
 # Effect strength per intensity: glow alpha (of the accent), glow radius (px), and
 # the active-word brightening (QColor.lighter percent).
@@ -71,6 +80,7 @@ class KaraokeLabel(QWidget):
         self._word_pop = False
         self._intensity = "subtle"
         self._animate = True
+        self._transition = "rise"
         self._reveal = 1.0
         self._anim: QPropertyAnimation | None = None
         # Cached text measurements (rebuilt only when font/line changes, never per
@@ -107,11 +117,14 @@ class KaraokeLabel(QWidget):
         self.updateGeometry()
         self.update()
 
-    def set_effects(self, *, glow: bool, word_pop: bool, intensity: str, animate: bool) -> None:
+    def set_effects(
+        self, *, glow: bool, word_pop: bool, intensity: str, animate: bool, transition: str = "rise"
+    ) -> None:
         self._glow = glow
         self._word_pop = word_pop
         self._intensity = intensity if intensity in _FX else "subtle"
         self._animate = animate
+        self._transition = transition if transition in _TRANSITIONS else "rise"
         self.update()
 
     def set_line(self, line: LyricLine | None, word_mode: bool) -> None:
@@ -234,6 +247,46 @@ class KaraokeLabel(QWidget):
                 sung = cursor  # extend through the trailing space
         return sung, None
 
+    def _is_title(self) -> bool:
+        return self._line is not None and self._line.id == "title"
+
+    def _marquee_offset(self, overflow: float) -> float:
+        """A ping-pong scroll offset (0..overflow) for a long title, driven by the
+        media clock: hold at the left, glide right, hold, glide back."""
+        if overflow <= 0.0 or self._media_time is None:
+            return 0.0
+        travel = overflow / _MARQUEE_SPEED_PX_S
+        cycle = 2.0 * (_MARQUEE_PAUSE_S + travel)
+        phase = self._media_time % cycle
+        if phase < _MARQUEE_PAUSE_S:
+            return 0.0
+        phase -= _MARQUEE_PAUSE_S
+        if phase < travel:
+            return overflow * (phase / travel)
+        phase -= travel
+        if phase < _MARQUEE_PAUSE_S:
+            return overflow
+        return overflow * (1.0 - (phase - _MARQUEE_PAUSE_S) / travel)
+
+    def _apply_reveal_transform(self, painter: QPainter, avail: float, height: float) -> float:
+        """Apply the current line-change transition to `painter` and return the alpha
+        multiplier for this frame. `reveal` runs 0->1 over the animation; each style
+        maps it to a different motion, all fading in together."""
+        reveal = self._reveal
+        inv = 1.0 - reveal
+        style = self._transition
+        if style == "rise":
+            painter.translate(0.0, inv * REVEAL_RISE_PX)
+        elif style == "slide":
+            painter.translate(inv * -28.0, 0.0)  # glide in from the right
+        elif style == "zoom":
+            scale = 0.90 + 0.10 * reveal
+            painter.translate(avail / 2.0, height / 2.0)
+            painter.scale(scale, scale)
+            painter.translate(-avail / 2.0, -height / 2.0)
+        # "fade": opacity only, no geometric motion.
+        return reveal
+
     # --- painting ---
 
     def paintEvent(self, a0: QPaintEvent | None) -> None:  # noqa: ARG002
@@ -242,19 +295,23 @@ class KaraokeLabel(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
         painter.setFont(self._font)
-        # Fade in + rise on a line change.
-        painter.translate(0.0, (1.0 - self._reveal) * REVEAL_RISE_PX)
-        a = self._reveal
 
         total_width = self._total_w
         avail = float(self.width())
         height = float(self.height())
+
+        # Line-change transition (fade / rise / slide / zoom); `a` scales every alpha.
+        a = self._apply_reveal_transform(painter, avail, height)
 
         # Sweep position relative to the text start (measure with text_left = 0).
         sweep_rel, active_rel = self._compute_sweep(0.0, total_width)
 
         if total_width <= avail:
             text_left = (avail - total_width) / 2.0  # fits -> centered
+        elif self._is_title():
+            # Long now-playing title: no sweep to follow, so ping-pong the whole name.
+            text_left = -self._marquee_offset(total_width - avail)
+            painter.setClipRect(QRectF(0.0, 0.0, avail, height))
         else:
             # Overflow: scroll so the currently-sung position stays near the centre.
             offset = max(0.0, min(sweep_rel - avail / 2.0, total_width - avail))

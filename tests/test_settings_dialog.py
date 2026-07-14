@@ -417,6 +417,14 @@ def test_effects_controls_roundtrip(qapp):
     dialog.close()
 
 
+def test_transition_style_roundtrips(qapp):
+    dialog = SettingsDialog(Config(fx_transition="zoom"))
+    assert dialog._fx_transition.currentData() == "zoom"
+    dialog._fx_transition.setCurrentIndex(dialog._fx_transition.findData("slide"))
+    assert dialog.current_config().fx_transition == "slide"
+    dialog.close()
+
+
 def test_max_font_sizes_survive_opening_settings(qapp):
     # With the spin range aligned to the config clamp, a config already at the max
     # is not truncated merely by opening the dialog and reading it back.

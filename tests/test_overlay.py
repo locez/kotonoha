@@ -93,6 +93,50 @@ def test_effects_apply_to_current_line_only_and_paint_safely(qapp):
     qapp.processEvents()
 
 
+def test_long_title_marquee_scrolls_then_holds(qapp):
+    from kotonoha.karaoke_label import _MARQUEE_PAUSE_S, _MARQUEE_SPEED_PX_S, KaraokeLabel
+    from kotonoha.model import LyricLine
+
+    label = KaraokeLabel()
+    label.resize(100, 40)
+    label.set_line(LyricLine(0, "title", 0.0, 1e9, "A very very very long now-playing title", "", ()), False)
+    overflow = 300.0  # pretend the text is 300px wider than the 100px label
+    # The opening pause holds the title at the left...
+    label.set_media_time(0.0)
+    assert label._marquee_offset(overflow) == 0.0
+    # ...then it glides partway...
+    travel = overflow / _MARQUEE_SPEED_PX_S
+    label.set_media_time(_MARQUEE_PAUSE_S + travel / 2.0)
+    assert 0.0 < label._marquee_offset(overflow) < overflow
+    # ...and reaches the far end fully scrolled.
+    label.set_media_time(_MARQUEE_PAUSE_S + travel)
+    assert label._marquee_offset(overflow) == overflow
+    # No media clock yet (truly idle) -> no scrolling.
+    label.set_media_time(None)
+    assert label._marquee_offset(overflow) == 0.0
+    assert label._is_title() is True
+    label._total_w = 400.0
+    label.grab()  # paints through the title/marquee branch without raising
+    label.deleteLater()
+    qapp.processEvents()
+
+
+def test_transition_styles_paint_without_raising(qapp):
+    from kotonoha.karaoke_label import KaraokeLabel
+    from kotonoha.model import LyricLine
+
+    label = KaraokeLabel()
+    label.resize(200, 40)
+    for style in ("fade", "rise", "slide", "zoom"):
+        label.set_effects(glow=False, word_pop=False, intensity="subtle", animate=True, transition=style)
+        assert label._transition == style
+        label.set_line(LyricLine(0, style, 0.0, 3.0, "line", "", ()), False)
+        label._reveal = 0.4  # mid-transition
+        label.grab()
+    label.deleteLater()
+    qapp.processEvents()
+
+
 def test_disabling_animations_reveals_lines_instantly(qapp):
     from kotonoha.karaoke_label import KaraokeLabel
     from kotonoha.model import LyricLine

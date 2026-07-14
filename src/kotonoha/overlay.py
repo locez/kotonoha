@@ -233,6 +233,7 @@ class LyricsOverlay(QWidget):
         self._current.set_effects(
             glow=config.fx_glow, word_pop=config.fx_word_pop,
             intensity=config.fx_intensity, animate=config.fx_animate,
+            transition=config.fx_transition,
         )
         self._current.set_max_width(avail)
 
@@ -257,9 +258,10 @@ class LyricsOverlay(QWidget):
         self._translation.set_style(
             trans_font, config.accent_start, config.accent_end, config.accent_sweep, base, shadow
         )
-        # Secondary line: no glow/pop, but honour the animation toggle.
+        # Secondary line: no glow/pop, but honour the animation toggle + style.
         self._translation.set_effects(
-            glow=False, word_pop=False, intensity=config.fx_intensity, animate=config.fx_animate
+            glow=False, word_pop=False, intensity=config.fx_intensity,
+            animate=config.fx_animate, transition=config.fx_transition,
         )
         self._translation.set_max_width(avail)
         self._translation.setVisible(config.show_translation)

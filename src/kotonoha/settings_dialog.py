@@ -669,6 +669,18 @@ class SettingsDialog(QDialog):
         self._fx_animate = QCheckBox(t("set.fx_animate"))
         self._fx_animate.setChecked(c.fx_animate)
         form.addRow(self._fx_animate)
+        # Line-change transition style; only bites while "Animate" is on.
+        self._fx_transition = QComboBox()
+        for value, key in (
+            ("fade", "fxtrans.fade"),
+            ("rise", "fxtrans.rise"),
+            ("slide", "fxtrans.slide"),
+            ("zoom", "fxtrans.zoom"),
+        ):
+            self._fx_transition.addItem(t(key), value)
+        trans_idx = self._fx_transition.findData(c.fx_transition)
+        self._fx_transition.setCurrentIndex(trans_idx if trans_idx >= 0 else 1)
+        form.addRow(t("set.fx_transition"), self._fx_transition)
         self._fx_glow = QCheckBox(t("set.fx_glow"))
         self._fx_glow.setChecked(c.fx_glow)
         form.addRow(self._fx_glow)
@@ -971,6 +983,7 @@ class SettingsDialog(QDialog):
             accent_end=accent_end,
             accent_sweep=accent_sweep,
             fx_animate=self._fx_animate.isChecked(),
+            fx_transition=str(self._fx_transition.currentData()),
             fx_glow=self._fx_glow.isChecked(),
             fx_word_pop=self._fx_word_pop.isChecked(),
             fx_intensity=str(self._fx_intensity.currentData()),
