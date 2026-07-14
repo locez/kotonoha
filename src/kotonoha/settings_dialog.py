@@ -14,7 +14,15 @@ from pathlib import Path
 from typing import cast
 
 from PyQt6 import sip
-from PyQt6.QtCore import QAbstractAnimation, QEasingCurve, QPropertyAnimation, QSize, Qt, pyqtSignal
+from PyQt6.QtCore import (
+    QAbstractAnimation,
+    QByteArray,
+    QEasingCurve,
+    QPropertyAnimation,
+    QSize,
+    Qt,
+    pyqtSignal,
+)
 from PyQt6.QtGui import (
     QColor,
     QFont,
@@ -26,9 +34,11 @@ from PyQt6.QtGui import (
     QPainter,
     QPaintEvent,
     QPen,
+    QPixmap,
     QResizeEvent,
     QShowEvent,
 )
+from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -58,6 +68,34 @@ from .tray import discover_icon_paths
 
 # Dialog corner radius, shared by the painted background and the KWin blur region.
 _RADIUS = 14
+
+# The leaf logo shown in the settings title bar, recoloured to follow the accent.
+# Its three leaf shades (dark, mid, light) are swapped for accent-derived shades;
+# the white "lyrics" motif is left as-is.
+_LOGO_PATH = Path(__file__).with_name("assets") / "logo.svg"
+_LOGO_SHADES = ("#60a65a", "#a4d382", "#def1d3")
+
+
+def _accent_logo(accent: str, size: int) -> QPixmap | None:
+    """The bundled leaf logo recoloured to the accent, or None if the asset is
+    missing. Rendered at 2x for a crisp hi-dpi badge."""
+    if not _LOGO_PATH.is_file():
+        return None
+    svg = _LOGO_PATH.read_text(encoding="utf-8")
+    tone = QColor(accent)
+    shades = (tone.darker(135).name(), tone.name(), tone.lighter(158).name())
+    for old, new in zip(_LOGO_SHADES, shades, strict=True):
+        svg = svg.replace(old, new)
+    renderer = QSvgRenderer(QByteArray(svg.encode("utf-8")))
+    dpr = 2
+    pixmap = QPixmap(size * dpr, size * dpr)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    renderer.render(painter)
+    painter.end()
+    pixmap.setDevicePixelRatio(dpr)
+    return pixmap
 
 # One QSS template, filled from a light or dark palette below. Spacing and radii
 # are generous and the inner borders are soft so the panels don't read as boxes
@@ -366,14 +404,9 @@ class SettingsDialog(QDialog):
     def _title_bar(self) -> QHBoxLayout:
         bar = QHBoxLayout()
         bar.setSpacing(9)
-        icon_path = next(
-            (choice.path for choice in discover_icon_paths() if choice.key == self._config.icon_name),
-            None,
-        )
-        if icon_path is not None:
-            badge = QLabel()
-            badge.setPixmap(QIcon(str(icon_path)).pixmap(QSize(22, 22)))
-            bar.addWidget(badge)
+        self._logo_badge = QLabel()
+        self._update_logo_badge()  # accent-tinted leaf logo (falls back to the app icon)
+        bar.addWidget(self._logo_badge)
         title = QLabel(t("settings.title"))
         title.setObjectName("dialogTitle")  # styled by the theme QSS
         close_btn = QPushButton("✕")
@@ -490,6 +523,7 @@ class SettingsDialog(QDialog):
         # App identity lives with the other app-wide options, not with the lyric look.
         self._icon_list = self._build_icon_picker()
         form.addRow(t("set.app_icon"), self._icon_list)
+        form.addRow(self._hint(t("set.app_icon_hint")))
 
         # Hidden until the language selection differs from what is running; the UI
         # is only rebuilt on restart, so offer to do it right here.
@@ -500,6 +534,20 @@ class SettingsDialog(QDialog):
         # Connect after the button exists so the handler never runs before it.
         self._ui_language.currentIndexChanged.connect(self._update_restart_hint)
         return page
+
+    def _update_logo_badge(self) -> None:
+        """Set the title-bar badge to the accent-tinted leaf logo, or fall back to
+        the chosen app icon if the logo asset is missing."""
+        logo = _accent_logo(self._config.accent_start, 22)
+        if logo is not None:
+            self._logo_badge.setPixmap(logo)
+            return
+        icon_path = next(
+            (choice.path for choice in discover_icon_paths() if choice.key == self._config.icon_name),
+            None,
+        )
+        if icon_path is not None:
+            self._logo_badge.setPixmap(QIcon(str(icon_path)).pixmap(QSize(22, 22)))
 
     def _on_nav_changed(self, row: int) -> None:
         self._stack.setCurrentIndex(row)
@@ -918,6 +966,7 @@ class SettingsDialog(QDialog):
         # after Settings is closed and reopened.
         self._theme = _resolve_theme(self._config.theme)
         self.setStyleSheet(_skin(self._config.accent_start, self._theme))
+        self._update_logo_badge()  # re-tint the leaf logo to the new accent
         # Toggle the frosted backdrop live: apply/clear the KWin blur and repaint
         # the panel translucent-or-solid to match the new setting.
         frosted = self._blur_capable and self._config.frost_window

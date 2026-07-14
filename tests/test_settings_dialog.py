@@ -164,6 +164,27 @@ def test_content_sits_in_a_raised_card_and_page_switch_is_safe(qapp):
     dialog.close()
 
 
+def test_title_logo_follows_the_accent(qapp):
+    from kotonoha.settings_dialog import _accent_logo
+
+    red = _accent_logo("#FF0000", 22)
+    green = _accent_logo("#00FF00", 22)
+    assert red is not None and green is not None
+    assert not red.isNull() and not green.isNull()
+    assert red.toImage() != green.toImage()  # the leaf recolours to the accent
+    # The title badge re-tints on Apply when the accent changes.
+    dialog = SettingsDialog(Config(accent_start="#FF4FA3"))
+    before = dialog._logo_badge.pixmap().toImage()
+    cyan = next(
+        i for i in range(dialog._accent.count())
+        if dialog._accent.itemData(i) == ("#4FACFE", "#00F2FE", "#38E1FF")
+    )
+    dialog._accent.setCurrentIndex(cyan)
+    dialog._emit()
+    assert dialog._logo_badge.pixmap().toImage() != before
+    dialog.close()
+
+
 def test_theme_selector_roundtrips_and_switches_palette(qapp):
     from kotonoha.settings_dialog import _PALETTES
 

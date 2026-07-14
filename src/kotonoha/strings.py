@@ -52,7 +52,11 @@ STRINGS: dict[str, dict[str, str]] = {
     "tab.sources": {"en": "Sources", "zh-Hans": "来源", "zh-Hant": "來源", "ja": "ソース"},
     "tab.general": {"en": "General", "zh-Hans": "通用", "zh-Hant": "通用", "ja": "一般"},
 
-    "set.app_icon": {"en": "App icon", "zh-Hans": "应用图标", "zh-Hant": "應用圖示", "ja": "アプリアイコン"},
+    "set.app_icon": {"en": "Tray icon", "zh-Hans": "托盘图标", "zh-Hant": "系統匣圖示", "ja": "トレイアイコン"},
+    "set.app_icon_hint": {"en": "Used for the system tray and the window icon.",
+                          "zh-Hans": "用于系统托盘和窗口图标。",
+                          "zh-Hant": "用於系統匣與視窗圖示。",
+                          "ja": "システムトレイとウィンドウアイコンに使われます。"},
     "set.font_family": {"en": "Font", "zh-Hans": "字体", "zh-Hant": "字型", "ja": "フォント"},
     "set.font_weight": {"en": "Weight", "zh-Hans": "字重", "zh-Hant": "字重", "ja": "太さ"},
     "weight.thin": {"en": "Thin", "zh-Hans": "特细", "zh-Hant": "特細", "ja": "シン"},
