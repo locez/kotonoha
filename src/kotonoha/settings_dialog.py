@@ -155,6 +155,10 @@ QCheckBox::indicator:checked, QListWidget::indicator:checked {
     border-color: %ACCENT%;
     image: url(%CHECK%);
 }
+/* A disabled checkbox reads as unavailable: dimmed label, muted (non-accent) box. */
+QCheckBox:disabled { color: %HINT%; }
+QCheckBox::indicator:disabled { border-color: %IND_BORDER%; background: %IND_BG%; }
+QCheckBox::indicator:checked:disabled { background: %HINT%; border-color: %HINT%; image: url(%CHECK%); }
 /* One field style for every input so combos, spin boxes and the font picker are
    the same height and look uniform. */
 QSpinBox, QComboBox, QFontComboBox {
@@ -565,11 +569,13 @@ class SettingsDialog(QDialog):
         form.addRow(t("set.theme"), self._theme_combo)
 
         # Frosted-glass settings window (real KWin blur; no effect off KDE Wayland).
+        # Disabled + a note when the platform can't blur, so it reads as unavailable
+        # rather than an option that silently does nothing.
         self._frost_window = QCheckBox(t("set.frost_window"))
         self._frost_window.setChecked(self._config.frost_window)
+        self._frost_window.setEnabled(self._blur_capable)
         form.addRow(self._frost_window)
-        if not self._blur_capable:
-            form.addRow(self._hint(t("set.frost_window_hint")))
+        form.addRow(self._hint(t("set.frost_window_hint")))
 
         # How see-through this settings window is (whole window; text stays legible).
         # Applied on OK/Apply like every other setting (no live preview) — a live

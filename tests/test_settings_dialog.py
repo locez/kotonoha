@@ -150,6 +150,21 @@ def test_frost_window_toggle_roundtrips_and_applies_safely(qapp):
     dialog.close()
 
 
+def test_frost_checkbox_is_greyed_out_and_noted_when_blur_unavailable(qapp):
+    from PyQt6.QtWidgets import QLabel
+
+    from kotonoha.strings import t
+
+    # Offscreen is not KDE Wayland, so frosted glass can't work: the checkbox reads
+    # as unavailable (disabled) and the KDE-only note is shown under it.
+    dialog = SettingsDialog(Config())
+    assert dialog._blur_capable is False
+    assert dialog._frost_window.isEnabled() is False
+    hints = [w.text() for w in dialog.findChildren(QLabel) if w.objectName() == "hint"]
+    assert t("set.frost_window_hint") in hints
+    dialog.close()
+
+
 def test_content_sits_in_a_raised_card_and_page_switch_is_safe(qapp):
     from PyQt6.QtWidgets import QWidget
 
