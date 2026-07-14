@@ -285,13 +285,18 @@ def _resolve_theme(value: str) -> str:
     return "light" if scheme == Qt.ColorScheme.Light else "dark"
 
 
-def _skin(accent: str, theme: str = "dark", frosted: bool = False) -> str:
+def _skin(accent: str, theme: str = "dark", frosted: bool = False, opacity: float = 1.0) -> str:
     """Fill the QSS template from the theme palette, accent colour and checkmark.
     When `frosted`, the content card is made translucent so the KWin backdrop-blur
-    shows through it instead of reading as a solid block on the frosted window."""
+    shows through it instead of reading as a solid block on the frosted window.
+    `opacity` (<1) makes the window see-through: the light theme's opaque white card
+    is thinned so the desktop shows through it (dark's card is already translucent,
+    so its window fill — painted in paintEvent — carries the effect)."""
     palette = dict(_PALETTES.get(theme, _PALETTES["dark"]))
     if frosted:
         palette["CARD_BG"] = "rgba(255, 255, 255, 120)" if theme == "light" else "rgba(255, 255, 255, 16)"
+    elif opacity < 0.999 and theme == "light":
+        palette["CARD_BG"] = f"rgba(255, 255, 255, {max(0, min(255, round(255 * opacity)))})"
     qss = _QSS
     for token, value in palette.items():
         if isinstance(value, str):
@@ -349,8 +354,11 @@ class SettingsDialog(QDialog):
         self._frosted = self._blur_capable and config.frost_window
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setWindowOpacity(config.settings_opacity)  # a touch see-through by default
-        self.setStyleSheet(_skin(config.accent_start, self._theme, self._frosted))
+        # See-through level for the window surfaces. NOT setWindowOpacity — the Qt
+        # Wayland plugin ignores that (no client-side opacity protocol); instead the
+        # painted window fill + card alpha carry it, so it works under KWin.
+        self._win_opacity = config.settings_opacity
+        self.setStyleSheet(_skin(config.accent_start, self._theme, self._frosted, self._win_opacity))
 
         # Sidebar categories drive a stacked content area (replaces top tabs).
         self._stack = QStackedWidget()
@@ -463,6 +471,9 @@ class SettingsDialog(QDialog):
         if self._frosted:
             # Translucent so the KWin blur behind the window shows through as frost.
             bg = (bg[0], bg[1], bg[2], 165)
+        elif self._win_opacity < 0.999:
+            # See-through: thin the window fill so the desktop shows through it.
+            bg = (bg[0], bg[1], bg[2], max(0, min(255, round(bg[3] * self._win_opacity))))
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setBrush(QColor(*bg))
@@ -557,9 +568,7 @@ class SettingsDialog(QDialog):
 
         # How see-through this settings window is (whole window; text stays legible).
         self._settings_opacity = self._spin(60, 100, round(self._config.settings_opacity * 100), " %")
-        self._settings_opacity.valueChanged.connect(
-            lambda value: self.setWindowOpacity(value / 100.0)  # live preview while dragging
-        )
+        self._settings_opacity.valueChanged.connect(self._preview_window_opacity)  # live while changing
         form.addRow(t("set.settings_opacity"), self._settings_opacity)
 
         # Hidden until the language selection differs from what is running; the UI
@@ -600,6 +609,13 @@ class SettingsDialog(QDialog):
     def _request_restart(self) -> None:
         self._emit()  # persist the new language before relaunching
         self.restart_requested.emit()
+
+    def _preview_window_opacity(self, percent: int) -> None:
+        """Live see-through preview: re-thin the window fill (repaint) and, in the
+        light theme, the card (re-skin), so dragging the spin box shows immediately."""
+        self._win_opacity = percent / 100.0
+        self.setStyleSheet(_skin(self._config.accent_start, self._theme, self._frosted, self._win_opacity))
+        self.update()
 
     @staticmethod
     def _resolve_font_family(font_family: str) -> str:
@@ -1089,8 +1105,8 @@ class SettingsDialog(QDialog):
         # away (tab underline, checkbox fill, light/dark palette) rather than only
         # after Settings is closed and reopened.
         self._theme = _resolve_theme(self._config.theme)
-        self.setWindowOpacity(self._config.settings_opacity)  # commit the see-through level
-        self.setStyleSheet(_skin(self._config.accent_start, self._theme, self._frosted))
+        self._win_opacity = self._config.settings_opacity  # commit the see-through level
+        self.setStyleSheet(_skin(self._config.accent_start, self._theme, self._frosted, self._win_opacity))
         self._update_logo_badge()  # re-tint the leaf logo to the new accent
         self._refresh_generated_icons()  # re-tint the accent/tile icon previews
         self.update()  # repaint the frameless background (theme / frost)
