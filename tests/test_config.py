@@ -28,6 +28,34 @@ def test_lyrics_script_clamps_unknown_to_off():
     assert Config(lyrics_script="bogus").clamped().lyrics_script == "off"
 
 
+def test_typography_and_panel_size_roundtrip(tmp_path):
+    path = tmp_path / "c.json"
+    cfg = Config(
+        font_family="Noto Sans CJK SC", font_weight=600,
+        context_font_size=18, translation_font_size=11,
+        panel_width_mode="fixed", panel_width=880,
+    )
+    save_config(cfg, path)
+    loaded = load_config(path)
+    assert loaded.font_family == "Noto Sans CJK SC"
+    assert loaded.font_weight == 600
+    assert loaded.context_font_size == 18
+    assert loaded.translation_font_size == 11
+    assert loaded.panel_width_mode == "fixed"
+    assert loaded.panel_width == 880
+
+
+def test_typography_and_panel_size_defaults_and_clamps():
+    # New keys default sanely and coerce out-of-range values.
+    assert Config().font_weight == 800
+    assert Config().panel_width_mode == "fit"
+    assert Config(font_weight=5000).clamped().font_weight == 900
+    assert Config(font_weight=0).clamped().font_weight == 100
+    assert Config(context_font_size=1).clamped().context_font_size == 8
+    assert Config(panel_width=99999).clamped().panel_width == 2400
+    assert Config(panel_width_mode="bogus").clamped().panel_width_mode == "fit"
+
+
 def test_frost_opacity_and_full_transparency(tmp_path):
     path = tmp_path / "c.json"
     save_config(Config(opacity=0.0, frost_opacity=0.35), path)

@@ -32,6 +32,33 @@ def qapp():
     yield app
 
 
+def test_fixed_panel_pins_pill_width_independent_of_text(qapp):
+    overlay = LyricsOverlay(
+        LyricsState(),
+        Config(panel_width_mode="fixed", panel_width=680),
+        UnavailableController(),
+    )
+    overlay.apply_config(overlay._config)
+    # The container is pinned to (about) the configured width, so it does not grow
+    # or shrink with the line length.
+    assert overlay._container.maximumWidth() <= 680
+    assert overlay._container.minimumWidth() == overlay._container.maximumWidth()
+    # Fit mode releases the pin so the pill hugs its content again.
+    overlay.apply_config(Config(panel_width_mode="fit"))
+    assert overlay._container.maximumWidth() > 5000
+    overlay.deleteLater()
+    qapp.processEvents()
+
+
+def test_font_fallback_chain_keeps_cjk_after_a_latin_family(qapp):
+    overlay = LyricsOverlay(LyricsState(), Config(font_family="Inter"), UnavailableController())
+    families = overlay._font_families()
+    assert families[0] == "Inter"  # the chosen family leads
+    assert any("CJK" in name for name in families)  # CJK fallback still present
+    overlay.deleteLater()
+    qapp.processEvents()
+
+
 def test_untimed_word_does_not_freeze_sweep(qapp):
     from PyQt6.QtGui import QFont
 

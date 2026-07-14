@@ -117,6 +117,34 @@ def test_panel_style_has_frosted_option_and_roundtrips(qapp):
     dialog.close()
 
 
+def test_typography_controls_roundtrip(qapp):
+    dialog = SettingsDialog(Config(
+        font_family="DejaVu Sans", font_weight=600,
+        context_font_size=17, translation_font_size=11,
+    ))
+    assert dialog._font_weight.currentData() == 600
+    assert dialog._context_font_size.value() == 17
+    assert dialog._translation_font_size.value() == 11
+    dialog._font_weight.setCurrentIndex(dialog._font_weight.findData(900))
+    cfg = dialog.current_config()
+    assert cfg.font_weight == 900
+    assert cfg.context_font_size == 17
+    assert cfg.translation_font_size == 11
+    assert cfg.font_family  # a concrete family is stored (QFontComboBox resolves it)
+    dialog.close()
+
+
+def test_panel_width_control_enabled_only_for_fixed_mode(qapp):
+    dialog = SettingsDialog(Config(panel_width_mode="fixed", panel_width=820))
+    assert dialog._panel_width.isEnabled() is True
+    assert dialog.current_config().panel_width == 820
+    # Switching to fit-to-text disables the width value (it no longer applies).
+    dialog._panel_width_mode.setCurrentIndex(dialog._panel_width_mode.findData("fit"))
+    assert dialog._panel_width.isEnabled() is False
+    assert dialog.current_config().panel_width_mode == "fit"
+    dialog.close()
+
+
 def test_all_tabs_fit_without_scroll_arrows(qapp):
     from PyQt6.QtWidgets import QToolButton
 

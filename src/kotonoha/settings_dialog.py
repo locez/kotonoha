@@ -12,7 +12,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QIcon, QMouseEvent, QPainter, QPaintEvent, QPen, QShowEvent
+from PyQt6.QtGui import QColor, QFont, QIcon, QMouseEvent, QPainter, QPaintEvent, QPen, QShowEvent
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFontComboBox,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -135,6 +136,17 @@ _CLOSE_STYLE = (
 # real bundled file — an inline data URI silently renders nothing, leaving a bare
 # filled square. Qt's SVG image plugin renders it.
 _CHECKMARK_PATH = Path(__file__).with_name("assets") / "checkmark.svg"
+
+# (QFont weight 100..900, string key) offered by the weight picker, light to heavy.
+_FONT_WEIGHTS: tuple[tuple[int, str], ...] = (
+    (300, "weight.light"),
+    (400, "weight.regular"),
+    (500, "weight.medium"),
+    (600, "weight.semibold"),
+    (700, "weight.bold"),
+    (800, "weight.extrabold"),
+    (900, "weight.black"),
+)
 
 
 def _skin(accent: str) -> str:
@@ -317,25 +329,54 @@ class SettingsDialog(QDialog):
         self._icon_list.setCurrentItem(selected_item or default_item)
         form.addRow(t("set.app_icon"), self._icon_list)
 
+        # --- Typography: family, weight, and an independent size per line role. ---
+        self._font_family = QFontComboBox()
+        self._font_family.setCurrentFont(QFont(c.font_family.split(",")[0].strip().strip("'\"")))
+        form.addRow(t("set.font_family"), self._font_family)
+
+        self._font_weight = QComboBox()
+        for value, key in _FONT_WEIGHTS:
+            self._font_weight.addItem(t(key), value)
+        weight_index = self._font_weight.findData(c.font_weight)
+        self._font_weight.setCurrentIndex(weight_index if weight_index >= 0 else self._font_weight.count() - 1)
+        form.addRow(t("set.font_weight"), self._font_weight)
+
         self._font_size = self._spin(8, 120, c.font_size, " px")
         form.addRow(t("set.font_size"), self._font_size)
+        self._context_font_size = self._spin(8, 100, c.context_font_size, " px")
+        form.addRow(t("set.context_font_size"), self._context_font_size)
+        self._translation_font_size = self._spin(8, 100, c.translation_font_size, " px")
+        form.addRow(t("set.translation_font_size"), self._translation_font_size)
 
-        # Panel style decides which opacity the single slider edits.
+        # --- Panel: style, size mode, then the shared opacity + tint. ---
         self._panel = QComboBox()
         self._panel.addItem(t("set.panel.pill"), "pill")
         self._panel.addItem(t("set.panel.frost"), "frost")
         self._panel.addItem(t("set.panel.text"), "text")
         panel_index = self._panel.findData(c.panel_style)
         self._panel.setCurrentIndex(panel_index if panel_index >= 0 else 0)
+        form.addRow(t("set.panel_style"), self._panel)
+
+        self._panel_width_mode = QComboBox()
+        self._panel_width_mode.addItem(t("panelsize.fit"), "fit")
+        self._panel_width_mode.addItem(t("panelsize.fixed"), "fixed")
+        width_index = self._panel_width_mode.findData(c.panel_width_mode)
+        self._panel_width_mode.setCurrentIndex(width_index if width_index >= 0 else 0)
+        form.addRow(t("set.panel_size"), self._panel_width_mode)
+
+        self._panel_width = self._spin(240, 2400, c.panel_width, " px")
+        self._panel_width.setSingleStep(20)
+        form.addRow(t("set.panel_width"), self._panel_width)
+        form.addRow(self._hint(t("set.panel_size_hint")))
+        self._panel_width_mode.currentIndexChanged.connect(self._update_panel_width_enabled)
+        self._update_panel_width_enabled()
 
         # Each panel style keeps its own opacity (0..100%); the black panel can go
         # fully transparent, the frosted one to pure blur.
         self._panel_opacity = {"opacity": c.opacity, "frost_opacity": c.frost_opacity}
         self._opacity_active_key = self._opacity_key()
         self._opacity = self._spin(0, 100, round(self._panel_opacity[self._opacity_active_key] * 100), " %")
-
         form.addRow(t("set.opacity"), self._opacity)
-        form.addRow(t("set.panel_style"), self._panel)
         self._panel.currentIndexChanged.connect(self._on_panel_style_changed)
 
         self._panel_tint = QCheckBox(t("set.panel_tint"))
@@ -373,6 +414,10 @@ class SettingsDialog(QDialog):
             self._accent.insertItem(insert_at, label, triple)
             self._custom_index = insert_at
         self._accent.setCurrentIndex(self._custom_index)
+
+    def _update_panel_width_enabled(self) -> None:
+        # The width value only applies to the "Fixed width" mode.
+        self._panel_width.setEnabled(str(self._panel_width_mode.currentData()) == "fixed")
 
     def _opacity_key(self) -> str:
         return "frost_opacity" if str(self._panel.currentData()) == "frost" else "opacity"
@@ -521,10 +566,16 @@ class SettingsDialog(QDialog):
             ui_language=str(self._ui_language.currentData()),
             lyrics_script=str(self._lyrics_script.currentData()),
             icon_name=icon_name,
+            font_family=self._font_family.currentFont().family(),
+            font_weight=int(self._font_weight.currentData()),
             font_size=self._font_size.value(),
+            context_font_size=self._context_font_size.value(),
+            translation_font_size=self._translation_font_size.value(),
             opacity=self._panel_opacity["opacity"],
             frost_opacity=self._panel_opacity["frost_opacity"],
             panel_style=str(self._panel.currentData()),
+            panel_width_mode=str(self._panel_width_mode.currentData()),
+            panel_width=self._panel_width.value(),
             panel_accent_tint=self._panel_tint.isChecked(),
             accent_start=accent_start,
             accent_end=accent_end,

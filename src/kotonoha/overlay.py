@@ -41,6 +41,13 @@ RENDER_INTERVAL_MS = 16  # ~60fps
 CONTROL_ICON_COLOR = "#9AA0A6"  # soft grey so the lock/gear don't glare against the panel
 PILL_RADIUS = 16  # corner radius shared by the pill paint and the input region
 
+# Appended after the user's chosen family so a Latin-only font (e.g. Inter) still
+# renders CJK lyrics via Qt's per-glyph substitution instead of showing tofu.
+_FALLBACK_FAMILIES = (
+    "Noto Sans CJK SC", "Noto Sans CJK JP", "Noto Sans CJK KR",
+    "Source Han Sans SC", "Microsoft YaHei", "PingFang SC", "Segoe UI", "sans-serif",
+)
+
 
 CONTROL_BUTTON_STYLE = """
 QToolButton {
@@ -189,33 +196,43 @@ class LyricsOverlay(QWidget):
         label.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         return label
 
+    def _set_context_text(self, label: QLabel, text: str) -> None:
+        """Set a prev/next context line, eliding a too-long line with an ellipsis so
+        it never overflows the panel (matters most in fixed-width mode)."""
+        width = label.maximumWidth()
+        if text and 0 < width < 16_777_215:
+            text = label.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight, width)
+        label.setText(text)
+
     # --- config ---
 
     def apply_config(self, config: Config) -> None:
         self._config = config
         self._passthrough = config.passthrough
         self._update_lock_icon()
-        # Long lines scroll instead of overflowing: cap the labels to the panel width.
-        avail = max(200, self._window_size()[0] - 56)
+        # Configure the pill width for the fit/fixed mode; `avail` is the inner width
+        # the lyric labels may use before a long line scrolls (main) or elides (rest).
+        avail = self._configure_panel_width()
+        families = self._font_families()
 
         current_font = QFont()
-        current_font.setFamily(config.font_family.split(",")[0].strip().strip("'\""))
+        current_font.setFamilies(families)
         current_font.setPixelSize(config.font_size)
-        current_font.setWeight(QFont.Weight.ExtraBold)
+        current_font.setWeight(QFont.Weight(config.font_weight))
         self._current.set_style(current_font, config.accent_start, config.accent_end, config.accent_sweep)
         self._current.set_max_width(avail)
 
-        context_size = max(10, int(config.font_size * 0.6))
+        family_stack = ", ".join(f"'{name}'" for name in families)
         for label in (self._prev_label, self._next_label):
             label.setStyleSheet(
-                f"color: rgba(255,255,255,120); font-size: {context_size}px; "
-                f"font-family: {config.font_family};"
+                f"color: rgba(255,255,255,120); font-size: {config.context_font_size}px; "
+                f"font-family: {family_stack};"
             )
             label.setMaximumWidth(avail)
 
         trans_font = QFont()
-        trans_font.setFamily(config.font_family.split(",")[0].strip().strip("'\""))
-        trans_font.setPixelSize(max(10, int(config.font_size * 0.55)))
+        trans_font.setFamilies(families)
+        trans_font.setPixelSize(config.translation_font_size)
         trans_font.setItalic(True)
         self._translation.set_style(trans_font, config.accent_start, config.accent_end, config.accent_sweep)
         self._translation.set_max_width(avail)
@@ -232,10 +249,36 @@ class LyricsOverlay(QWidget):
 
     # --- geometry (fixed-size, margin-positioned panel) ---
 
+    def _font_families(self) -> list[str]:
+        """The chosen family first, then the CJK/system fallback chain, so a
+        Latin-only pick still renders Chinese/Japanese/Korean lyrics."""
+        chosen = self._config.font_family.split(",")[0].strip().strip("'\"")
+        families = [chosen] if chosen else []
+        for name in _FALLBACK_FAMILIES:
+            if name not in families:
+                families.append(name)
+        return families
+
+    def _configure_panel_width(self) -> int:
+        """Set the pill container's width for the current mode and return the inner
+        width available to the lyric text. Fixed mode pins the pill so it does not
+        resize with the line length; fit mode lets it hug the text as before."""
+        window_w = self._window_size()[0]
+        if self._config.panel_width_mode == "fixed":
+            pill_w = max(240, min(self._config.panel_width, window_w - 8))
+            self._container.setFixedWidth(pill_w)
+            return max(120, pill_w - 44)  # minus the container's 22+22 h-margins
+        # Fit-to-text: release any pinned width so the pill hugs its content again.
+        self._container.setMinimumWidth(0)
+        self._container.setMaximumWidth(16_777_215)
+        return max(200, window_w - 56)
+
     def _band_height(self) -> int:
-        fs = self._config.font_size
-        lines = int(fs * 1.5) + 3 * max(14, int(fs * 0.7))
-        chrome = 22 + 24 + 30  # control bar + container v-margins + spacing/slack
+        main = self._config.font_size
+        context = self._config.context_font_size
+        translation = self._config.translation_font_size if self._config.show_translation else 0
+        lines = int(main * 1.6) + 2 * int(context * 1.4) + int(translation * 1.6)
+        chrome = 22 + 24 + 34  # control bar + container v-margins + spacing/slack
         return max(140, lines + chrome)
 
     def _target_screen(self):
@@ -244,7 +287,11 @@ class LyricsOverlay(QWidget):
     def _window_size(self) -> tuple[int, int]:
         screen = self._target_screen()
         screen_w = screen.geometry().width() if screen else 1280
-        width = min(int(screen_w * 0.9), 1100)
+        if self._config.panel_width_mode == "fixed":
+            pill = max(240, min(self._config.panel_width, int(screen_w * 0.98)))
+            width = min(int(screen_w * 0.98), pill + 48)  # small transparent drag margin
+        else:
+            width = min(int(screen_w * 0.9), 1100)
         return width, self._band_height()
 
     def _compute_layer_pos(self, width: int, height: int) -> QPoint:
@@ -300,8 +347,8 @@ class LyricsOverlay(QWidget):
         assert current is not None  # snapshot.current is non-None here (checked above)
         previous = self._convert_line(snapshot.previous)
         next_line = self._convert_line(snapshot.next)
-        self._prev_label.setText(previous.text if previous else "")
-        self._next_label.setText(next_line.text if next_line else "")
+        self._set_context_text(self._prev_label, previous.text if previous else "")
+        self._set_context_text(self._next_label, next_line.text if next_line else "")
         self._current.set_line(current, snapshot.word_karaoke)
 
         if self._config.show_translation and current.translation:

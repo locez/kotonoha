@@ -49,10 +49,15 @@ class Config:
     margin_x: int = 0                # horizontal nudge (px)
     # Typography / appearance
     font_family: str = "Inter, 'Segoe UI', 'Microsoft YaHei', sans-serif"
-    font_size: int = 24             # current-line size (px)
+    font_weight: int = 800           # main-line weight on the QFont 100..900 scale (800 = extra bold)
+    font_size: int = 24             # main (current) line size (px)
+    context_font_size: int = 14      # previous/next line size (px)
+    translation_font_size: int = 13  # translation line size (px)
     opacity: float = 1.0            # black-panel fill opacity 0.0..1.0
     frost_opacity: float = 0.6       # frosted-panel fill opacity 0.0..1.0 (0 = pure blur)
     panel_style: str = "pill"        # "pill" (black) | "frost" (frosted glass) | "text" (no panel)
+    panel_width_mode: str = "fit"    # "fit" (hug the text) | "fixed" (constant width)
+    panel_width: int = 720           # panel width in px when panel_width_mode == "fixed"
     panel_accent_tint: bool = False  # tint the black panel toward the accent colour
     icon_name: str = DEFAULT_ICON_NAME
     # Behaviour
@@ -79,10 +84,15 @@ class Config:
             margin_edge=_clamp_int(self.margin_edge, 0, 4000, 64),
             margin_x=_clamp_int(self.margin_x, -4000, 4000, 0),
             font_family=str(self.font_family),
+            font_weight=_clamp_int(self.font_weight, 100, 900, 800),
             font_size=_clamp_int(self.font_size, 8, 200, 24),
+            context_font_size=_clamp_int(self.context_font_size, 8, 120, 14),
+            translation_font_size=_clamp_int(self.translation_font_size, 8, 120, 13),
             opacity=_clamp_float(self.opacity, 0.0, 1.0, 1.0),
             frost_opacity=_clamp_float(self.frost_opacity, 0.0, 1.0, 0.6),
             panel_style=self.panel_style if self.panel_style in ("pill", "frost", "text") else "pill",
+            panel_width_mode=self.panel_width_mode if self.panel_width_mode in ("fit", "fixed") else "fit",
+            panel_width=_clamp_int(self.panel_width, 240, 2400, 720),
             panel_accent_tint=bool(self.panel_accent_tint),
             icon_name=_clean_icon_name(self.icon_name),
             passthrough=bool(self.passthrough),
