@@ -455,6 +455,11 @@ class SettingsDialog(QDialog):
             self._sources_list.addItem(item)
         layout.addWidget(self._sources_list)
 
+        self._prefer_best = QCheckBox(t("set.prefer_best"))
+        self._prefer_best.setChecked(self._config.prefer_best_lyrics)
+        layout.addWidget(self._prefer_best)
+        layout.addWidget(self._hint(t("set.prefer_best_hint")))
+
         self._cache_enabled = QCheckBox(t("set.cache_enabled"))
         self._cache_enabled.setChecked(self._config.cache_enabled)
         layout.addWidget(self._cache_enabled)
@@ -533,6 +538,7 @@ class SettingsDialog(QDialog):
             passthrough=self._passthrough.isChecked(),
             port=self._port.value(),
             lyrics_sources=self._selected_sources(),
+            prefer_best_lyrics=self._prefer_best.isChecked(),
             cache_enabled=self._cache_enabled.isChecked(),
         ).clamped()
 

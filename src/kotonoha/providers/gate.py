@@ -13,6 +13,7 @@ from ..model import LyricsSnapshot
 class CiderMatch:
     client_id: int
     snapshot: LyricsSnapshot
+    confidence: MatchConfidence = MatchConfidence.HIGH
 
 
 @dataclass(frozen=True)
@@ -72,9 +73,14 @@ class SourceGate:
         )
 
     @staticmethod
-    def _snapshot_matches(snapshot: LyricsSnapshot, track: TrackMetadata, *, require_lyrics: bool) -> bool:
+    def _accepted_confidence(
+        snapshot: LyricsSnapshot, track: TrackMetadata, *, require_lyrics: bool
+    ) -> MatchConfidence | None:
+        """Confidence at which this snapshot is accepted as the current track, or
+        None if it is not a match. HIGH is always accepted; MEDIUM only when the
+        title is exact (a cover/compilation may report a looser artist)."""
         if (require_lyrics and not snapshot.found) or not snapshot.title:
-            return False
+            return None
         candidate = Candidate(
             song_id=snapshot.song_id or "cider",
             title=snapshot.title,
@@ -82,15 +88,22 @@ class SourceGate:
             duration_s=None,
         )
         evidence = evaluate_match(candidate, track)
-        return evidence.confidence is MatchConfidence.HIGH or (
-            evidence.confidence is MatchConfidence.MEDIUM and evidence.title_exact
-        )
+        if evidence.confidence is MatchConfidence.HIGH:
+            return MatchConfidence.HIGH
+        if evidence.confidence is MatchConfidence.MEDIUM and evidence.title_exact:
+            return MatchConfidence.MEDIUM
+        return None
+
+    @staticmethod
+    def _snapshot_matches(snapshot: LyricsSnapshot, track: TrackMetadata, *, require_lyrics: bool) -> bool:
+        return SourceGate._accepted_confidence(snapshot, track, require_lyrics=require_lyrics) is not None
 
     def current_match(self, track: TrackMetadata) -> CiderMatch | None:
         ordered = sorted(self._snapshots.items(), key=lambda item: item[1][0], reverse=True)
         for client_id, (_sequence, snapshot) in ordered:
-            if self._snapshot_matches(snapshot, track, require_lyrics=True):
-                return CiderMatch(client_id, snapshot)
+            confidence = self._accepted_confidence(snapshot, track, require_lyrics=True)
+            if confidence is not None:
+                return CiderMatch(client_id, snapshot, confidence)
         return None
 
     def current_timing(self, track: TrackMetadata) -> CiderTiming | None:

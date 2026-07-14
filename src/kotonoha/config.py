@@ -62,6 +62,7 @@ class Config:
     show_translation: bool = True    # bilingual
     translation_language: str = "auto"  # "auto" -> from system locale, else an Apple tag (zh-Hans/en/ja/...)
     lyrics_sources: list[str] = field(default_factory=lambda: list(DEFAULT_LYRICS_SOURCES))
+    prefer_best_lyrics: bool = True  # query sources concurrently and pick the best-quality match
     cache_enabled: bool = True
     ui_language: str = "auto"        # UI language: "auto" -> system locale, else zh-Hans/zh-Hant/ja/en
     lyrics_script: str = "off"       # display-convert lyrics: "off" | "zh-Hans" | "zh-Hant"
@@ -93,6 +94,7 @@ class Config:
             accent_end=str(self.accent_end),
             accent_sweep=str(self.accent_sweep),
             lyrics_sources=_clean_sources(self.lyrics_sources),
+            prefer_best_lyrics=bool(self.prefer_best_lyrics),
             cache_enabled=bool(self.cache_enabled),
             ui_language=str(self.ui_language),
             lyrics_script=self.lyrics_script if self.lyrics_script in ("off", "zh-Hans", "zh-Hant") else "off",

@@ -58,6 +58,9 @@ class RecordingResolver:
     def set_cache_enabled(self, _enabled):
         return None
 
+    def set_prefer_best(self, _enabled):
+        return None
+
     async def clear_cache(self):
         return None
 

@@ -15,7 +15,7 @@ TRACK = TrackMetadata("Song", "Artist", "Album", 180.0)
 SESSION = cast(aiohttp.ClientSession, None)
 
 
-def artifact(*, provider: str = "netease") -> LyricsArtifact:
+def artifact(*, provider: str = "netease", confidence: MatchConfidence = MatchConfidence.HIGH) -> LyricsArtifact:
     return LyricsArtifact(
         provider=provider,
         provider_song_id=f"{provider}-1",
@@ -25,7 +25,7 @@ def artifact(*, provider: str = "netease") -> LyricsArtifact:
         duration_s=180.0,
         payload={"lrc": "[00:01.00]line"},
         lines=(LyricLine(0, "L0", 1.0, 6.0, "line", ""),),
-        confidence=MatchConfidence.HIGH,
+        confidence=confidence,
     )
 
 
@@ -72,6 +72,7 @@ def resolver_with_fakes(
     cider_match=None,
     cache_enabled=True,
     cache=None,
+    prefer_best=False,
 ):
     network_hits = network_hits or {}
 
@@ -88,6 +89,7 @@ def resolver_with_fakes(
         providers={name: adapter(name) for name in ("netease", "lrclib")},
         cache_enabled=cache_enabled,
         negative_ttl=30.0,
+        prefer_best=prefer_best,
     )
 
 
@@ -214,3 +216,153 @@ async def test_network_timeout_log_includes_exception_type(caplog):
 
     assert await resolver.resolve(SESSION, TRACK, ["netease"]) is None
     assert "TimeoutError" in caplog.text
+
+
+async def test_best_mode_prefers_higher_confidence_over_first_source():
+    # netease is first but only MEDIUM; lrclib is HIGH. In "best" mode the HIGH
+    # result wins even though a lower-ranked source produced it.
+    calls = []
+    resolver = resolver_with_fakes(
+        calls,
+        prefer_best=True,
+        network_hits={
+            "netease": artifact(provider="netease", confidence=MatchConfidence.MEDIUM),
+            "lrclib": artifact(provider="lrclib", confidence=MatchConfidence.HIGH),
+        },
+    )
+
+    result = await resolver.resolve(SESSION, TRACK, ["netease", "lrclib"])
+
+    assert result is not None
+    assert result.source == "lrclib"
+    assert result.confidence is MatchConfidence.HIGH
+    # Both sources are fetched concurrently rather than strictly in order.
+    assert "network:netease" in calls
+    assert "network:lrclib" in calls
+
+
+async def test_best_mode_same_confidence_keeps_configured_order():
+    # Equal confidence -> the earlier-ordered source wins (respects the user's order).
+    calls = []
+    resolver = resolver_with_fakes(
+        calls,
+        prefer_best=True,
+        network_hits={
+            "netease": artifact(provider="netease", confidence=MatchConfidence.HIGH),
+            "lrclib": artifact(provider="lrclib", confidence=MatchConfidence.HIGH),
+        },
+    )
+
+    result = await resolver.resolve(SESSION, TRACK, ["netease", "lrclib"])
+
+    assert result is not None
+    assert result.source == "netease"
+
+
+async def test_best_mode_cider_at_top_skips_network():
+    # A cider match at the top of the order is HIGH and unbeatable, so best mode
+    # returns it without launching any network fetch.
+    calls = []
+    snapshot = LyricsSnapshot(found=True, title="Song", artist="Artist")
+    resolver = resolver_with_fakes(calls, prefer_best=True, cider_match=CiderMatch(12, snapshot))
+
+    result = await resolver.resolve(SESSION, TRACK, ["cider", "netease"])
+
+    assert result is not None
+    assert result.source == "cider"
+    assert result.live_snapshot is snapshot
+    assert "network:netease" not in calls
+
+
+async def test_best_mode_cached_hit_short_circuits_network():
+    # A cached hit on any ordered source returns before any network fetch begins.
+    calls = []
+    resolver = resolver_with_fakes(
+        calls,
+        prefer_best=True,
+        cache_hits={"netease": artifact(provider="netease")},
+    )
+
+    result = await resolver.resolve(SESSION, TRACK, ["netease", "lrclib"])
+
+    assert result is not None
+    assert result.source == "netease"
+    assert "network:netease" not in calls
+    assert "network:lrclib" not in calls
+
+
+async def test_best_mode_cider_beats_lower_priority_cache_hit():
+    # cider is configured above netease and has a live HIGH match; it must win the
+    # HIGH tie over a netease cache hit (configured order breaks the tie), no network.
+    calls = []
+    snapshot = LyricsSnapshot(found=True, title="Song", artist="Artist")
+    resolver = resolver_with_fakes(
+        calls,
+        prefer_best=True,
+        cider_match=CiderMatch(12, snapshot, MatchConfidence.HIGH),
+        cache_hits={"netease": artifact(provider="netease")},
+    )
+
+    result = await resolver.resolve(SESSION, TRACK, ["cider", "netease"])
+
+    assert result is not None
+    assert result.source == "cider"
+    assert "network:netease" not in calls
+
+
+async def test_best_mode_medium_cider_does_not_block_a_network_high():
+    # A MEDIUM cider match must not short-circuit the network: a genuine network
+    # HIGH beats it regardless of cider's position.
+    calls = []
+    snapshot = LyricsSnapshot(found=True, title="Song", artist="")
+    resolver = resolver_with_fakes(
+        calls,
+        prefer_best=True,
+        cider_match=CiderMatch(12, snapshot, MatchConfidence.MEDIUM),
+        network_hits={"netease": artifact(provider="netease", confidence=MatchConfidence.HIGH)},
+    )
+
+    result = await resolver.resolve(SESSION, TRACK, ["cider", "netease"])
+
+    assert result is not None
+    assert result.source == "netease"
+    assert result.confidence is MatchConfidence.HIGH
+    assert "network:netease" in calls
+
+
+async def test_best_mode_uncached_top_source_wins_over_cached_lower_source():
+    # netease (higher priority) is uncached but resolves HIGH from the network;
+    # lrclib (lower priority) is a HIGH cache hit. The configured order breaks the
+    # HIGH tie, so netease must win even though lrclib was free.
+    calls = []
+    resolver = resolver_with_fakes(
+        calls,
+        prefer_best=True,
+        cache_hits={"lrclib": artifact(provider="lrclib")},
+        network_hits={"netease": artifact(provider="netease", confidence=MatchConfidence.HIGH)},
+    )
+
+    result = await resolver.resolve(SESSION, TRACK, ["netease", "lrclib"])
+
+    assert result is not None
+    assert result.source == "netease"
+    assert "network:netease" in calls
+    assert "network:lrclib" not in calls  # lrclib was resolved from cache, no fetch
+
+
+async def test_best_mode_duplicate_source_fetches_once():
+    # resolve() is public with no de-dup precondition; a repeated source must not
+    # spawn a second (orphaned) fetch task in best mode.
+    calls = []
+    resolver = resolver_with_fakes(
+        calls,
+        prefer_best=True,
+        cache_enabled=False,
+        network_hits={"netease": artifact(provider="netease")},
+    )
+
+    result = await resolver.resolve(SESSION, TRACK, ["netease", "netease", "lrclib"])
+
+    assert result is not None
+    assert result.source == "netease"
+    assert calls.count("network:netease") == 1

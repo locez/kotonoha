@@ -125,6 +125,22 @@ STRINGS: dict[str, dict[str, str]] = {
     "src.netease": {"en": "Netease", "zh-Hans": "网易云", "zh-Hant": "網易雲", "ja": "网易云"},
     "src.lrclib": {"en": "lrclib", "zh-Hans": "lrclib", "zh-Hant": "lrclib", "ja": "lrclib"},
     "src.cider": {"en": "Cider", "zh-Hans": "Cider 自带", "zh-Hant": "Cider 自帶", "ja": "Cider 内蔵"},
+    "set.prefer_best": {
+        "en": "Prefer best-matching lyrics",
+        "zh-Hans": "优先匹配最佳歌词",
+        "zh-Hant": "優先匹配最佳歌詞",
+        "ja": "最も一致する歌詞を優先",
+    },
+    "set.prefer_best_hint": {
+        "en": "Query the enabled sources at the same time and keep the highest-confidence "
+              "match (ties keep your order). Off = stop at the first source that has lyrics.",
+        "zh-Hans": "同时查询已启用的来源，保留匹配度最高的一个（相同则按你的排序）。"
+                   "关闭则按顺序取第一个有歌词的来源。",
+        "zh-Hant": "同時查詢已啟用的來源，保留匹配度最高的一個（相同則按你的排序）。"
+                   "關閉則按順序取第一個有歌詞的來源。",
+        "ja": "有効なソースを同時に照会し、最も確度の高い一致を採用（同点は指定順）。"
+              "オフにすると最初に歌詞が見つかったソースで停止。",
+    },
     "set.cache_enabled": {
         "en": "Enable local lyrics cache",
         "zh-Hans": "启用本地歌词缓存",

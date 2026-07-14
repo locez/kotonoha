@@ -80,6 +80,8 @@ class ResolverLike(Protocol):
 
     def set_cache_enabled(self, enabled: bool, /) -> None: ...
 
+    def set_prefer_best(self, enabled: bool, /) -> None: ...
+
     async def clear_cache(self) -> None: ...
 
 
@@ -136,6 +138,7 @@ class MprisProvider:
         self._content_owner = "none"
         self._provider_name = ""
         self._cache_enabled = True
+        self._prefer_best = True
         self._gate_revision = self._gate.revision
 
     def set_lyrics_sources(self, sources: list[str]) -> None:
@@ -152,6 +155,14 @@ class MprisProvider:
             return
         self._cache_enabled = updated
         self._resolver.set_cache_enabled(updated)
+        self._force_reload()
+
+    def set_prefer_best(self, enabled: bool) -> None:
+        updated = bool(enabled)
+        if updated == self._prefer_best:
+            return
+        self._prefer_best = updated
+        self._resolver.set_prefer_best(updated)
         self._force_reload()
 
     async def clear_cache(self) -> None:

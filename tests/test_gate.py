@@ -1,5 +1,5 @@
 from kotonoha.config import Config
-from kotonoha.lyrics.match import TrackMetadata
+from kotonoha.lyrics.match import MatchConfidence, TrackMetadata
 from kotonoha.model import LyricsSnapshot
 from kotonoha.providers.gate import SourceGate
 
@@ -83,6 +83,24 @@ def test_cider_exact_title_can_cover_transient_missing_mpris_artist():
     gate = SourceGate()
     gate.observe_snapshot(10, LyricsSnapshot(found=True, title="Song", artist="Artist"))
     assert gate.current_match(TrackMetadata("Song", "")) is not None
+
+
+def test_current_match_reports_high_confidence_for_a_full_identity():
+    gate = SourceGate()
+    gate.observe_snapshot(10, LyricsSnapshot(found=True, title="Song", artist="Artist"))
+    match = gate.current_match(TrackMetadata("Song", "Artist"))
+    assert match is not None
+    assert match.confidence is MatchConfidence.HIGH
+
+
+def test_current_match_reports_medium_confidence_for_a_title_only_match():
+    # Exact title but the track's artist is missing -> accepted only at MEDIUM, so a
+    # genuine network HIGH can still overrule it in "best" mode.
+    gate = SourceGate()
+    gate.observe_snapshot(10, LyricsSnapshot(found=True, title="Song", artist="Someone Else"))
+    match = gate.current_match(TrackMetadata("Song", ""))
+    assert match is not None
+    assert match.confidence is MatchConfidence.MEDIUM
 
 
 def test_lyrics_sources_default():
