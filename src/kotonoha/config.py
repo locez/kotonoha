@@ -53,7 +53,7 @@ class Config:
     font_size: int = 20             # main (current) line size (px)
     context_font_size: int = 14      # previous/next line size (px)
     translation_font_size: int = 13  # translation line size (px)
-    opacity: float = 1.0            # black-panel fill opacity 0.0..1.0
+    opacity: float = 0.8            # black-panel fill opacity 0.0..1.0 (fully opaque reads harsh)
     frost_opacity: float = 0.6       # frosted-panel fill opacity 0.0..1.0 (0 = pure blur)
     panel_style: str = "pill"        # "pill" (black) | "white" | "frost" (frosted glass) | "text" (no panel)
     panel_width_mode: str = "fit"    # "fit" (hug the text) | "fixed" (constant width)
@@ -101,7 +101,7 @@ class Config:
             font_size=_clamp_int(self.font_size, 8, 120, 20),
             context_font_size=_clamp_int(self.context_font_size, 8, 120, 14),
             translation_font_size=_clamp_int(self.translation_font_size, 8, 120, 13),
-            opacity=_clamp_float(self.opacity, 0.0, 1.0, 1.0),
+            opacity=_clamp_float(self.opacity, 0.0, 1.0, 0.8),
             frost_opacity=_clamp_float(self.frost_opacity, 0.0, 1.0, 0.6),
             panel_style=self.panel_style if self.panel_style in ("pill", "white", "frost", "text") else "pill",
             panel_width_mode=self.panel_width_mode if self.panel_width_mode in ("fit", "fixed") else "fit",

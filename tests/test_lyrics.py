@@ -199,11 +199,25 @@ def test_noisy_title_queries_salvage_cluttered_browser_titles():
         "【HD】陳一發兒- 童話鎮 [歌詞字幕][完整高清音] Chen Yifa - Fairy Town BELLA PING MUSIC CHANNEL", ""
     )
     queries = noisy_title_queries(track)
-    assert "陳一發兒 童話鎮" in queries  # CJK run pulled out
+    assert any("陳一發兒" in q and "童話鎮" in q for q in queries)  # CJK run pulled out
     assert "Chen Yifa Fairy Town" in queries  # Latin run, channel tail dropped
     # Corner-bracket titles: the title inside 「」is kept, upload noise removed.
     lemon = noisy_title_queries(TrackMetadata("米津玄師 MV「Lemon」【完整高清】YouTube Music", ""))
     assert any("Lemon" in q and "米津玄師" in q for q in lemon)
+
+
+def test_noisy_title_queries_keep_a_title_that_lives_inside_brackets():
+    from kotonoha.lyrics.match import noisy_title_queries
+
+    # Some channels put the SONG TITLE in 【】/[ ] — it must be kept, not stripped
+    # like the junk brackets (【HD】, [歌詞字幕]) are.
+    q1 = noisy_title_queries(TrackMetadata("薛之謙 Joker Xue【演員】Official Music Video", ""))
+    assert any("薛之謙" in q and "演員" in q for q in q1)
+    q2 = noisy_title_queries(TrackMetadata("告五人 Accusefive [ 唯一 The One And Only ] Official MV", ""))
+    assert any("告五人" in q and "唯一" in q for q in q2)
+    # ...while a junk-only bracket is still dropped.
+    q3 = noisy_title_queries(TrackMetadata("【HD】周杰倫 - 晴天 [官方MV][歌詞字幕] Jay Chou", ""))
+    assert any(q == "周杰倫 晴天" for q in q3)
 
 
 def test_generic_alias_without_track_artist_does_not_reach_high():

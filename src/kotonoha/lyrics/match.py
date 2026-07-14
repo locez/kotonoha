@@ -347,7 +347,7 @@ def query_variants(track: TrackMetadata, *, fuzzy: bool = False) -> tuple[str, .
     return tuple(dict.fromkeys(value for value in forms if value))
 
 
-_BRACKETED = re.compile(r"[【\[（(][^】\]）)]*[】\]）)]")
+_BRACKETED = re.compile(r"[【\[（(]([^】\]）)]*)[】\]）)]")
 # Corner/angle quotes and separators usually WRAP the title (「Lemon」《告白气球》)
 # rather than junk, so they are flattened to spaces (delimiters), not removed.
 _DELIMITERS = re.compile(r"[「」『』《》〈〉|/_~•・\-–—]+")
@@ -364,12 +364,29 @@ _UPLOAD_NOISE_LATIN = re.compile(
     re.IGNORECASE,
 )
 _UPLOAD_NOISE_CJK = re.compile(
-    r"完整版|无损|無損|高清|超清|画质|畫質|字幕|歌词|歌詞|官方|试听|試聽|现场|現場|直播"
+    r"高畫質|高画质|超高清|高清|超清|標清|完整版|完整|无损|無損|音質|音质|画质|畫質|字幕|歌词|歌詞|官方|"
+    r"试听|試聽|现场|現場|直播|電視劇|电视剧|插曲|主題曲|主题曲|片頭曲|片头曲|片尾曲|主題歌|主题歌"
 )
 _CJK_CLASS = "㐀-鿿豈-﫿぀-ヿ가-힯"
 _CJK_TOKEN = re.compile(rf"[{_CJK_CLASS}]+")
 _CJK_ONE = re.compile(rf"[{_CJK_CLASS}]")
+_NONWORD = re.compile(rf"[^\w{_CJK_CLASS}]+")
 _LATIN_TOKEN = re.compile(r"[0-9A-Za-z][0-9A-Za-z'’&.]*")
+
+
+def _debracket(text: str) -> str:
+    """Replace 【…】 / […] / (…) segments: drop the ones whose content is only
+    upload noise (【HD】, [歌詞字幕], (Official MV)), but KEEP the content of the
+    rest — some channels put the actual song title in brackets (【演員】, [ 唯一 The
+    One And Only ]), and blindly stripping every bracket loses the title."""
+    def keep_or_drop(match: re.Match[str]) -> str:
+        inner = match.group(1)
+        residue = _UPLOAD_NOISE_CJK.sub("", _UPLOAD_NOISE_LATIN.sub("", inner))
+        residue = _NONWORD.sub("", residue)
+        substantial = len(_CJK_ONE.findall(residue)) >= 2 or len(residue) >= 4
+        return f" {inner} " if substantial else " "
+
+    return _BRACKETED.sub(keep_or_drop, text)
 _WHITESPACE = re.compile(r"\s+")
 
 
@@ -380,7 +397,7 @@ def noisy_title_queries(track: TrackMetadata) -> tuple[str, ...]:
     channel-tagged title like "【HD】陳一發兒- 童話鎮 [歌詞字幕] Chen Yifa - Fairy Town
     BELLA PING MUSIC CHANNEL" still yields "陳一發兒 童話鎮" and "Chen Yifa Fairy
     Town" to search on. A trailing ALL-CAPS channel/uploader tail is dropped."""
-    stripped = _BRACKETED.sub(" ", track.title)
+    stripped = _debracket(track.title)
     # CJK noise first: removing 官方 from "官方MV" isolates the "MV" so the Latin pass
     # can then strip it (running Latin first would leave "MV" fused to 官方).
     stripped = _UPLOAD_NOISE_CJK.sub(" ", stripped)

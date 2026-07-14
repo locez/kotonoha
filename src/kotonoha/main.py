@@ -68,6 +68,10 @@ def entry_point() -> int:
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    # qasync logs every thread-pool callback at DEBUG — including the full args, so a
+    # cached LyricsArtifact dumps the entire lyric text on each store. Keep -v about
+    # Kotonoha's own logs and mute that third-party firehose.
+    logging.getLogger("qasync").setLevel(logging.INFO)
 
     # Single instance: a second launch would just stack another tray icon + overlay.
     instance_lock = _single_instance_lock()  # noqa: F841 - held for the process lifetime
