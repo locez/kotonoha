@@ -115,8 +115,9 @@ jobs:
           python3 -c "import kotonoha.main"
           python3 -c "from PyQt6.QtSvg import QSvgRenderer"
           command -v kotonoha
-          bridge=$(python3 -c "import pathlib, kotonoha; print(pathlib.Path(kotonoha.__file__).with_name('libkoto-layer.so'))")
-          test -f "$bridge"
+          bridge_dir=$(python3 -c "import pathlib, kotonoha; print(pathlib.Path(kotonoha.__file__).parent)")
+          mapfile -t bridges < <(find "$bridge_dir" -maxdepth 1 -type f -name 'libkoto-layer*.so' -print)
+          test "${#bridges[@]}" -eq 1
           test -f /usr/share/applications/kotonoha.desktop
           test -f /usr/share/pixmaps/kotonoha.png
           desktop-file-validate /usr/share/applications/kotonoha.desktop
@@ -281,7 +282,12 @@ jobs:
           uvx --from wheel==0.45.1 wheel pack --dest-dir "$repacked_dir" "${unpacked_dirs[0]}"
           packed_wheels=("$repacked_dir"/*.whl)
           test "${#packed_wheels[@]}" -eq 1
-          uvx --from wheel==0.45.1 wheel tags --remove --platform-tag linux_x86_64 "${packed_wheels[0]}"
+          uvx --from wheel==0.45.1 wheel tags \
+            --remove \
+            --python-tag py3 \
+            --abi-tag none \
+            --platform-tag linux_x86_64 \
+            "${packed_wheels[0]}"
           repacked_wheels=("$repacked_dir"/*.whl)
           test "${#repacked_wheels[@]}" -eq 1
           mv "${repacked_wheels[0]}" dist/
