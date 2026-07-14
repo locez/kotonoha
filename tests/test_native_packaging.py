@@ -69,7 +69,7 @@ def test_cmake_builds_and_installs_native_bridge() -> None:
             "KOTONOHA_INSTALL_DIR",
             '"${KOTONOHA_PYTHON_PLATLIB}/kotonoha"',
             "CACHE STRING",
-            "  ON\n)",
+            "  OFF\n)",
             "COMPONENT KotonohaBridge",
             "COMPONENT KotonohaDocumentation",
         ),

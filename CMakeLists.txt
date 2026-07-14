@@ -58,7 +58,7 @@ set(
 option(
   KOTONOHA_STATIC_GNU_RUNTIME
   "Link libstdc++ and libgcc statically when building with GNU C++"
-  ON
+  OFF
 )
 
 add_library(koto-layer SHARED src/kotonoha/layer_shell_bridge.cpp ${KOTONOHA_BLUR_SOURCES})

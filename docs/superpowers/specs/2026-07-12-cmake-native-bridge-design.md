@@ -40,10 +40,10 @@ or pkg-config. CMake does not reproduce the shell script's distribution package 
 
 ## GNU Runtime Linking
 
-The cache option `KOTONOHA_STATIC_GNU_RUNTIME` defaults to `ON`, matching the shell script's default
-`-static-libstdc++ -static-libgcc` behavior. Those flags are applied only when the compiler is GNU.
-Setting the option to `OFF` produces the dynamic GNU runtime linkage used by native distribution
-packages.
+The cache option `KOTONOHA_STATIC_GNU_RUNTIME` defaults to `OFF`, so wheel and native distribution
+builds use the system GNU runtime libraries available in their build environments. Those flags are
+applied only when the compiler is GNU. Setting the option to `ON` enables
+`-static-libstdc++ -static-libgcc` for environments that provide the static runtime libraries.
 
 ## Build And Install Layout
 
