@@ -174,6 +174,10 @@ QSpinBox:hover, QComboBox:hover, QFontComboBox:hover { border-color: %FIELD_BORD
 /* Accent focus ring — clear interactive feedback on the control you're editing. */
 QSpinBox:focus, QComboBox:focus, QFontComboBox:focus { border: 1px solid %ACCENT%; }
 QSpinBox:disabled, QComboBox:disabled { color: %TEXT_DIM%; }
+/* Force the QSS-styled drop-down list instead of a native popup menu: on Breeze /
+   Fusion (KDE) the style otherwise opens a system-palette popup that ignores the
+   dark item-view styling below and renders white on a dark app. */
+QComboBox, QFontComboBox { combobox-popup: 0; }
 QComboBox::drop-down, QFontComboBox::drop-down {
     subcontrol-origin: padding; subcontrol-position: center right;
     border: none; width: 22px;
