@@ -51,13 +51,16 @@ def test_cmake_builds_and_installs_native_bridge() -> None:
     assert_contains(
         cmake,
         (
-            "project(kotonoha_native_bridge LANGUAGES CXX)",
+            "project(kotonoha_native_bridge LANGUAGES C CXX)",
             "find_package(Python3 REQUIRED COMPONENTS Interpreter)",
             "find_package(Qt6 REQUIRED COMPONENTS Core Gui)",
             "find_package(Qt6GuiPrivate REQUIRED)",
             "find_package(LayerShellQt CONFIG REQUIRED)",
             "pkg_check_modules(WaylandClient REQUIRED IMPORTED_TARGET wayland-client)",
-            "add_library(koto-layer SHARED src/kotonoha/layer_shell_bridge.cpp)",
+            # Optional KWin blur protocol codegen (frosted-glass panel).
+            "find_program(WAYLAND_SCANNER wayland-scanner)",
+            "target_compile_definitions(koto-layer PRIVATE KOTONOHA_HAVE_BLUR)",
+            "add_library(koto-layer SHARED src/kotonoha/layer_shell_bridge.cpp ${KOTONOHA_BLUR_SOURCES})",
             "Qt6::GuiPrivate",
             "LayerShellQt::Interface",
             "PkgConfig::WaylandClient",

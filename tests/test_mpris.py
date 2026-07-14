@@ -7,14 +7,28 @@ from kotonoha.providers.mpris import (
 )
 
 
-def observation(track_id, title, artist, *, at, duration=180.0):
+def observation(track_id, title, artist, *, at, duration=180.0, pos=0.0):
     return TrackObservation(
         player_name="org.mpris.MediaPlayer2.test",
         info=TrackInfo(title, artist, "", duration, track_id),
         playback_status="Playing",
-        position_s=0.0,
+        position_s=pos,
         observed_at=at,
     )
+
+
+def test_transition_captures_song_start_position():
+    stab = TrackStabilizer()
+    stab.observe(observation("/a", "A", "Artist", at=0.0, pos=100.0))
+    first = stab.observe(observation("/a", "A", "Artist", at=1.0, pos=101.0))
+    assert first is not None
+    assert first.start_position is None  # first track: join point unknown
+
+    # Transition A -> B; the browser reports a cumulative position of 500s.
+    stab.observe(observation("/b", "B", "Artist", at=2.0, pos=500.0))
+    second = stab.observe(observation("/b", "B", "Artist", at=3.0, pos=501.0))
+    assert second is not None
+    assert second.start_position == 500.0  # captured at B's first sighting
 
 
 def test_parse_basic():
@@ -40,6 +54,21 @@ def test_parse_multiple_artists_joined():
 
 def test_parse_artist_as_plain_string():
     assert parse_metadata({"xesam:artist": "Solo"}).artist == "Solo"
+
+
+def test_parse_strips_chrome_badge_and_youtube_suffix():
+    info = parse_metadata({"xesam:title": "(309) 志铭 | YouTube Music", "xesam:artist": [""]})
+    assert info.title == "志铭"
+
+
+def test_parse_strips_trailing_dash_youtube():
+    assert parse_metadata({"xesam:title": "Song - YouTube"}).title == "Song"
+
+
+def test_parse_keeps_clean_title_and_never_empties():
+    assert parse_metadata({"xesam:title": "Normal Song"}).title == "Normal Song"
+    # "YouTube" alone has no separator to strip, so it must survive intact.
+    assert parse_metadata({"xesam:title": "YouTube"}).title == "YouTube"
 
 
 def test_parse_missing_fields():

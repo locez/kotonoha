@@ -12,13 +12,25 @@ import aiohttp
 from ..model import LyricLine
 from .artifact import LyricsArtifact
 from .lrc_parser import parse_lrc
-from .match import Candidate, TrackMetadata, base_title, best_match, primary_artist
+from .match import (
+    Candidate,
+    TrackMetadata,
+    base_title,
+    best_match,
+    noisy_title_queries,
+    primary_artist,
+)
 
 logger = logging.getLogger(__name__)
 
 GET_URL = "https://lrclib.net/api/get"
 SEARCH_URL = "https://lrclib.net/api/search"
 HEADERS = {"User-Agent": "kotonoha/0.1 (https://github.com/locez/kotonoha)"}
+# lrclib's backend is routinely slow (measured 7-12s round trips, occasional
+# 502s), so it needs a much longer budget than netease or it times out on every
+# request and the whole source looks dead. This runs off the UI thread, so
+# waiting is fine; the session-wide safety net (20s) still bounds a true hang.
+TIMEOUT = aiohttp.ClientTimeout(total=15.0, connect=5.0)
 
 
 @dataclass(frozen=True)
@@ -55,7 +67,7 @@ async def get_exact(session: aiohttp.ClientSession, track: TrackMetadata) -> Rec
     params = {"track_name": track.title, "artist_name": track.artist}
     if track.duration_s is not None:
         params["duration"] = str(int(round(track.duration_s)))
-    async with session.get(GET_URL, params=params, headers=HEADERS) as response:
+    async with session.get(GET_URL, params=params, headers=HEADERS, timeout=TIMEOUT) as response:
         if response.status == 404:
             return None
         response.raise_for_status()
@@ -65,17 +77,20 @@ async def get_exact(session: aiohttp.ClientSession, track: TrackMetadata) -> Rec
     return _record(data)
 
 
-async def search_records(session: aiohttp.ClientSession, track: TrackMetadata) -> list[Record]:
-    params = {
-        "track_name": base_title(track.title),
-        "artist_name": primary_artist(track.artist),
-    }
-    async with session.get(SEARCH_URL, params=params, headers=HEADERS) as response:
+async def _search(session: aiohttp.ClientSession, track_name: str, artist_name: str) -> list[Record]:
+    params = {"track_name": track_name}
+    if artist_name:
+        params["artist_name"] = artist_name
+    async with session.get(SEARCH_URL, params=params, headers=HEADERS, timeout=TIMEOUT) as response:
         response.raise_for_status()
         data = await response.json(content_type=None)
     if not isinstance(data, list):
         raise ValueError("LRCLIB search response is not a list")
     return [record for item in data if (record := _record(item)) is not None]
+
+
+async def search_records(session: aiohttp.ClientSession, track: TrackMetadata) -> list[Record]:
+    return await _search(session, base_title(track.title), primary_artist(track.artist))
 
 
 def parse_payload(payload: Mapping[str, str]) -> tuple[LyricLine, ...]:
@@ -85,6 +100,8 @@ def parse_payload(payload: Mapping[str, str]) -> tuple[LyricLine, ...]:
 async def fetch_artifact(
     session: aiohttp.ClientSession,
     track: TrackMetadata,
+    *,
+    fuzzy: bool = False,
 ) -> LyricsArtifact | None:
     async def exact_records() -> list[Record]:
         exact = await get_exact(session, track)
@@ -94,6 +111,12 @@ async def fetch_artifact(
         asyncio.create_task(exact_records()): "exact",
         asyncio.create_task(search_records(session, track)): "search",
     }
+    if fuzzy:
+        # Salvage noisy browser titles: search each cleaned CJK/Latin run on its own
+        # (no artist, since a YouTube "artist" is usually the channel), so a
+        # bracket-and-channel-laden title still finds the track.
+        for cleaned in noisy_title_queries(track):
+            pending[asyncio.create_task(_search(session, cleaned, ""))] = "fuzzy"
     records: list[Record] = []
     errors: list[Exception] = []
     successful_requests = 0
@@ -109,11 +132,11 @@ async def fetch_artifact(
                     errors.append(exc)
                     logger.debug("LRCLIB %s lookup failed: %s: %s", stage, type(exc).__name__, exc)
 
-            artifact = _artifact_from_records(records, track)
+            artifact = _artifact_from_records(records, track, fuzzy=fuzzy)
             if artifact is not None and artifact.confidence.value == "high":
                 return artifact
 
-        artifact = _artifact_from_records(records, track)
+        artifact = _artifact_from_records(records, track, fuzzy=fuzzy)
         if artifact is not None:
             return artifact
         if successful_requests == 0 and errors:
@@ -127,12 +150,14 @@ async def fetch_artifact(
             await asyncio.gather(*remaining, return_exceptions=True)
 
 
-def _artifact_from_records(records: list[Record], track: TrackMetadata) -> LyricsArtifact | None:
+def _artifact_from_records(
+    records: list[Record], track: TrackMetadata, *, fuzzy: bool = False
+) -> LyricsArtifact | None:
     candidates = [
         Candidate(record.song_id, record.title, record.artist, record.duration_s, album=record.album)
         for record in records
     ]
-    match = best_match(candidates, track)
+    match = best_match(candidates, track, fuzzy=fuzzy)
     if match is None:
         return None
     record = next(
@@ -155,18 +180,3 @@ def _artifact_from_records(records: list[Record], track: TrackMetadata) -> Lyric
         lines=lines,
         confidence=match.confidence,
     )
-
-
-async def fetch(
-    session: aiohttp.ClientSession,
-    title: str,
-    artist: str,
-    duration_s: float | None,
-) -> list[LyricLine] | None:
-    """Compatibility wrapper used until all callers consume artifacts."""
-    try:
-        artifact = await fetch_artifact(session, TrackMetadata(title, artist, duration_s=duration_s))
-    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
-        logger.warning("LRCLIB fetch failed: %s", exc)
-        return None
-    return list(artifact.lines) if artifact is not None else None

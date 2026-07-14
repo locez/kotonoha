@@ -80,6 +80,10 @@ class ResolverLike(Protocol):
 
     def set_cache_enabled(self, enabled: bool, /) -> None: ...
 
+    def set_prefer_best(self, enabled: bool, /) -> None: ...
+
+    def set_fuzzy(self, enabled: bool, /) -> None: ...
+
     async def clear_cache(self) -> None: ...
 
 
@@ -124,6 +128,7 @@ class MprisProvider:
         self._poll_wakeup = asyncio.Event()
         self._stabilizer = TrackStabilizer()
         self._empty_since: float | None = None
+        self._song_offset = 0.0  # subtract from a cumulative playlist/video position
         self._lines: list[LyricLine] = []
         self._last_index = -2
         self._current_name: str | None = None
@@ -135,6 +140,8 @@ class MprisProvider:
         self._content_owner = "none"
         self._provider_name = ""
         self._cache_enabled = True
+        self._prefer_best = True
+        self._fuzzy = True
         self._gate_revision = self._gate.revision
 
     def set_lyrics_sources(self, sources: list[str]) -> None:
@@ -153,12 +160,32 @@ class MprisProvider:
         self._resolver.set_cache_enabled(updated)
         self._force_reload()
 
+    def set_prefer_best(self, enabled: bool) -> None:
+        updated = bool(enabled)
+        if updated == self._prefer_best:
+            return
+        self._prefer_best = updated
+        self._resolver.set_prefer_best(updated)
+        self._force_reload()
+
+    def set_fuzzy(self, enabled: bool) -> None:
+        updated = bool(enabled)
+        if updated == self._fuzzy:
+            return
+        self._fuzzy = updated
+        self._resolver.set_fuzzy(updated)
+        self._force_reload()
+
     async def clear_cache(self) -> None:
         await self._resolver.clear_cache()
 
     async def start(self) -> None:
         self._bus = await _connect()
-        timeout = aiohttp.ClientTimeout(total=3.0, connect=1.5)
+        # Generous session-wide safety net only. Each provider sets its own tighter
+        # per-request timeout (netease is fast, lrclib is routinely slow), because a
+        # single short shared budget killed every lrclib fetch — its backend often
+        # takes 7-9s to answer — leaving that whole fallback source silently dead.
+        timeout = aiohttp.ClientTimeout(total=20.0, connect=5.0)
         self._session = aiohttp.ClientSession(timeout=timeout)
         self._task = asyncio.create_task(self._run())
         logger.info("MPRIS provider started")
@@ -227,6 +254,15 @@ class MprisProvider:
             logger.debug("metadata read failed while selecting player: %s", exc)
             return None
 
+    def _selection_score(self, record: tuple[Any, str, str, TrackInfo]) -> tuple[int, int, int]:
+        """Rank a Playing candidate: fuller metadata first, then stay put."""
+        _player, name, _status, info = record
+        return (
+            1 if info.artist else 0,  # a real artist beats a title-only source
+            1 if info.title else 0,
+            1 if name == self._current_name else 0,  # break ties toward the current source
+        )
+
     async def _active_player(self) -> tuple[Any, str] | None:
         names = await list_players(self._bus)
         ordered = list(names)
@@ -236,6 +272,7 @@ class MprisProvider:
 
         current_record: tuple[Any, str, str, TrackInfo] | None = None
         paused_fallback: tuple[Any, str, str, TrackInfo] | None = None
+        playing_candidates: list[tuple[Any, str, str, TrackInfo]] = []
         playing_empty_fallback: tuple[Any, str, str, TrackInfo] | None = None
         for name in ordered:
             player = await self._safe_iface(name)
@@ -252,19 +289,28 @@ class MprisProvider:
                 current_record = record
             has_identity = bool(info.title or info.artist)
             if status == "Playing" and has_identity:
-                self._current_name = name
-                return player, name
-            if status == "Paused" and has_identity and paused_fallback is None:
+                playing_candidates.append(record)
+            elif status == "Paused" and has_identity and paused_fallback is None:
                 paused_fallback = record
-            if status == "Playing" and not has_identity and playing_empty_fallback is None:
+            elif status == "Playing" and not has_identity and playing_empty_fallback is None:
                 playing_empty_fallback = record
+
+        if playing_candidates:
+            # Two players can expose the *same* track: Chrome's own MPRIS and the
+            # Plasma Browser Integration bridge both appear for YouTube Music.
+            # Chrome sorts first alphabetically and reports a title polluted with
+            # " - YouTube" plus an empty artist, so returning the first Playing
+            # source picked it every time and matching silently failed. Choose the
+            # source with the most complete metadata instead; ties keep the
+            # current/first source for stability.
+            best = max(playing_candidates, key=self._selection_score)
+            self._current_name = best[1]
+            return best[0], best[1]
 
         selected: tuple[Any, str, str, TrackInfo] | None = None
         if current_record is not None and current_record[2] == "Paused" and (
             current_record[3].title or current_record[3].artist
         ):
-            selected = current_record
-        elif current_record is not None and current_record[2] == "Playing":
             selected = current_record
         elif paused_fallback is not None:
             selected = paused_fallback
@@ -368,9 +414,11 @@ class MprisProvider:
         if current is None:
             return
         playing = status == "Playing"
+        if position is not None:
+            position = max(0.0, position - self._song_offset)  # song-relative (no-op when offset ~0)
         cider_timing = self._gate.current_timing(current.info.metadata())
         if cider_timing is not None and cider_timing.current_time is not None:
-            position = cider_timing.current_time
+            position = cider_timing.current_time  # already song-relative; ignore the offset
             if cider_timing.is_playing is not None:
                 playing = cider_timing.is_playing
         if position is None:
@@ -393,9 +441,14 @@ class MprisProvider:
     def _schedule_load(self, commit: TrackCommit) -> None:
         current = self._current_commit
         if current is not None and commit != current and commit.generation <= current.generation:
-            commit = TrackCommit(current.generation + 1, commit.player_name, commit.info)
+            commit = TrackCommit(current.generation + 1, commit.player_name, commit.info, commit.start_position)
         if self._load_task is not None and not self._load_task.done():
             self._load_task.cancel()
+        # A transition carries the song's start position; adopt it as the offset so
+        # the sweep uses song-relative time. Reloads of the same song (start_position
+        # None, e.g. a source/cache change) keep the current offset.
+        if commit.start_position is not None:
+            self._song_offset = commit.start_position
         self._current_commit = commit
         self._content_owner = "resolving"
         task = asyncio.create_task(self._load_song(commit))
@@ -529,6 +582,7 @@ class MprisProvider:
         self._content_owner = "none"
         self._provider_name = ""
         self._empty_since = None
+        self._song_offset = 0.0
         self._gate.select_standalone()
         self._gate_revision = self._gate.revision
         self._state.clear()

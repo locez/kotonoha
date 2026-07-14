@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Mapping
 
@@ -11,7 +10,14 @@ import aiohttp
 from ..model import LyricLine
 from .artifact import LyricsArtifact
 from .lrc_parser import merge_translation, parse_lrc
-from .match import Candidate, MatchConfidence, MatchEvidence, TrackMetadata, best_match, query_variants
+from .match import (
+    Candidate,
+    MatchConfidence,
+    MatchEvidence,
+    TrackMetadata,
+    query_variants,
+    ranked_matches,
+)
 from .yrc_parser import parse_yrc
 
 logger = logging.getLogger(__name__)
@@ -19,11 +25,14 @@ logger = logging.getLogger(__name__)
 SEARCH_URL = "https://music.163.com/api/search/get"
 LYRIC_URL = "https://music.163.com/api/song/lyric/v1"
 HEADERS = {"Referer": "https://music.163.com", "User-Agent": "Mozilla/5.0"}
+# Netease answers quickly; a short per-request budget keeps the fallback chain
+# moving on to the next source promptly when it does not.
+TIMEOUT = aiohttp.ClientTimeout(total=6.0, connect=3.0)
 
 
 async def search(session: aiohttp.ClientSession, query: str, limit: int = 10) -> list[Candidate]:
     params = {"s": query, "type": "1", "limit": str(limit)}
-    async with session.get(SEARCH_URL, params=params, headers=HEADERS) as response:
+    async with session.get(SEARCH_URL, params=params, headers=HEADERS, timeout=TIMEOUT) as response:
         response.raise_for_status()
         data = await response.json(content_type=None)
     if not isinstance(data, dict):
@@ -53,9 +62,22 @@ async def search(session: aiohttp.ClientSession, query: str, limit: int = 10) ->
                 artist=" / ".join(name for name in artist_names if name),
                 duration_s=duration / 1000.0 if isinstance(duration, (int, float)) else None,
                 album=album,
+                aliases=_song_aliases(song),
             )
         )
     return candidates
+
+
+def _song_aliases(song: Mapping[str, object]) -> tuple[str, ...]:
+    """Alternate names Netease lists for a song: ``alias`` (same-language akas)
+    and ``transNames`` (translated titles, e.g. an English name for a CJK song),
+    deduplicated and non-empty."""
+    names: list[str] = []
+    for key in ("alias", "transNames"):
+        value = song.get(key)
+        if isinstance(value, list):
+            names.extend(str(item) for item in value if isinstance(item, str) and item.strip())
+    return tuple(dict.fromkeys(names))
 
 
 def lyric_text(data: Mapping[str, object], key: str) -> str:
@@ -68,7 +90,7 @@ def lyric_text(data: Mapping[str, object], key: str) -> str:
 
 async def fetch_payload(session: aiohttp.ClientSession, song_id: str) -> dict[str, str]:
     params = {"id": song_id, "lv": "1", "kv": "0", "tv": "1", "yv": "1"}
-    async with session.get(LYRIC_URL, params=params, headers=HEADERS) as response:
+    async with session.get(LYRIC_URL, params=params, headers=HEADERS, timeout=TIMEOUT) as response:
         response.raise_for_status()
         data = await response.json(content_type=None)
     if not isinstance(data, dict):
@@ -113,28 +135,41 @@ async def _artifact_for_match(
 async def fetch_artifact(
     session: aiohttp.ClientSession,
     track: TrackMetadata,
+    *,
+    fuzzy: bool = False,
 ) -> LyricsArtifact | None:
-    medium_matches: dict[str, MatchEvidence] = {}
+    # A single budget for lyric downloads across HIGH and lower-confidence
+    # candidates, so a popular title with a pile of UGC re-uploads (all scoring the
+    # same) can't fan out into dozens of separate 6s-timeout fetches.
+    max_fetches = 6
     attempted_song_ids: set[str] = set()
-    for query in query_variants(track):
-        match = best_match(await search(session, query), track)
-        if match is None:
-            continue
-        song_id = match.candidate.song_id
-        if match.confidence is MatchConfidence.HIGH:
-            if song_id in attempted_song_ids:
-                continue
-            attempted_song_ids.add(song_id)
-            artifact = await _artifact_for_match(session, match)
-            if artifact is not None:
-                return artifact
-        else:
-            medium_matches[song_id] = match
 
-    for song_id, match in medium_matches.items():
-        if song_id in attempted_song_ids:
-            continue
-        artifact = await _artifact_for_match(session, match)
+    async def try_fetch(match: MatchEvidence) -> LyricsArtifact | None:
+        song_id = match.candidate.song_id
+        if song_id in attempted_song_ids or len(attempted_song_ids) >= max_fetches:
+            return None
+        attempted_song_ids.add(song_id)
+        return await _artifact_for_match(session, match)
+
+    medium_matches: dict[str, MatchEvidence] = {}
+    for query in query_variants(track, fuzzy=fuzzy):
+        for match in ranked_matches(await search(session, query), track, fuzzy=fuzzy):
+            if match.confidence is MatchConfidence.HIGH:
+                artifact = await try_fetch(match)  # a HIGH is almost certainly the song
+                if artifact is not None:
+                    return artifact
+            else:
+                medium_matches.setdefault(match.candidate.song_id, match)
+
+    # Best-ranked mediums next: try several so a lyric-less top pick doesn't hide a
+    # good one just below it. Rank by title/artist evidence, then closest duration.
+    def medium_key(match: MatchEvidence) -> tuple[bool, bool, bool, float]:
+        delta = match.duration_delta
+        return (match.title_exact, match.artist_identity, match.artist_evidence,
+                -(delta if delta is not None else 1e9))
+
+    for match in sorted(medium_matches.values(), key=medium_key, reverse=True):
+        artifact = await try_fetch(match)
         if artifact is not None:
             return artifact
     return None
@@ -142,18 +177,3 @@ async def fetch_artifact(
 
 async def fetch_lyrics(session: aiohttp.ClientSession, song_id: str) -> list[LyricLine]:
     return list(parse_payload(await fetch_payload(session, song_id)))
-
-
-async def fetch(
-    session: aiohttp.ClientSession,
-    title: str,
-    artist: str,
-    duration_s: float | None,
-) -> list[LyricLine] | None:
-    """Compatibility wrapper used until all callers consume artifacts."""
-    try:
-        artifact = await fetch_artifact(session, TrackMetadata(title, artist, duration_s=duration_s))
-    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
-        logger.warning("Netease fetch failed: %s", exc)
-        return None
-    return list(artifact.lines) if artifact is not None else None

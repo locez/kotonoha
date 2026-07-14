@@ -57,11 +57,15 @@ def active_word_index(words: tuple[LyricWord, ...], t: float) -> int:
 
 
 def line_progress(line: LyricLine, t: float) -> float:
-    """Overall progress through a line, preferring word timing when available."""
+    """Overall progress through a line, preferring word timing when available.
+
+    Called every frame, so it locates the first and last fully-timed words directly
+    instead of materialising a filtered list of them.
+    """
     if line.has_word_timing and line.words:
-        timed = [w for w in line.words if w.start is not None and w.end is not None]
-        if timed:
-            first = timed[0].start or line.start
-            last = timed[-1].end or line.end
-            return line_fill_fraction(first, last, t)
+        timed = (w for w in line.words if w.start is not None and w.end is not None)
+        first = next(timed, None)
+        if first is not None:
+            last = next((w for w in reversed(line.words) if w.start is not None and w.end is not None), first)
+            return line_fill_fraction(first.start or line.start, last.end or line.end, t)
     return line_fill_fraction(line.start, line.end, t)

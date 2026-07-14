@@ -9,7 +9,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import sqlite3
+import sys
 
+from PyQt6.QtCore import QProcess
 from PyQt6.QtWidgets import QApplication
 
 from .config import Config, save_config
@@ -30,12 +32,19 @@ class AppController:
     def __init__(self, app: QApplication, config: Config) -> None:
         self._app = app
         cli_port = app.property("cli_port")
+        config = config.clamped()
         if isinstance(cli_port, int):
-            config = config.clamped()
-            config.port = cli_port
+            # Clamp the CLI port too: argparse accepts any int, and an out-of-range
+            # value (e.g. --port 70000 or -1) would otherwise reach socket.bind()
+            # and raise OverflowError — which is not an OSError, so the receiver's
+            # and controller's `except OSError` would miss it and startup crashes.
+            clamped_port = max(1, min(65535, cli_port))
+            if clamped_port != cli_port:
+                logger.warning("CLI --port %d is out of range 1..65535; using %d", cli_port, clamped_port)
+            config.port = clamped_port
         self._config = config
         set_language(config.ui_language)  # before any UI strings are created
-        self._app.setWindowIcon(load_icon(config.icon_name))
+        self._app.setWindowIcon(load_icon(config.window_icon_name, accent=config.accent_start))
 
         self._state = LyricsState()
         self._overlay = LyricsOverlay(self._state, config)
@@ -48,10 +57,13 @@ class AppController:
         )
         self._mpris = MprisProvider(self._state, lyrics_sources=config.lyrics_sources, gate=self._gate)
         self._mpris.set_cache_enabled(config.cache_enabled)
+        self._mpris.set_prefer_best(config.prefer_best_lyrics)
+        self._mpris.set_fuzzy(config.fuzzy_match)
         self._settings_dialog: SettingsDialog | None = None
 
         self._tray = KotonohaTray(
             icon_name=config.icon_name,
+            accent=config.accent_start,
             passthrough=config.passthrough,
             on_toggle_passthrough=self._on_toggle_passthrough,
             on_open_settings=self._open_settings,
@@ -68,7 +80,13 @@ class AppController:
         self._overlay.activate_layer_shell()
         self._overlay.show()
         self._tray.show()
-        await self._receiver.start()
+        # The Cider receiver is optional (see README): a port bind failure — a
+        # stale instance or double-launch already holding 28745 — must only
+        # disable the probe, not take down the overlay/tray that are already up.
+        try:
+            await self._receiver.start()
+        except OSError as exc:
+            logger.warning("Lyrics receiver unavailable: %s", exc)
         # MPRIS is best-effort: a missing session bus / dbus must not stop the app.
         try:
             await self._mpris.start()
@@ -109,12 +127,21 @@ class AppController:
         dialog = SettingsDialog(self._config)
         dialog.applied.connect(self._apply_config)
         dialog.clear_cache_requested.connect(self._clear_lyrics_cache)
+        dialog.restart_requested.connect(self._restart)
         dialog.finished.connect(lambda _: self._clear_dialog())
         self._settings_dialog = dialog
         dialog.show()
 
     def _clear_dialog(self) -> None:
         self._settings_dialog = None
+
+    def _restart(self) -> None:
+        # Relaunch via `python -m kotonoha` so it works whether we were started as
+        # the `kotonoha` console script or with `-m`, preserving the CLI args, then
+        # quit this instance so its shutdown runs cleanly and the port is released.
+        QProcess.startDetached(sys.executable, ["-m", "kotonoha", *sys.argv[1:]])
+        logger.info("Restarting to apply settings")
+        self._app.quit()
 
     def _apply_config(self, config: Config) -> None:
         previous_language = resolve_translation_language(self._config.translation_language)
@@ -123,10 +150,12 @@ class AppController:
         # Push new anchor/margins/passthrough through the layer-shell bridge.
         self._overlay.activate_layer_shell()
         self._tray.set_passthrough_checked(config.passthrough)
-        self._app.setWindowIcon(load_icon(config.icon_name))
-        self._tray.set_icon_name(config.icon_name)
+        self._app.setWindowIcon(load_icon(config.window_icon_name, accent=config.accent_start))
+        self._tray.set_icon_name(config.icon_name, config.accent_start)
         self._mpris.set_lyrics_sources(config.lyrics_sources)
         self._mpris.set_cache_enabled(config.cache_enabled)
+        self._mpris.set_prefer_best(config.prefer_best_lyrics)
+        self._mpris.set_fuzzy(config.fuzzy_match)
         set_language(config.ui_language)  # affects newly-opened dialogs; UI restart for the rest
 
         new_language = resolve_translation_language(config.translation_language)

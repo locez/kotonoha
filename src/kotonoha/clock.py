@@ -28,6 +28,13 @@ SNAP_THRESHOLD = 0.35
 # forward motion. Forward motion is the ground truth for "playing".
 ADVANCE_EPSILON = 0.01
 
+# Players report Position coarsely: e.g. Plasma Browser Integration updates it
+# about every 0.26s while we poll every 0.2s, so ~1 in 4 polls repeats the same
+# value even though playback is advancing. Keep interpolating through a stall this
+# long before treating it as a real pause, so the sweep flows instead of freezing
+# and snapping back to the stale report every few frames.
+STALL_GRACE = 1.5
+
 
 def estimate_media_time(anchor_media: float, anchor_wall: float, now_wall: float, playing: bool) -> float:
     """Media time at ``now_wall`` given an anchor sample.
@@ -50,6 +57,7 @@ class MediaClock:
         self._anchor_wall: float = 0.0
         self._paused: bool = False
         self._last_report: float | None = None
+        self._last_advance_wall: float = 0.0
 
     @property
     def has_anchor(self) -> bool:
@@ -62,10 +70,13 @@ class MediaClock:
     def sync(self, media_time: float | None, playing: bool) -> None:
         """Re-anchor from a freshly received frame.
 
-        Playback is treated as active when the isPlaying flag is set OR the
-        reported time advanced since the last sync. While active, a small drift
-        from our running estimate is absorbed smoothly (no visible jump); a large
-        one (seek) snaps. When the reported time stops advancing we freeze.
+        The sweep only ever moves forward while playing: a small drift from our
+        running estimate is absorbed smoothly, a large forward gap catches up, and
+        a stale/coarse report that lags the estimate is ignored rather than
+        yanking the sweep backward. A confirmed large backward jump is a seek and
+        snaps. Playback is considered active until the reported time has stalled
+        longer than ``STALL_GRACE`` (coarse Position repeats a value between
+        polls), so the sweep does not freeze-and-snap every few frames.
         """
         if media_time is None:
             return  # nothing to anchor to; keep interpolating
@@ -76,32 +87,41 @@ class MediaClock:
             self._anchor_media = media_time
             self._anchor_wall = now_wall
             self._last_report = media_time
+            self._last_advance_wall = now_wall
             self._paused = not playing
             return
 
         advanced = media_time - (self._last_report if self._last_report is not None else media_time)
         self._last_report = media_time
-        # Forward motion of the reported time is the ground truth: time advancing
-        # => playing; time stalled => paused (overrides a stale isPlaying flag);
-        # time jumped backward => a seek, trust the flag.
-        if advanced > ADVANCE_EPSILON:
-            active = True
-        elif advanced < -ADVANCE_EPSILON:
-            active = playing
-        else:
-            active = False
-        self._paused = not active
+        # Where the smooth clock is right now, using the play state before this sync.
+        running = estimate_media_time(self._anchor_media, self._anchor_wall, now_wall, not self._paused)
 
-        if not active:
+        moved = advanced > ADVANCE_EPSILON
+        # Stay "playing" while the reported time advances OR the player asserts it
+        # is playing. MPRIS PlaybackStatus is reliable when it says Playing, yet
+        # Position can sit still for several seconds between coarse updates — so a
+        # stall alone must NOT pause the sweep. Only a stall sustained past the
+        # grace window while the player is NOT reporting playback is a real pause.
+        if moved or playing:
+            self._last_advance_wall = now_wall
+        self._paused = (now_wall - self._last_advance_wall) >= STALL_GRACE
+
+        if advanced <= -SNAP_THRESHOLD:
+            # The reported time jumped backward: a seek. Follow it regardless of the
+            # play state — a backward seek can arrive while paused, and discarding
+            # it would leave the clock permanently desynced. (A stale/coarse report
+            # merely lagging the estimate has advanced ~= 0, so it is not caught
+            # here and does not roll the sweep back.)
             self._anchor_media = media_time
-            self._anchor_wall = now_wall
-            return
-
-        estimate = estimate_media_time(self._anchor_media, self._anchor_wall, now_wall, True)
-        if abs(media_time - estimate) < SNAP_THRESHOLD:
-            self._anchor_media = estimate  # smooth correction, time stays continuous
+        elif media_time - running >= SNAP_THRESHOLD:
+            # Report well ahead of our estimate: a forward seek / we fell behind.
+            self._anchor_media = media_time
+        elif self._paused:
+            # Frozen: hold position; never roll back to a lagging report.
+            self._anchor_media = max(media_time, running)
         else:
-            self._anchor_media = media_time  # snap (seek / large drift)
+            # Coarse/stale report that lags the estimate: keep interpolating forward.
+            self._anchor_media = max(running, media_time)
         self._anchor_wall = now_wall
 
     def now(self) -> float | None:
@@ -115,3 +135,4 @@ class MediaClock:
         self._anchor_wall = 0.0
         self._paused = False
         self._last_report = None
+        self._last_advance_wall = 0.0

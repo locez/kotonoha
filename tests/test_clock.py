@@ -83,11 +83,61 @@ def test_pause_detected_when_time_stops_advancing():
     clock.sync(media_time=30.0, playing=True)
     fake.t += 1.0
     clock.sync(media_time=31.0, playing=True)
-    fake.t += 1.0
-    clock.sync(media_time=31.0, playing=True)  # time did not move -> frozen
+    # A real pause reports Paused; the clock freezes once the stall (while not
+    # playing) exceeds the grace window.
+    fake.t += 2.0
+    clock.sync(media_time=31.0, playing=False)
     assert clock.playing is False
+    frozen = clock.now()
     fake.t += 5.0
-    assert clock.now() == 31.0
+    assert clock.now() == frozen  # stays put once paused
+
+
+def test_coarse_position_stall_keeps_flowing_while_playing():
+    # Browser MPRIS repeats the same Position value for several polls — sometimes
+    # for seconds — while PlaybackStatus stays "Playing". The sweep must keep
+    # advancing forward the whole time and never freeze or jump back.
+    fake = FakeMonotonic()
+    clock = MediaClock(monotonic=fake)
+    clock.sync(media_time=10.0, playing=True)
+    previous = clock.now()
+    for _ in range(15):  # ~3s of a stalled Position report, well past the grace window
+        fake.t += 0.2
+        clock.sync(media_time=10.0, playing=True)
+        current = clock.now()
+        assert current >= previous  # never rolls backward
+        previous = current
+    assert clock.now() > 12.0  # kept interpolating forward the whole stall
+    assert clock.playing is True  # a stall while Playing is never treated as a pause
+
+
+def test_backward_seek_while_paused_is_followed():
+    # Seeking backward while paused reports the new (smaller) time with
+    # playing=False. The clock must follow it, not stay stuck at the old position.
+    fake = FakeMonotonic()
+    clock = MediaClock(monotonic=fake)
+    clock.sync(media_time=100.0, playing=True)
+    fake.t += 2.0
+    clock.sync(media_time=102.0, playing=True)
+    fake.t += 2.0
+    clock.sync(media_time=102.0, playing=False)  # sustained stall while paused -> paused
+    fake.t += 0.5
+    clock.sync(media_time=20.0, playing=False)  # scrub back to 20s while still paused
+
+    assert clock.now() == 20.0  # followed the seek, not stuck near 104
+    fake.t += 0.2
+    clock.sync(media_time=20.2, playing=True)  # resume
+    fake.t += 0.5
+    assert 20.0 <= clock.now() <= 21.5  # plays forward from the seeked position
+
+
+def test_lagging_report_does_not_roll_the_sweep_back():
+    fake = FakeMonotonic()
+    clock = MediaClock(monotonic=fake)
+    clock.sync(media_time=10.0, playing=True)
+    fake.t += 0.5  # estimate ~10.5
+    clock.sync(media_time=10.2, playing=True)  # advanced, but still behind estimate
+    assert clock.now() >= 10.5  # stayed forward, did not snap back to 10.2
 
 
 def test_sync_without_media_time_is_noop():

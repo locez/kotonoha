@@ -158,4 +158,38 @@ describe("probeAppleMusicLyrics", () => {
     });
     expect("lines" in result).toBe(false);
   });
+
+  it("keeps previous/next correct when an empty <p> is filtered out", async () => {
+    const ttml = `
+<tt xmlns="http://www.w3.org/ns/ttml"
+    xmlns:itunes="http://music.apple.com/lyric-ttml-internal"
+    xml:lang="en" itunes:timing="Line">
+  <body>
+    <div>
+      <p xml:id="X" begin="00:00.500" end="00:01.000"></p>
+      <p xml:id="L1" begin="00:01.000" end="00:03.000">one</p>
+      <p xml:id="L2" begin="00:03.000" end="00:05.000">two</p>
+      <p xml:id="L3" begin="00:05.000" end="00:07.000">three</p>
+    </div>
+  </body>
+</tt>`;
+    const result = await probeAppleMusicLyrics({
+      CiderApp: {
+        mkfetch: vi.fn().mockResolvedValue({ data: { data: [{ attributes: { ttml } }] } }),
+        musicKitStore: { player: { nowPlayingId: "song-9" } },
+      },
+      MusicKit: {
+        getInstance: () => ({
+          currentPlaybackTime: 3.5,
+          nowPlayingItem: { id: "song-9", attributes: { durationInMillis: 8000 } },
+        }),
+      },
+    });
+
+    // The empty <p id="X"> is dropped by the filter, so neighbours must be found
+    // by position in the FILTERED array, not the pre-filter DOM <p> index.
+    expect(result.currentLine?.id).toBe("L2");
+    expect(result.previousLine?.id).toBe("L1");
+    expect(result.nextLine?.id).toBe("L3");
+  });
 });

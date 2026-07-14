@@ -21,17 +21,19 @@ CONFIG_FILE_NAME = "config.json"
 
 # Lyric sources in priority order; first one with lyrics for the song wins.
 # "cider" = the Apple Music lyrics the Cider probe pushes over WebSocket.
-VALID_LYRICS_SOURCES = ("netease", "lrclib", "cider")
-DEFAULT_LYRICS_SOURCES = ["netease", "lrclib", "cider"]
+VALID_LYRICS_SOURCES = ("netease", "lrclib", "kugou", "cider")
+DEFAULT_LYRICS_SOURCES = ["netease", "lrclib", "kugou", "cider"]
 
 # Accent presets: (key, start, end, sweep). The key is translated in the UI
 # (see strings.py "accent.*"); the first entry is the default pink.
+# A few representative examples; anything else is picked via the custom colour
+# picker in Settings (keeps the dropdown short).
 ACCENT_PRESETS: tuple[tuple[str, str, str, str], ...] = (
     ("pink", "#FF4FA3", "#FF8FCB", "#FF6EC7"),
+    ("orange", "#FF8A4F", "#FFC58F", "#FFA56E"),
+    ("green", "#34E89E", "#A7F3D0", "#5BF0B0"),
     ("cyan", "#4FACFE", "#00F2FE", "#38E1FF"),
     ("purple", "#B14FFF", "#E29BFF", "#C97BFF"),
-    ("green", "#34E89E", "#A7F3D0", "#5BF0B0"),
-    ("orange", "#FF8A4F", "#FFC58F", "#FFA56E"),
 )
 
 DEFAULT_ICON_NAME = "default"
@@ -47,10 +49,18 @@ class Config:
     margin_x: int = 0                # horizontal nudge (px)
     # Typography / appearance
     font_family: str = "Inter, 'Segoe UI', 'Microsoft YaHei', sans-serif"
-    font_size: int = 24             # current-line size (px)
-    opacity: float = 1.0            # whole-window opacity 0.3..1.0
-    panel_style: str = "pill"        # "pill" (glass panel) | "text" (text only)
-    icon_name: str = DEFAULT_ICON_NAME
+    font_style: str = "Regular"     # named style/weight for the family (e.g. "Bold", "Light Italic")
+    font_size: int = 20             # main (current) line size (px)
+    context_font_size: int = 14      # previous/next line size (px)
+    translation_font_size: int = 13  # translation line size (px)
+    opacity: float = 0.8            # black-panel fill opacity 0.0..1.0 (fully opaque reads harsh)
+    frost_opacity: float = 0.6       # frosted-panel fill opacity 0.0..1.0 (0 = pure blur)
+    panel_style: str = "pill"        # "pill" (black) | "white" | "frost" (frosted glass) | "text" (no panel)
+    panel_width_mode: str = "fit"    # "fit" (hug the text) | "fixed" (constant width)
+    panel_width: int = 720           # panel width in px when panel_width_mode == "fixed"
+    panel_accent_tint: bool = False  # tint the black panel toward the accent colour
+    icon_name: str = "@leaf-accent"  # system-tray icon; accent-following leaf by default (see leaf_icon.py)
+    window_icon_name: str = "@leaf-accent"  # taskbar/window icon; chosen separately from the tray
     # Behaviour
     passthrough: bool = False        # start unlocked (interactive) so first-run positioning is easy
     karaoke: bool = True             # per-word sweep when timing == "Word"
@@ -58,12 +68,24 @@ class Config:
     show_translation: bool = True    # bilingual
     translation_language: str = "auto"  # "auto" -> from system locale, else an Apple tag (zh-Hans/en/ja/...)
     lyrics_sources: list[str] = field(default_factory=lambda: list(DEFAULT_LYRICS_SOURCES))
+    prefer_best_lyrics: bool = True  # query sources concurrently and pick the best-quality match
+    fuzzy_match: bool = True          # salvage noisy browser titles (strip 【HD】/[歌詞]/channel tails)
     cache_enabled: bool = True
     ui_language: str = "auto"        # UI language: "auto" -> system locale, else zh-Hans/zh-Hant/ja/en
+    theme: str = "auto"              # settings-window theme: "auto" (follow system) | "light" | "dark"
+    frost_window: bool = True        # frosted-glass settings window (KDE Wayland only)
+    lyrics_script: str = "off"       # display-convert lyrics: "off" | "zh-Hans" | "zh-Hant"
     # Pink accent (sung text gradient + sweep highlight)
     accent_start: str = "#FF4FA3"
     accent_end: str = "#FF8FCB"
     accent_sweep: str = "#FF6EC7"
+    # Visual effects (all user-toggleable). Default to a calm look: animations on,
+    # the flashier glow / word-pop off.
+    fx_animate: bool = True          # master switch: line-change + settings fade-in animations
+    fx_transition: str = "rise"      # line-change style when fx_animate: "fade"|"rise"|"slide"|"zoom"
+    fx_glow: bool = False            # soft accent glow behind the current line
+    fx_word_pop: bool = False        # brighten the word currently being sung
+    fx_intensity: str = "subtle"     # "subtle" | "expressive"
 
     def clamped(self) -> Config:
         """Return a copy with values forced into sane ranges."""
@@ -73,10 +95,20 @@ class Config:
             margin_edge=_clamp_int(self.margin_edge, 0, 4000, 64),
             margin_x=_clamp_int(self.margin_x, -4000, 4000, 0),
             font_family=str(self.font_family),
-            font_size=_clamp_int(self.font_size, 8, 200, 24),
-            opacity=_clamp_float(self.opacity, 0.3, 1.0, 1.0),
-            panel_style=self.panel_style if self.panel_style in ("pill", "text") else "pill",
+            font_style=str(self.font_style),
+            # All three ranges match the Appearance spin boxes (8..120), so opening
+            # Settings and pressing Apply can never silently truncate a saved size.
+            font_size=_clamp_int(self.font_size, 8, 120, 20),
+            context_font_size=_clamp_int(self.context_font_size, 8, 120, 14),
+            translation_font_size=_clamp_int(self.translation_font_size, 8, 120, 13),
+            opacity=_clamp_float(self.opacity, 0.0, 1.0, 0.8),
+            frost_opacity=_clamp_float(self.frost_opacity, 0.0, 1.0, 0.6),
+            panel_style=self.panel_style if self.panel_style in ("pill", "white", "frost", "text") else "pill",
+            panel_width_mode=self.panel_width_mode if self.panel_width_mode in ("fit", "fixed") else "fit",
+            panel_width=_clamp_int(self.panel_width, 240, 2400, 720),
+            panel_accent_tint=bool(self.panel_accent_tint),
             icon_name=_clean_icon_name(self.icon_name),
+            window_icon_name=_clean_icon_name(self.window_icon_name),
             passthrough=bool(self.passthrough),
             karaoke=bool(self.karaoke),
             lead_ms=_clamp_int(self.lead_ms, -2000, 2000, 120),
@@ -85,9 +117,19 @@ class Config:
             accent_start=str(self.accent_start),
             accent_end=str(self.accent_end),
             accent_sweep=str(self.accent_sweep),
+            fx_animate=bool(self.fx_animate),
+            fx_transition=self.fx_transition if self.fx_transition in ("fade", "rise", "slide", "zoom") else "rise",
+            fx_glow=bool(self.fx_glow),
+            fx_word_pop=bool(self.fx_word_pop),
+            fx_intensity=self.fx_intensity if self.fx_intensity in ("subtle", "expressive") else "subtle",
             lyrics_sources=_clean_sources(self.lyrics_sources),
+            prefer_best_lyrics=bool(self.prefer_best_lyrics),
+            fuzzy_match=bool(self.fuzzy_match),
             cache_enabled=bool(self.cache_enabled),
             ui_language=str(self.ui_language),
+            theme=self.theme if self.theme in ("auto", "light", "dark") else "auto",
+            frost_window=bool(self.frost_window),
+            lyrics_script=self.lyrics_script if self.lyrics_script in ("off", "zh-Hans", "zh-Hant") else "off",
         )
 
     def to_dict(self) -> dict[str, Any]:

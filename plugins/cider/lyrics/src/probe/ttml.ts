@@ -112,7 +112,6 @@ export function parseAppleMusicTtml(ttml: string, options: ParseOptions = {}): P
     .map((lineElement, index) => {
       const id = xmlAttribute(lineElement, "id") || lineElement.getAttribute("id") || `L${index + 1}`;
       return {
-        index,
         id,
         start: parseTime(lineElement.getAttribute("begin")),
         rawEnd: parseTime(lineElement.getAttribute("end")),
@@ -131,7 +130,10 @@ export function parseAppleMusicTtml(ttml: string, options: ParseOptions = {}): P
       (durationSeconds === null || line.rawEnd <= durationSeconds + 10);
 
     return {
-      index: line.index,
+      // Position within this filtered array — NOT line.index (the pre-filter DOM
+      // <p> position), which no longer lines up once any <p> is dropped and made
+      // withCurrentLine pick the wrong previous/next line.
+      index,
       id: line.id,
       start: line.start!,
       end: rawEndIsUsable ? line.rawEnd! : nextStart ?? durationSeconds ?? line.start!,
