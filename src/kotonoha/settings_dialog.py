@@ -41,7 +41,7 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QPushButton,
     QSpinBox,
-    QTabWidget,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -61,29 +61,23 @@ QLabel#section { color: %TEXT_DIM%; font-size: 11px; font-weight: 700; padding-t
 QLabel#dialogTitle { color: %TEXT_STRONG%; font-size: 15px; font-weight: 600; }
 QPushButton#closeButton { background: transparent; border: none; color: %TEXT_DIM%; font-size: 16px; padding: 0; }
 QPushButton#closeButton:hover { color: %TEXT_STRONG%; }
-/* No content box: just a full-width divider under the tabs that the selected
-   tab's accent underline sits on. Removes the rounded-corner-vs-underline clash
-   and the box-in-box look; the dialog's own rounded frame is the only container. */
-QTabWidget::pane {
+/* Left sidebar navigation (a QListWidget#nav) + a stacked content area, instead
+   of top tabs — a cleaner settings layout with no tab/box corner clashes. */
+QListWidget#nav {
+    background: transparent;
     border: none;
-    border-top: 1px solid %PANE_BORDER%;
-    background: transparent;
-    top: -1px;
+    outline: none;
+    padding: 2px;
 }
-QTabBar { qproperty-drawBase: 0; }
-QTabBar::tab {
-    background: transparent;
+QListWidget#nav::item {
     color: %TEXT_DIM%;
-    padding: 7px 4px 9px 4px;
-    margin-right: 20px;
-    border: none;
-    border-bottom: 2px solid transparent;
+    padding: 9px 12px;
+    border-radius: 8px;
+    margin: 2px 0;
 }
-QTabBar::tab:selected { color: %TEXT_STRONG%; border-bottom: 2px solid %ACCENT%; }
-QTabBar::tab:hover:!selected { color: %TEXT_STRONG%; }
-/* The dialog is sized so all tabs fit; never show the tiny scroll arrows. */
-QTabBar::scroller { width: 0px; }
-QTabBar QToolButton { width: 0px; border: none; }
+QListWidget#nav::item:hover { color: %TEXT_STRONG%; background: %ITEM_SEL%; }
+QListWidget#nav::item:selected { color: %TEXT_STRONG%; background: %ACCENT_SOFT%; }
+QWidget#navDivider { background: %PANE_BORDER%; }
 QCheckBox { background: transparent; spacing: 8px; }
 QCheckBox::indicator, QListWidget::indicator {
     width: 16px; height: 16px;
@@ -243,8 +237,11 @@ def _skin(accent: str, theme: str = "dark") -> str:
     for token, value in palette.items():
         if isinstance(value, str):
             qss = qss.replace(f"%{token}%", value)
+    c = QColor(accent)
+    accent_soft = f"rgba({c.red()}, {c.green()}, {c.blue()}, 42)"  # tinted sidebar selection
     return (
-        qss.replace("%ACCENT%", accent)
+        qss.replace("%ACCENT_SOFT%", accent_soft)
+        .replace("%ACCENT%", accent)
         .replace("%CHECK%", _CHECKMARK_PATH.as_posix())
         .replace("%CHEV_DOWN%", _CHEVRON_DOWN_PATH.as_posix())
         .replace("%CHEV_UP%", _CHEVRON_UP_PATH.as_posix())
@@ -267,18 +264,24 @@ class SettingsDialog(QDialog):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setStyleSheet(_skin(config.accent_start, self._theme))
 
-        self._tabs = tabs = QTabWidget()
-        # Never fall back to the tiny, unstyled < > scroll arrows; widen the dialog
-        # instead so every tab fits (below).
-        tabs.setUsesScrollButtons(False)
-        tabs.addTab(self._general_tab(), t("tab.general"))
-        tabs.addTab(self._appearance_tab(), t("tab.appearance"))
-        tabs.addTab(self._lyrics_tab(), t("tab.lyrics"))
-        tabs.addTab(self._position_tab(), t("tab.position"))
-        tabs.addTab(self._sources_tab(), t("tab.sources"))
-        # Sensible default; the real fit-to-tabs width is applied in showEvent,
-        # where the inherited stylesheet metrics are finally active.
-        self.setMinimumWidth(520)
+        # Sidebar categories drive a stacked content area (replaces top tabs).
+        self._stack = QStackedWidget()
+        self._nav = QListWidget()
+        self._nav.setObjectName("nav")
+        self._nav.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._nav.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        for key, page in (
+            ("tab.general", self._general_tab()),
+            ("tab.appearance", self._appearance_tab()),
+            ("tab.lyrics", self._lyrics_tab()),
+            ("tab.position", self._position_tab()),
+            ("tab.sources", self._sources_tab()),
+        ):
+            self._nav.addItem(QListWidgetItem(t(key)))
+            self._stack.addWidget(page)
+        self._nav.currentRowChanged.connect(self._stack.setCurrentIndex)
+        self._nav.setCurrentRow(0)
+        self.setMinimumWidth(560)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok
@@ -300,11 +303,22 @@ class SettingsDialog(QDialog):
         if apply_button is not None:
             apply_button.clicked.connect(self._emit)
 
+        divider = QWidget()
+        divider.setObjectName("navDivider")
+        divider.setFixedWidth(1)
+
+        body = QHBoxLayout()
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(14)
+        body.addWidget(self._nav)
+        body.addWidget(divider)
+        body.addWidget(self._stack, 1)
+
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 14, 18, 16)
+        layout.setContentsMargins(16, 14, 16, 14)
         layout.setSpacing(12)
         layout.addLayout(self._title_bar())
-        layout.addWidget(tabs)
+        layout.addLayout(body, 1)
         layout.addWidget(buttons)
 
     # --- chrome ---
@@ -344,16 +358,19 @@ class SettingsDialog(QDialog):
 
     def showEvent(self, a0: QShowEvent | None) -> None:
         super().showEvent(a0)
-        # Only now is the tab bar styled and measured, so widen the dialog to fit
-        # every tab (in whatever language) — the tiny < > scroll arrows never appear.
-        needed = self._tabs.tabBar().sizeHint().width() + 52
+        # Now the stylesheet metrics are active: size the sidebar to its widest
+        # label (in any language) and the content to the tallest page, so switching
+        # sections never resizes the window and the nav never truncates.
+        self._nav.setFixedWidth(self._nav.sizeHintForColumn(0) + 30)
+        self._stack.setMinimumWidth(400)
+        tallest = max(
+            (self._stack.widget(i).sizeHint().height() for i in range(self._stack.count())),
+            default=0,
+        )
+        self._stack.setMinimumHeight(tallest)
+        needed = self._nav.width() + 1 + 400 + 46  # nav + divider + content + margins/spacing
         if self.minimumWidth() < needed:
             self.setMinimumWidth(needed)
-        # Size the content area to the TALLEST tab so switching tabs never resizes
-        # the window; shorter tabs just show empty space below their top-pinned rows.
-        pages = [self._tabs.widget(i) for i in range(self._tabs.count())]
-        tallest = max((page.sizeHint().height() for page in pages if page is not None), default=0)
-        self._tabs.setMinimumHeight(tallest + self._tabs.tabBar().sizeHint().height() + 6)
         if self.width() < needed:
             self.resize(needed, self.height())
 

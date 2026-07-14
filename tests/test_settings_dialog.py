@@ -145,11 +145,11 @@ def test_theme_selector_roundtrips_and_switches_palette(qapp):
     light.close()
 
 
-def test_connection_tab_removed_but_port_preserved(qapp):
-    # The WS-port control was dropped; the tab set no longer includes Connection,
+def test_connection_section_removed_but_port_preserved(qapp):
+    # The WS-port control was dropped; the sidebar no longer lists Connection,
     # and current_config keeps the config's port untouched (still used by the CLI).
     dialog = SettingsDialog(Config(port=41234))
-    labels = [dialog._tabs.tabText(i) for i in range(dialog._tabs.count())]
+    labels = [dialog._nav.item(i).text() for i in range(dialog._nav.count())]
     assert not any("onnect" in label or "连接" in label or "連接" in label or "接続" in label for label in labels)
     assert not hasattr(dialog, "_port")
     assert dialog.current_config().port == 41234  # preserved from the config
@@ -215,22 +215,22 @@ def test_panel_width_control_enabled_only_for_fixed_mode(qapp):
     dialog.close()
 
 
-def test_all_tabs_fit_without_scroll_arrows(qapp):
-    from PyQt6.QtWidgets import QToolButton
-
+def test_sidebar_lists_every_section_and_drives_the_stack(qapp):
     from kotonoha.strings import current_language, set_language
 
     previous = current_language()
-    set_language("en")  # widest labels -> worst case for fitting the tab row
+    set_language("en")
     try:
         dialog = SettingsDialog(Config(ui_language="en"))
         dialog.show()
         qapp.processEvents()
         qapp.processEvents()
-        tab_bar = dialog._tabs.tabBar()
-        assert dialog._tabs.usesScrollButtons() is False
-        assert tab_bar.sizeHint().width() <= dialog._tabs.width()  # every tab fits
-        assert not any(b.isVisible() for b in tab_bar.findChildren(QToolButton))
+        # One sidebar row per content page, and no label is truncated in the sidebar.
+        assert dialog._nav.count() == dialog._stack.count() == 5
+        assert dialog._nav.width() >= dialog._nav.sizeHintForColumn(0)
+        # Selecting a sidebar row switches the stacked content page.
+        dialog._nav.setCurrentRow(3)
+        assert dialog._stack.currentIndex() == 3
         dialog.close()
     finally:
         set_language(previous)
