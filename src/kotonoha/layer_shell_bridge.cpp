@@ -22,9 +22,10 @@
 #include <qpa/qplatformnativeinterface.h>
 #include <wayland-client.h>
 
+#include <cstring>  // std::strcmp — used by the layer-shell probe, blur or not
+
 #ifdef KOTONOHA_HAVE_BLUR
 #include <cmath>
-#include <cstring>
 #include <map>
 
 #include "blur-client-protocol.h"
@@ -94,7 +95,54 @@ namespace {
 #endif  // KOTONOHA_HAVE_BLUR
 
 
+namespace {
+    // One-shot probe (always compiled, unlike the blur namespace above): does THIS
+    // compositor advertise zwlr_layer_shell_v1? Backs koto_has_layer_shell() so the
+    // Python side can pick the top-most-window fallback on ANY layer-shell-less
+    // Wayland session (GNOME/Mutter, Weston, Cinnamon) without hard-coding names.
+    bool g_layer_shell_present = false;
+    bool g_layer_shell_probed = false;
+
+    void ls_registry_global(void* data, struct wl_registry*, uint32_t,
+                            const char* interface, uint32_t /*version*/) {
+        if (std::strcmp(interface, "zwlr_layer_shell_v1") == 0) {
+            *static_cast<bool*>(data) = true;
+        }
+    }
+    void ls_registry_global_remove(void*, struct wl_registry*, uint32_t) {}
+    const struct wl_registry_listener kLayerShellRegistryListener = {
+        ls_registry_global, ls_registry_global_remove};
+}  // namespace
+
+
 extern "C" {
+    // Qt ABI handshake for the ctypes loader (native.py): the version this bridge
+    // was built against. The loader refuses a bridge built against a different Qt
+    // minor than the running PyQt6 — the bridge links Qt QPA/private API, which
+    // carries no cross-minor ABI guarantee.
+    const char* koto_layer_qt_version() {
+        return QT_VERSION_STR;
+    }
+
+    // 1 if the compositor advertises wlr-layer-shell, else 0. Lets the Python side
+    // fall back to a top-most ordinary window on a layer-shell-less Wayland session
+    // instead of silently no-op'ing every bridge call. Result cached after first.
+    int koto_has_layer_shell() {
+        if (g_layer_shell_probed) return g_layer_shell_present ? 1 : 0;
+        g_layer_shell_probed = true;
+        QPlatformNativeInterface* native = QGuiApplication::platformNativeInterface();
+        if (!native) return 0;
+        struct wl_display* display = (struct wl_display*)native->nativeResourceForIntegration("wl_display");
+        if (!display) display = (struct wl_display*)native->nativeResourceForIntegration("display");
+        if (!display) return 0;
+        struct wl_registry* registry = wl_display_get_registry(display);
+        if (!registry) return 0;
+        wl_registry_add_listener(registry, &kLayerShellRegistryListener, &g_layer_shell_present);
+        wl_display_roundtrip(display);  // process the compositor's global advertisements
+        wl_registry_destroy(registry);
+        return g_layer_shell_present ? 1 : 0;
+    }
+
     void make_overlay(void* window_ptr) {
         if (!window_ptr) return;
 

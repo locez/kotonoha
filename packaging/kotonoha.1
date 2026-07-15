@@ -1,0 +1,25 @@
+.TH KOTONOHA 1 "2026-07-11" "kotonoha 0.1.0" "User Commands"
+.SH NAME
+kotonoha \- Wayland desktop lyrics overlay for MPRIS media players
+.SH SYNOPSIS
+.B kotonoha
+.RB [ \-\-port
+.IR PORT ]
+.RB [ \-v ]
+.SH DESCRIPTION
+Displays a translucent, click-through, always-on-top overlay of word-by-word
+synchronized lyrics for the current track, read from any MPRIS player over
+D-Bus. On wlr-layer-shell compositors (KDE Plasma, wlroots) it floats above
+fullscreen; on GNOME/Mutter and other compositors without wlr-layer-shell it
+falls back to a normal top-most window.
+.SH OPTIONS
+.TP
+.BI \-\-port " PORT" ", " \-p " PORT"
+Override the Cider probe WebSocket receiver port (default 28745).
+.TP
+.B \-v ", " \-\-verbose
+Enable verbose logging.
+.SH SEE ALSO
+Project homepage: https://github.com/locez/kotonoha
+.SH AUTHOR
+Locez <locez@locez.com>

@@ -5,7 +5,15 @@ build-backend = "scikit_build_core.build"
 [tool.scikit-build]
 wheel.packages = ["src/kotonoha"]
 cmake.build-type = "Release"
+# KOTONOHA_INSTALL_DIR override is load-bearing (scikit-build-core's cmake.args
+# wins over the CMake default). The KOTONOHA_INSTALL_LICENSE CMake option exists
+# for packagers but is intentionally NOT set OFF here: the deb/rpm specs still
+# key their license declarations off the CMake-staged copy, so flipping it would
+# break those builds. Left ON until those specs migrate to .dist-info/licenses/.
 cmake.args = ["-DKOTONOHA_INSTALL_DIR=kotonoha"]
+# Build-only sources have no business in the installed wheel (the compiled
+# libkoto-layer.so is what ships).
+wheel.exclude = ["**/*.cpp", "**/*.sh", "**/protocols/*.xml"]
 
 [project]
 name = "kotonoha"
@@ -15,7 +23,8 @@ readme = "README.md"
 authors = [
   { name = "Locez", email = "locez@locez.com" }
 ]
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
   "PyQt6",

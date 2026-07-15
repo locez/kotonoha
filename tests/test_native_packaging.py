@@ -85,7 +85,11 @@ def test_scikit_build_core_builds_cmake_bridge_into_wheel() -> None:
         "build-backend": "scikit_build_core.build",
     }
     assert pyproject["tool"]["scikit-build"] == {
-        "wheel": {"packages": ["src/kotonoha"]},
+        "wheel": {
+            "packages": ["src/kotonoha"],
+            # Build-only inputs stay out of the installed wheel.
+            "exclude": ["**/*.cpp", "**/*.sh", "**/protocols/*.xml"],
+        },
         "cmake": {
             "build-type": "Release",
             "args": ["-DKOTONOHA_INSTALL_DIR=kotonoha"],

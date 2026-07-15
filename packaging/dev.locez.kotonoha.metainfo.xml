@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>dev.locez.kotonoha</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Kotonoha</name>
+  <name xml:lang="zh_CN">Kotonoha 歌词 HUD</name>
+  <name xml:lang="zh_TW">Kotonoha 歌詞 HUD</name>
+  <name xml:lang="ja">Kotonoha 歌詞 HUD</name>
+  <summary>Synchronized lyrics overlay for MPRIS media players</summary>
+  <summary xml:lang="zh_CN">为 MPRIS 播放器显示同步歌词的悬浮窗</summary>
+  <description>
+    <p>Kotonoha is a translucent, click-through, always-on-top Wayland overlay showing word-by-word synced lyrics for whatever you are playing. It reads now-playing metadata from any MPRIS player over D-Bus and fetches timed lyrics from Netease, lrclib, and optionally the Cider Apple Music plugin.</p>
+    <ul>
+      <li>Word-by-word karaoke sweep with an optional translation line</li>
+      <li>Multi-source, user-ordered lyric providers with a local cache</li>
+      <li>Floats above fullscreen via wlr-layer-shell (KDE/wlroots); GNOME falls back to a normal top window</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">kotonoha.desktop</launchable>
+  <icon type="stock">kotonoha</icon>
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+  </categories>
+  <keywords>
+    <keyword>lyrics</keyword>
+    <keyword>karaoke</keyword>
+    <keyword>MPRIS</keyword>
+  </keywords>
+  <url type="homepage">https://github.com/locez/kotonoha</url>
+  <url type="bugtracker">https://github.com/locez/kotonoha/issues</url>
+  <developer id="dev.locez"><name>Locez</name></developer>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-07-11"/>
+  </releases>
+</component>
