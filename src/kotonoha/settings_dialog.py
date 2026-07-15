@@ -155,6 +155,10 @@ QCheckBox::indicator:checked, QListWidget::indicator:checked {
     border-color: %ACCENT%;
     image: url(%CHECK%);
 }
+/* A disabled checkbox reads as unavailable: dimmed label, muted (non-accent) box. */
+QCheckBox:disabled { color: %HINT%; }
+QCheckBox::indicator:disabled { border-color: %IND_BORDER%; background: %IND_BG%; }
+QCheckBox::indicator:checked:disabled { background: %HINT%; border-color: %HINT%; image: url(%CHECK%); }
 /* One field style for every input so combos, spin boxes and the font picker are
    the same height and look uniform. */
 QSpinBox, QComboBox, QFontComboBox {
@@ -170,6 +174,10 @@ QSpinBox:hover, QComboBox:hover, QFontComboBox:hover { border-color: %FIELD_BORD
 /* Accent focus ring — clear interactive feedback on the control you're editing. */
 QSpinBox:focus, QComboBox:focus, QFontComboBox:focus { border: 1px solid %ACCENT%; }
 QSpinBox:disabled, QComboBox:disabled { color: %TEXT_DIM%; }
+/* Force the QSS-styled drop-down list instead of a native popup menu: on Breeze /
+   Fusion (KDE) the style otherwise opens a system-palette popup that ignores the
+   dark item-view styling below and renders white on a dark app. */
+QComboBox, QFontComboBox { combobox-popup: 0; }
 QComboBox::drop-down, QFontComboBox::drop-down {
     subcontrol-origin: padding; subcontrol-position: center right;
     border: none; width: 22px;
@@ -285,13 +293,18 @@ def _resolve_theme(value: str) -> str:
     return "light" if scheme == Qt.ColorScheme.Light else "dark"
 
 
-def _skin(accent: str, theme: str = "dark", frosted: bool = False) -> str:
+def _skin(accent: str, theme: str = "dark", frosted: bool = False, opacity: float = 1.0) -> str:
     """Fill the QSS template from the theme palette, accent colour and checkmark.
     When `frosted`, the content card is made translucent so the KWin backdrop-blur
-    shows through it instead of reading as a solid block on the frosted window."""
+    shows through it instead of reading as a solid block on the frosted window.
+    `opacity` (<1) makes the window see-through: the light theme's opaque white card
+    is thinned so the desktop shows through it (dark's card is already translucent,
+    so its window fill — painted in paintEvent — carries the effect)."""
     palette = dict(_PALETTES.get(theme, _PALETTES["dark"]))
     if frosted:
         palette["CARD_BG"] = "rgba(255, 255, 255, 120)" if theme == "light" else "rgba(255, 255, 255, 16)"
+    elif opacity < 0.999 and theme == "light":
+        palette["CARD_BG"] = f"rgba(255, 255, 255, {max(0, min(255, round(255 * opacity)))})"
     qss = _QSS
     for token, value in palette.items():
         if isinstance(value, str):
@@ -310,7 +323,7 @@ def _skin(accent: str, theme: str = "dark", frosted: bool = False) -> str:
 # The Config fields each sidebar page owns, in nav order. Used by "Reset this tab"
 # to restore just the current page's fields to their defaults, leaving the rest.
 _PAGE_FIELDS: tuple[tuple[str, ...], ...] = (
-    ("ui_language", "theme", "frost_window"),                                            # General
+    ("ui_language", "theme", "frost_window", "settings_opacity"),                         # General
     ("icon_name", "window_icon_name"),                                                   # Icon
     ("font_family", "font_style", "font_size", "context_font_size", "translation_font_size"),  # Text
     ("panel_style", "panel_width_mode", "panel_width", "opacity", "frost_opacity", "panel_accent_tint"),  # Panel
@@ -346,10 +359,17 @@ class SettingsDialog(QDialog):
         platform = QGuiApplication.platformName() or ""
         self._blur = LayerShellController(default_package_dir(), platform, desktop)
         self._blur_capable = self._blur.available and "wayland" in platform.lower() and "KDE" in desktop.upper()
+        # Wayland has no client-side window-opacity protocol, so animating/setting
+        # windowOpacity there does nothing but spam "plugin does not support…".
+        self._window_opacity_ok = "wayland" not in platform.lower()
         self._frosted = self._blur_capable and config.frost_window
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setStyleSheet(_skin(config.accent_start, self._theme, self._frosted))
+        # See-through level for the window surfaces. NOT setWindowOpacity — the Qt
+        # Wayland plugin ignores that (no client-side opacity protocol); instead the
+        # painted window fill + card alpha carry it, so it works under KWin.
+        self._win_opacity = config.settings_opacity
+        self.setStyleSheet(_skin(config.accent_start, self._theme, self._frosted, self._win_opacity))
 
         # Sidebar categories drive a stacked content area (replaces top tabs).
         self._stack = QStackedWidget()
@@ -462,6 +482,10 @@ class SettingsDialog(QDialog):
         if self._frosted:
             # Translucent so the KWin blur behind the window shows through as frost.
             bg = (bg[0], bg[1], bg[2], 165)
+        else:
+            # Opacity drives the window fill directly: 100% is fully opaque (alpha
+            # 255, not the palette's slightly-translucent default), 0% invisible.
+            bg = (bg[0], bg[1], bg[2], max(0, min(255, round(255 * self._win_opacity))))
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setBrush(QColor(*bg))
@@ -516,8 +540,9 @@ class SettingsDialog(QDialog):
             self.setMinimumWidth(needed)
         if self.width() < needed:
             self.resize(needed, self.height())
-        # Gentle fade-in on first show (once), if animations are enabled.
-        if self._config.fx_animate and not self._did_fade_in:
+        # Gentle fade-in on first show (once), if animations are enabled. Skipped on
+        # Wayland, where windowOpacity is a no-op that only logs a warning per frame.
+        if self._config.fx_animate and not self._did_fade_in and self._window_opacity_ok:
             self._did_fade_in = True
             anim = QPropertyAnimation(self, b"windowOpacity", self)
             anim.setDuration(160)
@@ -548,11 +573,19 @@ class SettingsDialog(QDialog):
         form.addRow(t("set.theme"), self._theme_combo)
 
         # Frosted-glass settings window (real KWin blur; no effect off KDE Wayland).
+        # Disabled + a note when the platform can't blur, so it reads as unavailable
+        # rather than an option that silently does nothing.
         self._frost_window = QCheckBox(t("set.frost_window"))
         self._frost_window.setChecked(self._config.frost_window)
+        self._frost_window.setEnabled(self._blur_capable)
         form.addRow(self._frost_window)
-        if not self._blur_capable:
-            form.addRow(self._hint(t("set.frost_window_hint")))
+        form.addRow(self._hint(t("set.frost_window_hint")))
+
+        # How see-through this settings window is (whole window; text stays legible).
+        # Applied on OK/Apply like every other setting (no live preview) — a live
+        # preview flashed the window near-invisible while typing "95" passed the "9".
+        self._settings_opacity = self._spin(0, 100, round(self._config.settings_opacity * 100), " %")
+        form.addRow(t("set.settings_opacity"), self._settings_opacity)
 
         # Hidden until the language selection differs from what is running; the UI
         # is only rebuilt on restart, so offer to do it right here.
@@ -1005,6 +1038,7 @@ class SettingsDialog(QDialog):
             ui_language=str(self._ui_language.currentData()),
             theme=str(self._theme_combo.currentData()),
             frost_window=self._frost_window.isChecked(),
+            settings_opacity=self._settings_opacity.value() / 100.0,
             lyrics_script=str(self._lyrics_script.currentData()),
             icon_name=self._picked_icon(self._tray_icon_list),
             window_icon_name=self._picked_icon(self._window_icon_list),
@@ -1080,7 +1114,8 @@ class SettingsDialog(QDialog):
         # away (tab underline, checkbox fill, light/dark palette) rather than only
         # after Settings is closed and reopened.
         self._theme = _resolve_theme(self._config.theme)
-        self.setStyleSheet(_skin(self._config.accent_start, self._theme, self._frosted))
+        self._win_opacity = self._config.settings_opacity  # commit the see-through level
+        self.setStyleSheet(_skin(self._config.accent_start, self._theme, self._frosted, self._win_opacity))
         self._update_logo_badge()  # re-tint the leaf logo to the new accent
         self._refresh_generated_icons()  # re-tint the accent/tile icon previews
         self.update()  # repaint the frameless background (theme / frost)

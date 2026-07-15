@@ -77,6 +77,10 @@ def test_effects_defaults_clamp_and_roundtrip(tmp_path):
     # Fuzzy matching: on by default, coerced to bool.
     assert Config().fuzzy_match is True
     assert Config(fuzzy_match=cast(bool, 0)).clamped().fuzzy_match is False
+    # Settings-window opacity: a touch see-through by default, clamped to 0.0..1.0.
+    assert Config().settings_opacity == 0.95
+    assert Config(settings_opacity=2.0).clamped().settings_opacity == 1.0
+    assert Config(settings_opacity=-0.5).clamped().settings_opacity == 0.0
     path = tmp_path / "c.json"
     save_config(Config(fx_animate=False, fx_glow=False, fx_word_pop=False, fx_intensity="expressive"), path)
     loaded = load_config(path)

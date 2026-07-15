@@ -150,6 +150,21 @@ def test_frost_window_toggle_roundtrips_and_applies_safely(qapp):
     dialog.close()
 
 
+def test_frost_checkbox_is_greyed_out_and_noted_when_blur_unavailable(qapp):
+    from PyQt6.QtWidgets import QLabel
+
+    from kotonoha.strings import t
+
+    # Offscreen is not KDE Wayland, so frosted glass can't work: the checkbox reads
+    # as unavailable (disabled) and the KDE-only note is shown under it.
+    dialog = SettingsDialog(Config())
+    assert dialog._blur_capable is False
+    assert dialog._frost_window.isEnabled() is False
+    hints = [w.text() for w in dialog.findChildren(QLabel) if w.objectName() == "hint"]
+    assert t("set.frost_window_hint") in hints
+    dialog.close()
+
+
 def test_content_sits_in_a_raised_card_and_page_switch_is_safe(qapp):
     from PyQt6.QtWidgets import QWidget
 
@@ -442,6 +457,37 @@ def test_fuzzy_match_toggle_roundtrips(qapp):
     assert dialog._fuzzy_match.isChecked() is False
     dialog._fuzzy_match.setChecked(True)
     assert dialog.current_config().fuzzy_match is True
+    dialog.close()
+
+
+def test_settings_window_opacity_applies_and_roundtrips(qapp):
+    # Painted-alpha, not setWindowOpacity (which the Qt Wayland plugin ignores):
+    # in the light theme the card is thinned; the window fill is thinned in paintEvent.
+    dialog = SettingsDialog(Config(settings_opacity=0.8, theme="light"))
+    assert dialog._settings_opacity.value() == 80
+    assert dialog._win_opacity == 0.8
+    assert "rgba(255, 255, 255, 204)" in dialog.styleSheet()  # 0.8 * 255 card alpha
+    dialog._settings_opacity.setValue(70)  # not applied until OK/Apply (no live preview)
+    assert dialog._win_opacity == 0.8  # still the opened value
+    dialog._emit()  # Apply
+    assert dialog._win_opacity == 0.7
+    assert "rgba(255, 255, 255, 178)" in dialog.styleSheet()  # re-skinned to 0.7
+    assert dialog.current_config().settings_opacity == 0.7
+    dialog.close()
+
+
+def test_settings_opacity_100_is_fully_opaque_and_range_is_full(qapp):
+    # 100% must be genuinely opaque (the base palette alpha is < 255, which is why a
+    # "100%" window still looked see-through before), and the spin allows 0..100.
+    dialog = SettingsDialog(Config(settings_opacity=1.0, theme="dark"))
+    dialog.resize(200, 200)
+    assert dialog._settings_opacity.minimum() == 0
+    assert dialog._settings_opacity.maximum() == 100
+    opaque = dialog.grab().toImage().pixelColor(100, 100).alpha()
+    assert opaque == 255  # fully solid at 100%
+    dialog._settings_opacity.setValue(50)
+    dialog._emit()  # applied on Apply, not live
+    assert dialog.grab().toImage().pixelColor(100, 100).alpha() < 200  # clearly see-through
     dialog.close()
 
 

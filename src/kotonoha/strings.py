@@ -241,6 +241,8 @@ STRINGS: dict[str, dict[str, str]] = {
                               "zh-Hans": "毛玻璃需要 KDE Wayland；其他环境为不透明窗口。",
                               "zh-Hant": "毛玻璃需要 KDE Wayland；其他環境為不透明視窗。",
                               "ja": "すりガラスは KDE Wayland が必要（他環境では不透明ウィンドウ）。"},
+    "set.settings_opacity": {"en": "Window opacity", "zh-Hans": "窗口不透明度",
+                             "zh-Hant": "視窗不透明度", "ja": "ウィンドウの不透明度"},
     "btn.restart": {"en": "Restart now", "zh-Hans": "立即重启",
                     "zh-Hant": "立即重啟", "ja": "今すぐ再起動"},
     "btn.ok": {"en": "OK", "zh-Hans": "确定", "zh-Hant": "確定", "ja": "OK"},
