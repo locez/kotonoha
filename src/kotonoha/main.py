@@ -79,7 +79,9 @@ def entry_point() -> int:
         logging.getLogger(__name__).warning("Kotonoha is already running; exiting.")
         return 0
 
-    os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "0"
+    # Pin the device pixel ratio to 1 so the layer-shell surface's pixel geometry
+    # (set_input_rect / set_anchor_position work in physical pixels) matches what we
+    # paint. QT_AUTO_SCREEN_SCALE_FACTOR is a dead Qt5 knob under Qt6 — dropped.
     os.environ.setdefault("QT_SCALE_FACTOR", "1")
 
     import qasync

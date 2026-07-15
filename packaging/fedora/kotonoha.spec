@@ -47,6 +47,10 @@ install -Dm0644 packaging/kotonoha.desktop \
     %{buildroot}%{_datadir}/applications/kotonoha.desktop
 install -Dm0644 src/kotonoha/assets/icon.png \
     %{buildroot}%{_datadir}/pixmaps/kotonoha.png
+install -Dm0644 packaging/dev.locez.kotonoha.metainfo.xml \
+    %{buildroot}%{_datadir}/metainfo/dev.locez.kotonoha.metainfo.xml
+install -Dm0644 packaging/kotonoha.1 \
+    %{buildroot}%{_mandir}/man1/kotonoha.1
 
 %check
 desktop-file-validate %{buildroot}%{_datadir}/applications/kotonoha.desktop
@@ -64,6 +68,8 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/kotonoha.desktop
 %license %{python3_sitelib}/qasync-0.28.0.dist-info/licenses/LICENSE
 %{_datadir}/applications/kotonoha.desktop
 %{_datadir}/pixmaps/kotonoha.png
+%{_datadir}/metainfo/dev.locez.kotonoha.metainfo.xml
+%{_mandir}/man1/kotonoha.1*
 
 %changelog
 * Sat Jul 11 2026 Locez <locez@locez.com> - 0.1.0-1

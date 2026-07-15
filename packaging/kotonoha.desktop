@@ -1,4 +1,5 @@
 [Desktop Entry]
+Version=1.5
 Type=Application
 Name=Kotonoha
 Name[zh_CN]=Kotonoha 歌词 HUD
@@ -15,10 +16,11 @@ Comment[ja]=再生中の曲の同期歌詞を表示
 Exec=kotonoha
 Icon=kotonoha
 Terminal=false
-# Kotonoha only shows a tray icon + a Wayland layer-shell overlay, never a normal
-# top-level window — so the launcher's startup notification would never be completed
-# and KDE would bounce the "launching" cursor until it times out. Opt out of it.
+# Tray app: no window appears on launch under some sessions, so suppress the
+# startup-notification spinner. StartupWMClass matches the app_id/WM_CLASS Qt
+# derives from setApplicationName("kotonoha") for the top-most fallback window.
 StartupNotify=false
+StartupWMClass=kotonoha
 Categories=AudioVideo;Audio;
 Keywords=lyrics;music;overlay;karaoke;
 Keywords[zh_CN]=歌词;音乐;悬浮窗;卡拉OK;

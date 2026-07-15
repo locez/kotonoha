@@ -120,6 +120,8 @@ jobs:
           test "${#bridges[@]}" -eq 1
           test -f /usr/share/applications/kotonoha.desktop
           test -f /usr/share/pixmaps/kotonoha.png
+          test -f /usr/share/metainfo/dev.locez.kotonoha.metainfo.xml
+          ls /usr/share/man/man1/kotonoha.1* >/dev/null  # glob: compressed .gz/.zst or plain
           desktop-file-validate /usr/share/applications/kotonoha.desktop
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -212,6 +214,8 @@ jobs:
           test -f "$bridge"
           test -f /usr/share/applications/kotonoha.desktop
           test -f /usr/share/pixmaps/kotonoha.png
+          test -f /usr/share/metainfo/dev.locez.kotonoha.metainfo.xml
+          ls /usr/share/man/man1/kotonoha.1* >/dev/null  # glob: compressed .gz/.zst or plain
           desktop-file-validate /usr/share/applications/kotonoha.desktop
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

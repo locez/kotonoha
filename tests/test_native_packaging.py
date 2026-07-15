@@ -85,7 +85,11 @@ def test_scikit_build_core_builds_cmake_bridge_into_wheel() -> None:
         "build-backend": "scikit_build_core.build",
     }
     assert pyproject["tool"]["scikit-build"] == {
-        "wheel": {"packages": ["src/kotonoha"]},
+        "wheel": {
+            "packages": ["src/kotonoha"],
+            # Build-only inputs stay out of the installed wheel.
+            "exclude": ["**/*.cpp", "**/*.sh", "**/protocols/*.xml"],
+        },
         "cmake": {
             "build-type": "Release",
             "args": ["-DKOTONOHA_INSTALL_DIR=kotonoha"],
@@ -119,6 +123,9 @@ def test_cmake_is_documented_and_verified_by_ci() -> None:
     assert test_workflow.count("            cmake \\") >= 1
     assert package_workflow.count("            cmake \\") >= 1
     assert 'archive.namelist().count("kotonoha/libkoto-layer.so")' in package_workflow
+    # deb/rpm smoke jobs assert the AppStream metainfo and man page landed.
+    assert "test -f /usr/share/metainfo/dev.locez.kotonoha.metainfo.xml" in package_workflow
+    assert "ls /usr/share/man/man1/kotonoha.1*" in package_workflow
 
 
 def test_python_workflow_uses_bash_for_bash_only_commands() -> None:
@@ -192,6 +199,8 @@ def test_debian_install_and_changelog_define_desktop_file_and_initial_release() 
     changelog = read_packaging_file(DEBIAN_DIR / "changelog")
 
     assert "packaging/kotonoha.desktop usr/share/applications" in install
+    assert "packaging/dev.locez.kotonoha.metainfo.xml usr/share/metainfo" in install
+    assert "packaging/kotonoha.1 usr/share/man/man1" in install
     assert "src/kotonoha/libkoto-layer.so usr/lib/python3/dist-packages/kotonoha" not in install
     assert_contains(
         changelog,
@@ -260,6 +269,11 @@ def test_fedora_spec_builds_and_installs_native_desktop_assets() -> None:
             "%license %{python3_sitelib}/qasync-0.28.0.dist-info/licenses/LICENSE",
             "%{_datadir}/applications/kotonoha.desktop",
             "%{_datadir}/pixmaps/kotonoha.png",
+            "install -Dm0644 packaging/dev.locez.kotonoha.metainfo.xml",
+            "%{buildroot}%{_datadir}/metainfo/dev.locez.kotonoha.metainfo.xml",
+            "install -Dm0644 packaging/kotonoha.1",
+            "%{buildroot}%{_mandir}/man1/kotonoha.1",
+            "%{_mandir}/man1/kotonoha.1*",
             "%check",
             "desktop-file-validate %{buildroot}%{_datadir}/applications/kotonoha.desktop",
             "%{_bindir}/kotonoha",
