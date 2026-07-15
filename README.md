@@ -64,6 +64,12 @@ cmake --build build/cmake --config Release
 cmake --install build/cmake --config Release --prefix "$PWD/.venv" --component KotonohaBridge
 ```
 
+The KDE frosted-glass blur (`org_kde_kwin_blur`) is compiled in by default and
+needs `wayland-scanner` (part of the `wayland` dev package) at build time. To
+build without it, pass `-DKOTONOHA_ENABLE_BLUR=OFF` — the translucent panel
+still renders, just unblurred. Packagers building a wheel can also pass
+`-DKOTONOHA_INSTALL_LICENSE=OFF` to skip staging a second `LICENSE` copy.
+
 Build a wheel with `uv build --wheel`. The existing shell path remains available as a manual fallback:
 
 ```bash

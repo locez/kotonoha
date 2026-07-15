@@ -1,1 +1,3 @@
 packaging/kotonoha.desktop usr/share/applications
+packaging/dev.locez.kotonoha.metainfo.xml usr/share/metainfo
+packaging/kotonoha.1 usr/share/man/man1
