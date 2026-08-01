@@ -4,7 +4,8 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PyQt6.QtCore import QEvent
+from PyQt6.QtCore import QEvent, QPoint, QPointF, QRect, Qt
+from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtWidgets import QApplication
 
 from kotonoha.config import Config
@@ -16,6 +17,12 @@ from kotonoha.state import LyricsState
 class UnavailableController(LayerShellController):
     def __init__(self) -> None:
         super().__init__("", "wayland", "GNOME")
+
+
+class AvailableController(UnavailableController):
+    @property
+    def available(self):
+        return True
 
 
 @pytest.fixture(scope="module")
@@ -58,6 +65,268 @@ def test_idle_shows_default_text_so_the_panel_is_not_empty(qapp):
     overlay._on_snapshot(EMPTY_SNAPSHOT)  # nothing playing
     assert overlay._current.text  # a default line is shown, not a blank box
     assert "♪" in overlay._current.text
+    overlay.deleteLater()
+    qapp.processEvents()
+
+
+def _mouse_event(event_type, local, global_pos, *, pressed):
+    button = Qt.MouseButton.NoButton if event_type == QEvent.Type.MouseMove else Qt.MouseButton.LeftButton
+    buttons = Qt.MouseButton.LeftButton if pressed else Qt.MouseButton.NoButton
+    return QMouseEvent(
+        event_type,
+        QPointF(*local),
+        QPointF(*local),
+        QPointF(*global_pos),
+        button,
+        buttons,
+        Qt.KeyboardModifier.NoModifier,
+    )
+
+
+def test_plain_click_does_not_persist_or_move_overlay(qapp):
+    overlay = LyricsOverlay(LyricsState(), Config(), UnavailableController())
+    overlay._layer_pos = QPoint(100, 100)
+
+    with (
+        patch.object(overlay, "_apply_layer_position") as apply_position,
+        patch.object(overlay, "_commit_drag_position") as commit_position,
+    ):
+        overlay.mousePressEvent(
+            _mouse_event(QEvent.Type.MouseButtonPress, (300, 60), (1000, 500), pressed=True)
+        )
+        overlay.mouseMoveEvent(_mouse_event(QEvent.Type.MouseMove, (302, 61), (1002, 501), pressed=True))
+        overlay.mouseReleaseEvent(
+            _mouse_event(QEvent.Type.MouseButtonRelease, (302, 61), (1002, 501), pressed=False)
+        )
+
+    assert overlay._layer_pos == QPoint(100, 100)
+    apply_position.assert_not_called()
+    commit_position.assert_not_called()
+    overlay.deleteLater()
+    qapp.processEvents()
+
+
+def test_drag_tracks_global_delta_live_without_accumulating_local_feedback(qapp):
+    overlay = LyricsOverlay(LyricsState(), Config(), UnavailableController())
+    overlay._layer_pos = QPoint(100, 100)
+
+    with (
+        patch.object(overlay, "_clamp_drag_panel_position", side_effect=lambda pos: pos),
+        patch.object(overlay, "_apply_layer_position") as apply_position,
+        patch.object(overlay, "_commit_drag_position") as commit_position,
+        patch.object(overlay, "_apply_input_region") as apply_input_region,
+    ):
+        overlay.mousePressEvent(
+            _mouse_event(QEvent.Type.MouseButtonPress, (300, 60), (1000, 500), pressed=True)
+        )
+        overlay.mouseMoveEvent(_mouse_event(QEvent.Type.MouseMove, (330, 85), (1030, 525), pressed=True))
+
+        assert overlay._layer_pos == QPoint(130, 125)
+        apply_position.assert_called_once_with()
+
+        # A compositor-driven local-coordinate change at the same global pointer
+        # position must not be accumulated as another movement.
+        overlay.mouseMoveEvent(_mouse_event(QEvent.Type.MouseMove, (300, 60), (1030, 525), pressed=True))
+        assert overlay._layer_pos == QPoint(130, 125)
+        apply_position.assert_called_once_with()
+
+        overlay.mouseMoveEvent(_mouse_event(QEvent.Type.MouseMove, (990, 700), (1060, 540), pressed=True))
+        assert overlay._layer_pos == QPoint(160, 140)
+        assert apply_position.call_count == 2
+
+        overlay.mouseReleaseEvent(
+            _mouse_event(QEvent.Type.MouseButtonRelease, (990, 700), (1060, 540), pressed=False)
+        )
+
+    # Release persists the already-visible live position and repairs the native
+    # input region; it does not perform a deferred jump.
+    assert overlay._layer_pos == QPoint(160, 140)
+    assert apply_position.call_count == 2
+    commit_position.assert_called_once_with()
+    apply_input_region.assert_called_once_with()
+    overlay.deleteLater()
+    qapp.processEvents()
+
+
+def test_drag_compensates_when_compositor_shrinks_surface_around_panel(qapp):
+    overlay = LyricsOverlay(LyricsState(), Config(), UnavailableController())
+    overlay._layer_pos = QPoint(100, 100)
+    overlay._container.setGeometry(400, 20, 200, 100)
+
+    with (
+        patch.object(overlay, "_clamp_drag_panel_position", side_effect=lambda pos: pos),
+        patch.object(overlay, "_apply_layer_position") as apply_position,
+    ):
+        overlay.mousePressEvent(
+            _mouse_event(QEvent.Type.MouseButtonPress, (500, 60), (1000, 500), pressed=True)
+        )
+
+        # niri configures a narrower surface near an edge, shifting the centered
+        # panel 100 px left inside its transparent parent.
+        overlay._container.setGeometry(300, 20, 200, 100)
+        overlay.mouseMoveEvent(_mouse_event(QEvent.Type.MouseMove, (530, 60), (1030, 500), pressed=True))
+
+    # The layer origin compensates for the local shift, so the visible panel moves
+    # by exactly the same 30 px as the pointer.
+    assert overlay._layer_pos == QPoint(230, 100)
+    assert overlay._layer_pos.x() + overlay._container.x() == 530
+    apply_position.assert_called_once_with()
+    overlay._render_timer.stop()
+    overlay.deleteLater()
+    qapp.processEvents()
+
+
+def test_drag_discards_edge_overdrag_so_reverse_motion_is_immediate(qapp):
+    overlay = LyricsOverlay(LyricsState(), Config(), UnavailableController())
+    overlay._layer_pos = QPoint(100, 100)
+    panel_x = overlay._container.x()
+
+    def clamp_right_edge(pos):
+        return QPointF(min(pos.x(), 150 + panel_x), pos.y())
+
+    with (
+        patch.object(overlay, "_clamp_drag_panel_position", side_effect=clamp_right_edge),
+        patch.object(overlay, "_apply_layer_position") as apply_position,
+    ):
+        overlay.mousePressEvent(
+            _mouse_event(QEvent.Type.MouseButtonPress, (300, 60), (1000, 500), pressed=True)
+        )
+        overlay.mouseMoveEvent(_mouse_event(QEvent.Type.MouseMove, (400, 60), (1100, 500), pressed=True))
+        assert overlay._layer_pos == QPoint(150, 100)
+
+        # Each outward event is discarded at once. A one-pixel reversal therefore
+        # moves the panel immediately instead of paying back stale overdrag.
+        overlay.mouseMoveEvent(_mouse_event(QEvent.Type.MouseMove, (399, 60), (1099, 500), pressed=True))
+        assert overlay._layer_pos == QPoint(149, 100)
+        assert apply_position.call_count == 2
+
+    overlay._render_timer.stop()
+    overlay.deleteLater()
+    qapp.processEvents()
+
+
+def test_drag_release_retargeted_to_control_does_not_trigger_control(qapp):
+    overlay = LyricsOverlay(LyricsState(), Config(), UnavailableController())
+    passthrough_requests = []
+    settings_requests = []
+    overlay.passthrough_toggle_requested.connect(lambda: passthrough_requests.append(True))
+    overlay.settings_requested.connect(lambda: settings_requests.append(True))
+
+    with (
+        patch.object(overlay, "_commit_drag_position") as commit_position,
+        patch.object(overlay, "_apply_input_region") as apply_input_region,
+    ):
+        overlay._dragging = True
+        overlay._drag_moved = True
+        overlay._on_lock_button_clicked()
+
+        assert passthrough_requests == []
+        assert overlay._dragging is False
+        commit_position.assert_called_once_with()
+        apply_input_region.assert_called_once_with()
+
+        qapp.processEvents()  # clear the one-event-loop click suppression
+        overlay._on_lock_button_clicked()
+        assert passthrough_requests == [True]
+
+        overlay._dragging = True
+        overlay._drag_moved = True
+        overlay._on_settings_button_clicked()
+        assert settings_requests == []
+
+    overlay._render_timer.stop()
+    overlay.deleteLater()
+    qapp.processEvents()
+
+
+def test_clamp_keeps_visible_panel_on_screen_not_transparent_surface(qapp):
+    overlay = LyricsOverlay(LyricsState(), Config(), UnavailableController())
+    overlay._container.setGeometry(400, 40, 300, 100)
+
+    class Screen:
+        @staticmethod
+        def geometry():
+            return QRect(0, 0, 1000, 700)
+
+    with (
+        patch.object(overlay, "_target_screen", return_value=Screen()),
+        patch.object(overlay, "_window_size", return_value=(1100, 140)),
+    ):
+        clamped = overlay._clamp_to_screen(QPoint(-10_000, 10_000))
+
+    assert clamped == QPoint(-400, 560)
+    assert clamped.x() + overlay._container.x() == 0
+    assert clamped.y() + overlay._container.y() + overlay._container.height() == 700
+    overlay.deleteLater()
+    qapp.processEvents()
+
+
+def test_live_position_uses_layer_shell_bridge_on_wayland(qapp):
+    class Controller(AvailableController):
+        def __init__(self):
+            super().__init__()
+            self.positions = []
+
+        def set_anchor_position(self, ptr, x, y):
+            self.positions.append((ptr, x, y))
+
+    controller = Controller()
+    overlay = LyricsOverlay(LyricsState(), Config(), controller)
+    overlay._layer_pos = QPoint(120, 80)
+
+    with patch.object(overlay, "_window_ptr", return_value=123):
+        overlay._apply_layer_position()
+
+    assert controller.positions == [(123, 120, 80)]
+    overlay.deleteLater()
+    qapp.processEvents()
+
+
+def test_layer_shell_placement_stays_on_original_output(qapp):
+    overlay = LyricsOverlay(LyricsState(), Config(), AvailableController())
+    original_output = object()
+    adjacent_output = object()
+    overlay._layer_screen = None
+
+    with (
+        patch.object(QApplication, "screens", return_value=[original_output, adjacent_output]),
+        patch.object(QApplication, "primaryScreen", return_value=original_output),
+        patch.object(overlay, "screen", side_effect=[original_output, adjacent_output]),
+    ):
+        first = overlay._target_screen()
+        after_qt_switch = overlay._target_screen()
+
+    assert first is original_output
+    assert after_qt_switch is original_output
+
+    # Hot-unplugging the bound output safely selects the remaining primary output.
+    with (
+        patch.object(QApplication, "screens", return_value=[adjacent_output]),
+        patch.object(QApplication, "primaryScreen", return_value=adjacent_output),
+        patch.object(overlay, "screen", return_value=adjacent_output),
+    ):
+        assert overlay._target_screen() is adjacent_output
+
+    overlay.deleteLater()
+    qapp.processEvents()
+
+
+def test_live_position_uses_screen_global_coordinates_without_layer_shell(qapp):
+    overlay = LyricsOverlay(LyricsState(), Config(), UnavailableController())
+    overlay._layer_pos = QPoint(120, 80)
+
+    class Screen:
+        @staticmethod
+        def geometry():
+            return QRect(3440, 40, 1920, 1080)
+
+    with (
+        patch.object(overlay, "_target_screen", return_value=Screen()),
+        patch.object(overlay, "move") as move,
+    ):
+        overlay._apply_layer_position()
+
+    move.assert_called_once_with(3560, 120)
     overlay.deleteLater()
     qapp.processEvents()
 
