@@ -78,7 +78,10 @@ class LyricsOverlay(QWidget):
         self._passthrough = config.passthrough
         self._layer_pos = QPoint()  # screen-local top-left of the surface
         self._dragging = False
-        self._drag_local = QPoint()
+        self._drag_scene = QPoint()
+        self._drag_start_pos = QPoint()
+        self._drag_target_pos = QPoint()
+        self._drag_moved = False
         app = QApplication.instance()
         desktop = app.property("xdg_current_desktop") if app is not None else ""
         self._controller = controller or LayerShellController(
@@ -344,7 +347,11 @@ class LyricsOverlay(QWidget):
             return
         width, height = self._window_size()
         self.setFixedSize(width, height)
-        self._layer_pos = self._compute_layer_pos(width, height)
+        # Make the painted pill geometry available to _clamp_to_screen(). Saved
+        # margins may come from another output/scale or from an older buggy drag,
+        # so validate them before mapping the surface.
+        self._root.activate()
+        self._layer_pos = self._clamp_to_screen(self._compute_layer_pos(width, height))
         if not self._controller.available:
             geo = screen.geometry()
             self.move(geo.x() + self._layer_pos.x(), geo.y() + self._layer_pos.y())
@@ -519,17 +526,20 @@ class LyricsOverlay(QWidget):
     # --- drag to reposition (only while unlocked) ---
     #
     # Wayland forbids client-side self.move(); a layer surface is moved by updating
-    # its margins. Use BiliHUD's incremental *local* delta — it is accurate ("cursor
-    # stops where you release") because the cursor's local position re-settles as the
-    # surface follows. (globalPosition() is unreliable for a layer surface on Wayland
-    # — it can be off by half a screen — which is why BiliHUD avoids it.) To fix the
-    # big-font flicker we commit via the bridge and skip the Qt repaint, so the heavy
-    # lyric text isn't re-rendered every frame.
+    # its margins. Use scenePosition() so presses propagated from a child label and
+    # later motion events are always measured in the same window coordinate space.
+    # Also do not move the surface for every event: layer-shell reposition is
+    # asynchronous, so feeding its changing local coordinates back into the next
+    # margin update creates a runaway loop on niri. Measure against a stationary
+    # surface and commit once on release; this is compositor-independent.
 
     def mousePressEvent(self, a0: QMouseEvent | None) -> None:
         if a0 is not None and not self._passthrough and a0.button() == Qt.MouseButton.LeftButton:
             self._dragging = True
-            self._drag_local = a0.position().toPoint()
+            self._drag_scene = a0.scenePosition().toPoint()
+            self._drag_start_pos = QPoint(self._layer_pos)
+            self._drag_target_pos = QPoint(self._layer_pos)
+            self._drag_moved = False
             self._render_timer.stop()  # pause the sweep so it isn't repainted mid-drag
             a0.accept()
         else:
@@ -537,20 +547,12 @@ class LyricsOverlay(QWidget):
 
     def mouseMoveEvent(self, a0: QMouseEvent | None) -> None:
         if a0 is not None and self._dragging and a0.buttons() & Qt.MouseButton.LeftButton:
-            diff = a0.position().toPoint() - self._drag_local
-            self._layer_pos = self._clamp_to_screen(self._layer_pos + diff)
-            if self._controller.available:
-                ptr = self._window_ptr()
-                if ptr is not None:
-                    self._controller.set_anchor_position(ptr, self._layer_pos.x(), self._layer_pos.y())
-                    # No repaint: the bridge commits the surface, and the compositor
-                    # just re-positions the cached buffer — so the heavy lyric text
-                    # isn't re-rendered every frame, which is what killed tracking.
-            else:
-                screen = self._target_screen()
-                if screen is not None:
-                    geo = screen.geometry()
-                    self.move(geo.x() + self._layer_pos.x(), geo.y() + self._layer_pos.y())
+            diff = a0.scenePosition().toPoint() - self._drag_scene
+            hints = QApplication.styleHints()
+            threshold = hints.startDragDistance() if hints is not None else 10
+            if self._drag_moved or diff.manhattanLength() >= threshold:
+                self._drag_moved = True
+                self._drag_target_pos = self._clamp_to_screen(self._drag_start_pos + diff)
             a0.accept()
         else:
             super().mouseMoveEvent(a0)
@@ -559,7 +561,10 @@ class LyricsOverlay(QWidget):
         if self._dragging:
             self._dragging = False
             self._render_timer.start()  # resume the sweep
-            self._commit_drag_position()
+            if self._drag_moved:
+                self._layer_pos = QPoint(self._drag_target_pos)
+                self._apply_layer_position()
+                self._commit_drag_position()
             if a0 is not None:
                 a0.accept()
         else:
@@ -571,9 +576,35 @@ class LyricsOverlay(QWidget):
             return pos
         geo = screen.geometry()
         width, height = self._window_size()
-        x = max(-width + 80, min(pos.x(), geo.width() - 80))
-        y = max(0, min(pos.y(), geo.height() - 60))
+        panel = self._container.geometry()
+        if panel.isValid() and panel.width() > 0 and panel.height() > 0:
+            # Clamp the painted/input panel, not the much larger transparent
+            # surface around it. Keeping 80 px of that surface visible can still
+            # leave the entire centered pill off-screen (the old niri failure).
+            min_x = -panel.x()
+            max_x = geo.width() - panel.x() - panel.width()
+            min_y = -panel.y()
+            max_y = geo.height() - panel.y() - panel.height()
+        else:
+            # Layout is not ready yet: keeping the full surface in bounds is a
+            # conservative fallback that guarantees the first frame is reachable.
+            min_x, max_x = 0, max(0, geo.width() - width)
+            min_y, max_y = 0, max(0, geo.height() - height)
+        x = max(min_x, min(pos.x(), max_x))
+        y = max(min_y, min(pos.y(), max_y))
         return QPoint(x, y)
+
+    def _apply_layer_position(self) -> None:
+        """Apply the current position once, after a drag has finished."""
+        if self._controller.available:
+            ptr = self._window_ptr()
+            if ptr is not None:
+                self._controller.set_anchor_position(ptr, self._layer_pos.x(), self._layer_pos.y())
+            return
+        screen = self._target_screen()
+        if screen is not None:
+            geo = screen.geometry()
+            self.move(geo.x() + self._layer_pos.x(), geo.y() + self._layer_pos.y())
 
     def _commit_drag_position(self) -> None:
         """Persist the dragged position back into config margins/offsets."""

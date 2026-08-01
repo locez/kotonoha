@@ -4,7 +4,8 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PyQt6.QtCore import QEvent
+from PyQt6.QtCore import QEvent, QPoint, QPointF, QRect, Qt
+from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtWidgets import QApplication
 
 from kotonoha.config import Config
@@ -58,6 +59,125 @@ def test_idle_shows_default_text_so_the_panel_is_not_empty(qapp):
     overlay._on_snapshot(EMPTY_SNAPSHOT)  # nothing playing
     assert overlay._current.text  # a default line is shown, not a blank box
     assert "♪" in overlay._current.text
+    overlay.deleteLater()
+    qapp.processEvents()
+
+
+def _mouse_event(event_type, x, y, *, pressed, scene_x=None, scene_y=None):
+    button = Qt.MouseButton.LeftButton
+    buttons = button if pressed else Qt.MouseButton.NoButton
+    if scene_x is not None and scene_y is not None:
+        scene = QPointF(scene_x, scene_y)
+        return QMouseEvent(
+            event_type,
+            QPointF(x, y),
+            scene,
+            scene,
+            button,
+            buttons,
+            Qt.KeyboardModifier.NoModifier,
+        )
+    return QMouseEvent(event_type, QPointF(x, y), button, buttons, Qt.KeyboardModifier.NoModifier)
+
+
+def test_plain_click_does_not_persist_or_move_overlay(qapp):
+    overlay = LyricsOverlay(LyricsState(), Config(), UnavailableController())
+    overlay._layer_pos = QPoint(100, 100)
+
+    with (
+        patch.object(overlay, "_apply_layer_position") as apply_position,
+        patch.object(overlay, "_commit_drag_position") as commit_position,
+    ):
+        overlay.mousePressEvent(_mouse_event(QEvent.Type.MouseButtonPress, 300, 60, pressed=True))
+        overlay.mouseReleaseEvent(_mouse_event(QEvent.Type.MouseButtonRelease, 300, 60, pressed=False))
+
+    assert overlay._layer_pos == QPoint(100, 100)
+    apply_position.assert_not_called()
+    commit_position.assert_not_called()
+    overlay.deleteLater()
+    qapp.processEvents()
+
+
+def test_click_uses_window_coordinates_when_child_local_coordinates_differ(qapp):
+    overlay = LyricsOverlay(LyricsState(), Config(), UnavailableController())
+    overlay._layer_pos = QPoint(100, 100)
+
+    with (
+        patch.object(overlay, "_apply_layer_position") as apply_position,
+        patch.object(overlay, "_commit_drag_position") as commit_position,
+    ):
+        # A press propagated by a child label and a later grabbed move can carry
+        # unrelated widget-local positions. Their window-relative scene positions
+        # still differ by only two pixels, so this remains a click, not a drag.
+        overlay.mousePressEvent(
+            _mouse_event(
+                QEvent.Type.MouseButtonPress, 5, 5, pressed=True, scene_x=300, scene_y=60
+            )
+        )
+        overlay.mouseMoveEvent(
+            _mouse_event(
+                QEvent.Type.MouseMove, 900, 500, pressed=True, scene_x=302, scene_y=60
+            )
+        )
+        overlay.mouseReleaseEvent(
+            _mouse_event(
+                QEvent.Type.MouseButtonRelease, 900, 500, pressed=False, scene_x=302, scene_y=60
+            )
+        )
+
+    assert overlay._layer_pos == QPoint(100, 100)
+    apply_position.assert_not_called()
+    commit_position.assert_not_called()
+    overlay.deleteLater()
+    qapp.processEvents()
+
+
+def test_drag_is_measured_while_surface_is_stationary_and_applied_once_on_release(qapp):
+    overlay = LyricsOverlay(LyricsState(), Config(), UnavailableController())
+    overlay._layer_pos = QPoint(100, 100)
+
+    with (
+        patch.object(overlay, "_clamp_to_screen", side_effect=lambda pos: pos),
+        patch.object(overlay, "_apply_layer_position") as apply_position,
+        patch.object(overlay, "_commit_drag_position") as commit_position,
+    ):
+        overlay.mousePressEvent(_mouse_event(QEvent.Type.MouseButtonPress, 300, 60, pressed=True))
+        overlay.mouseMoveEvent(_mouse_event(QEvent.Type.MouseMove, 330, 85, pressed=True))
+
+        # Moving the layer surface here would make subsequent local mouse positions
+        # compositor-dependent. The target is recorded, but the surface stays put.
+        assert overlay._layer_pos == QPoint(100, 100)
+        assert overlay._drag_target_pos == QPoint(130, 125)
+
+        overlay.mouseReleaseEvent(_mouse_event(QEvent.Type.MouseButtonRelease, 330, 85, pressed=False))
+
+    assert overlay._layer_pos == QPoint(130, 125)
+    apply_position.assert_called_once_with()
+    commit_position.assert_called_once_with()
+    overlay.deleteLater()
+    qapp.processEvents()
+
+
+def test_clamp_keeps_the_visible_panel_on_screen_not_just_the_transparent_surface(qapp):
+    overlay = LyricsOverlay(LyricsState(), Config(), UnavailableController())
+    overlay._container.setGeometry(400, 40, 300, 100)
+
+    class Screen:
+        @staticmethod
+        def geometry():
+            return QRect(0, 0, 1000, 700)
+
+    with (
+        patch.object(overlay, "_target_screen", return_value=Screen()),
+        patch.object(overlay, "_window_size", return_value=(1100, 140)),
+    ):
+        clamped = overlay._clamp_to_screen(QPoint(-10_000, 10_000))
+
+    assert clamped == QPoint(-400, 560)
+    # surface + panel geometry => the painted panel touches, but never crosses,
+    # the left and bottom screen edges.
+    assert clamped.x() + overlay._container.x() == 0
+    assert clamped.y() + overlay._container.y() + overlay._container.height() == 700
     overlay.deleteLater()
     qapp.processEvents()
 
