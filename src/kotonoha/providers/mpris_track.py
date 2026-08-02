@@ -158,7 +158,7 @@ class TrackStabilizer:
             # case 2: subsequent track, compare positions to detect if the player reset
             settled = observation.position_s
             candidate = self._candidate_start
-            
+
             if settled is not None and candidate is not None and settled < candidate - 0.5:
                 start_position = 0.0
             else:
