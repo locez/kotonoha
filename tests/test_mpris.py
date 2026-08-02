@@ -30,6 +30,17 @@ def test_transition_captures_song_start_position():
     assert second is not None
     assert second.start_position == 500.0  # captured at B's first sighting
 
+def test_song_relative_player_reset_detected_uses_zero_offset():
+    stab = TrackStabilizer()
+    stab.observe(observation("/a", "A", "Artist", at=0.0, pos=0.0))
+    stab.observe(observation("/a", "A", "Artist", at=1.0, pos=21.0))
+    # When next song's metadata appears, current position is stale (= A's pos: 21.125s)
+    stab.observe(observation("/b", "B", "Artist", at=2.0, pos=21.125))
+    # Then the player resets its position to ~0.0, but the track ID is still B.
+    commit = stab.observe(observation("/b", "B", "Artist", at=3.0, pos=0.5))
+    # The stabilizer should detect the reset and use 0
+    assert commit is not None
+    assert commit.start_position == 0.0
 
 def test_parse_basic():
     info = parse_metadata(

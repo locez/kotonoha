@@ -148,7 +148,22 @@ class TrackStabilizer:
 
         # Only a genuine A->B change yields a start offset; the very first track has
         # no known join point, so leave it None (no correction).
-        start_position = self._candidate_start if self._committed_key is not None else None
+        # At track boundary, stale Position may arrive with new Metadata. If used as
+        # offset, it ruins all subsequent tracks. Detect reset by comparing settlement
+        # pos vs first sighting: if lower → song-relative (start=0); else cumulative.
+        if self._committed_key is None:
+            # case 1: first track, no previous track to compare with
+            start_position = None
+        else:
+            # case 2: subsequent track, compare positions to detect if the player reset
+            settled = observation.position_s
+            candidate = self._candidate_start
+            
+            if settled is not None and candidate is not None and settled < candidate - 0.5:
+                start_position = 0.0
+            else:
+                start_position = candidate
+
         self._committed_key = key
         self._generation += 1
         self._transitioning = False
