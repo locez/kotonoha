@@ -143,6 +143,9 @@ class MprisProvider:
         self._prefer_best = True
         self._fuzzy = True
         self._gate_revision = self._gate.revision
+        self._calibration_generation: int | None = None
+        self._calibration_until: float = 0.0
+        self._calibration_offset: float | None = None
 
     def set_lyrics_sources(self, sources: list[str]) -> None:
         updated = list(sources)
@@ -415,6 +418,7 @@ class MprisProvider:
             return
         playing = status == "Playing"
         if position is not None:
+            self._calibrate_offset(current, position, observed_at)
             position = max(0.0, position - self._song_offset)  # song-relative (no-op when offset ~0)
         cider_timing = self._gate.current_timing(current.info.metadata())
         if cider_timing is not None and cider_timing.current_time is not None:
@@ -449,6 +453,18 @@ class MprisProvider:
         # None, e.g. a source/cache change) keep the current offset.
         if commit.start_position is not None:
             self._song_offset = commit.start_position
+            # For song-relative players, the Position reset may arrive after the stabilizer's
+            # settle window has closed. Open a generation-bound short window to continue
+            # observing raw Position; if it drops below the offset threshold within this
+            # window, it means the committed offset was captured from the previous song's
+            # stale position — so correct the offset to 0.
+            if commit.start_position > 0.0:
+                self._calibration_generation = commit.generation
+                self._calibration_until = time.monotonic() + 2.0
+                self._calibration_offset = commit.start_position
+            else:
+                self._calibration_generation = None
+                self._calibration_offset = None
         self._current_commit = commit
         self._content_owner = "resolving"
         task = asyncio.create_task(self._load_song(commit))
@@ -572,6 +588,24 @@ class MprisProvider:
             )
         )
 
+    def _calibrate_offset(self, commit: TrackCommit, raw_position: float, observed_at: float) -> None:
+        if (
+            self._calibration_generation == commit.generation
+            and observed_at <= self._calibration_until
+            and self._calibration_offset is not None
+            and raw_position < self._calibration_offset - 0.5
+        ):
+            logger.debug(
+                "MPRIS calibration: offset %.3fs -> 0.0 (raw %.3fs, gen %d)",
+                self._calibration_offset,
+                raw_position,
+                commit.generation,
+            )
+            self._song_offset = 0.0
+            self._last_index = -2
+            self._calibration_generation = None
+            self._calibration_offset = None
+
     def _reset(self) -> None:
         if self._load_task is not None and not self._load_task.done():
             self._load_task.cancel()
@@ -583,6 +617,8 @@ class MprisProvider:
         self._provider_name = ""
         self._empty_since = None
         self._song_offset = 0.0
+        self._calibration_generation = None
+        self._calibration_offset = None
         self._gate.select_standalone()
         self._gate_revision = self._gate.revision
         self._state.clear()

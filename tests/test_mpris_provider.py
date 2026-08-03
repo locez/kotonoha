@@ -397,3 +397,82 @@ async def test_matching_cider_duration_corrects_mpris_search_metadata():
     await provider._load_task
 
     assert resolver.tracks[0].duration_s == 194.222
+
+
+async def test_late_position_reset_corrects_offset_without_reload():
+    lines = (
+        LyricLine(0, "L0", 0.0, 5.0, "first", ""),
+        LyricLine(1, "L1", 5.0, 10.0, "second", ""),
+    )
+    state = LyricsState()
+    resolver = RecordingResolver(ResolvedLyrics(source="netease", lines=lines))
+    provider = MprisProvider(state, resolver=resolver)
+    player = FakePlayer(metadata=VALID_METADATA, position=21_125_000)
+    prepare_poll(provider, player)
+
+    await provider._poll_once(now=0.0)
+    await provider._poll_once(now=0.5)
+    assert provider._load_task is not None
+    await provider._load_task
+
+    b_metadata = {
+        "xesam:title": "SongB",
+        "xesam:artist": ["ArtistB"],
+        "xesam:album": "AlbumB",
+        "mpris:length": 180_000_000,
+        "mpris:trackid": "/track/B",
+    }
+    player.metadata = b_metadata
+    await provider._poll_once(now=1.0)
+    await provider._poll_once(now=2.0)
+    assert provider._load_task is not None
+    await provider._load_task
+    assert provider._song_offset == 21.125
+    assert provider._calibration_offset == 21.125
+
+    player.position = 500_000
+    await provider._poll_once(now=2.2)
+
+    assert provider._song_offset == 0.0
+    assert len(resolver.tracks) == 2
+    assert state.snapshot.current is not None
+    assert state.snapshot.current.text == "first"
+
+
+async def test_cumulative_player_not_miscalibrated_by_normal_advance():
+    lines = (
+        LyricLine(0, "L0", 0.0, 5.0, "first", ""),
+        LyricLine(1, "L1", 5.0, 10.0, "second", ""),
+    )
+    state = LyricsState()
+    resolver = RecordingResolver(ResolvedLyrics(source="netease", lines=lines))
+    provider = MprisProvider(state, resolver=resolver)
+    player = FakePlayer(metadata=VALID_METADATA, position=500_000_000)
+    prepare_poll(provider, player)
+
+    await provider._poll_once(now=0.0)
+    await provider._poll_once(now=0.5)
+    assert provider._load_task is not None
+    await provider._load_task
+
+    b_metadata = {
+        "xesam:title": "SongB",
+        "xesam:artist": ["ArtistB"],
+        "xesam:album": "AlbumB",
+        "mpris:length": 180_000_000,
+        "mpris:trackid": "/track/B",
+    }
+    player.metadata = b_metadata
+    player.position = 500_500_000
+    await provider._poll_once(now=1.0)
+    player.position = 501_000_000
+    await provider._poll_once(now=2.0)
+    assert provider._load_task is not None
+    await provider._load_task
+
+    player.position = 507_000_000
+    await provider._poll_once(now=2.5)
+
+    assert provider._song_offset == 500.5
+    assert state.snapshot.current is not None
+    assert state.snapshot.current.text == "second"
