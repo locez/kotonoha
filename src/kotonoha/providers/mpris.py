@@ -408,6 +408,12 @@ class MprisProvider:
 
         if commit is not None:
             self._schedule_load(commit)
+
+        if position is not None and not self._stabilizer.transitioning:
+            current = self._current_commit
+            if current is not None:
+                self._calibrate_offset(current, position, observed_at)
+
         if not self._stabilizer.transitioning:
             self._ensure_content_owner()
         if self._stabilizer.transitioning or self._content_owner != "external":
@@ -418,7 +424,6 @@ class MprisProvider:
             return
         playing = status == "Playing"
         if position is not None:
-            self._calibrate_offset(current, position, observed_at)
             position = max(0.0, position - self._song_offset)  # song-relative (no-op when offset ~0)
         cider_timing = self._gate.current_timing(current.info.metadata())
         if cider_timing is not None and cider_timing.current_time is not None:
