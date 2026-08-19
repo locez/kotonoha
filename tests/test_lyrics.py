@@ -12,6 +12,7 @@ from kotonoha.lyrics.match import (
     _weighted_similarity,
     best_match,
     evaluate_match,
+    nearest_miss,
     query_variants,
     ranked_matches,
 )
@@ -765,3 +766,41 @@ def test_a_salvaged_title_may_not_cross_a_version():
     ]:
         got = ranked_matches(catalogue, TrackMetadata(reported, "", "", None), fuzzy=True)
         assert [m.candidate.title for m in got] == expected, f"{reported!r} accepted {got}"
+
+
+def test_every_outcome_names_the_rule_that_produced_it():
+    # "No lyrics" reads the same whether the catalogue has never heard of the song,
+    # holds only a re-cut of it, or holds it under a name the search never reached —
+    # and those want opposite fixes.
+    track = TrackMetadata("不谓侠", "", "", 259.0)
+
+    refused = evaluate_match(Candidate("1", "不谓侠(女声版)", "慵狐", 266.0), track, fuzzy=True)
+    unrelated = evaluate_match(Candidate("2", "Forever", "A Band", 200.0),
+                               TrackMetadata("Forever", "Another Band", "", 200.0), fuzzy=True)
+    accepted = evaluate_match(Candidate("3", "告白氣球", "周杰倫", 200.0),
+                              TrackMetadata("告白氣球", "周杰倫", "", 200.0), fuzzy=True)
+
+    assert refused.reason == "version-conflict"
+    assert unrelated.reason == "no-artist-overlap"
+    assert accepted.confidence is MatchConfidence.HIGH
+    assert accepted.reason and accepted.reason not in {"version-conflict", "no-artist-overlap"}
+
+
+def test_the_refusal_that_dominates_is_the_one_reported():
+    # One example is not a diagnosis: the reason that accounts for most of the
+    # refusals is what points at the fix, and the closest title shows what was near.
+    track = TrackMetadata("不谓侠", "", "", 259.0)
+    candidates = [
+        Candidate("1", "不谓侠(女声版)", "慵狐", 266.0),
+        Candidate("2", "不谓侠 (DJ版)", "DJ Wave", 260.0),
+        Candidate("3", "something else", "someone", 200.0),
+    ]
+
+    summary = nearest_miss(candidates, track, fuzzy=True)
+
+    assert summary.startswith("version-conflict (2 of 3")
+    assert "不谓侠" in summary
+
+
+def test_a_lookup_with_no_candidates_says_so():
+    assert nearest_miss([], TrackMetadata("x", "y", "", None)) == "nothing came back"

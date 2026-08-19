@@ -1,7 +1,40 @@
-"""Rank a provider's candidates against the track that is playing."""
+"""Rank a provider's candidates against the track that is playing.
+
+The rules, in the order they are applied, so the code below can be read as an
+implementation of them rather than as the specification itself.
+
+Two gates come first, and nothing passes them:
+
+1. A version conflict. Version markers say which recording is meant — a live take,
+   a cover, an instrumental cut, 女声版, DJ版 — and a candidate carrying different
+   ones from the track is a different recording, whose timings will not line up
+   even when the words are the same. Markers that change the recording but not the
+   words, a remaster among them, are exempt.
+2. No artist in common. The performer is the strongest identity a catalogue offers.
+
+Past those, the strength of the answer follows what corroborates the title:
+
+- HIGH  an exact title and the same artists, or a strong title with corroboration
+        from the artist, the album, or a duration within three seconds.
+- MEDIUM the catalogue's own identity for the song; a title exact enough that only
+        the duration disagrees, and by more than the whole shorter track, which is
+        a container length rather than a different edit; a strong title alone; or,
+        in fuzzy mode, the candidate's title and artist both sitting inside a noisy
+        upload title.
+- NONE  everything else.
+
+Every outcome, refusals included, carries the name of the rule that produced it, so
+a lookup that found nothing can say what it was that did not line up.
+
+Ranking, when several candidates pass: confidence first, then title similarity, then
+the closest duration. Fuzzy mode widens what is searched for, and a candidate is
+judged against the same readings the query was built from — but never across a
+version marker, since the salvage strips those along with the decoration.
+"""
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, replace
 from difflib import SequenceMatcher
 from enum import StrEnum
@@ -60,6 +93,10 @@ class MatchEvidence:
     album_match: bool
     similarity_score: float
     duration_delta: float | None
+    #: Which rule settled this candidate, refusal included. The decision is a ladder
+    #: of conditions whose reasoning lives in comments, so without a name for the rung
+    #: that answered, "no lyrics" cannot say what it was that did not line up.
+    reason: str = ""
 
 
 def _similarity(left: str, right: str) -> float:
@@ -177,7 +214,9 @@ def evaluate_match(candidate: Candidate, track: TrackMetadata, *, fuzzy: bool = 
     fuzzy_title_hit = fuzzy and not title_strong and _fuzzy_contains(candidate, track)
 
     confidence = MatchConfidence.NONE
+    reason = "version-conflict" if version_conflict else "no-artist-overlap"
     if not version_conflict and artist_overlap:
+        reason = "title-too-weak"
         # Duration alone only corroborates a title match when the track actually
         # names an artist. Otherwise (the common empty-artist browser case) a short
         # generic alias like "Lemon"/"Rain" plus a coincidental ±3s duration would
@@ -189,10 +228,13 @@ def evaluate_match(candidate: Candidate, track: TrackMetadata, *, fuzzy: bool = 
             # Exact title AND the exact same artist set is a strong identity even
             # if the reported duration is a few seconds off (common metadata skew).
             confidence = MatchConfidence.HIGH
+            reason = "title+artist identity"
         elif title_strong and supporting_identity and (duration_delta is None or duration_delta <= 3.0):
             confidence = MatchConfidence.HIGH
+            reason = "title with corroboration"
         elif catalog_identity:
             confidence = MatchConfidence.MEDIUM
+            reason = "catalogue identity"
         elif (
             title_exact
             and artist_identity
@@ -207,11 +249,14 @@ def evaluate_match(candidate: Candidate, track: TrackMetadata, *, fuzzy: bool = 
             # it. A merely moderate duration gap stays rejected (it may be a real
             # different recording), preserving the album-identity requirement there.
             confidence = MatchConfidence.MEDIUM
+            reason = "container duration"
         elif title_strong and (duration_delta is None or duration_delta <= 8.0):
             confidence = MatchConfidence.MEDIUM
+            reason = "title alone"
         elif fuzzy_title_hit:
             # The candidate's title + artist both sit inside the noisy track title.
             confidence = MatchConfidence.MEDIUM
+            reason = "names inside a noisy title"
         elif (
             not title_strong
             and title_ratio >= 0.5
@@ -221,6 +266,7 @@ def evaluate_match(candidate: Candidate, track: TrackMetadata, *, fuzzy: bool = 
         ):
             if duration_delta <= 3.0 and (album_match or track_artists == candidate_artists):
                 confidence = MatchConfidence.MEDIUM
+                reason = "duration with the same artists"
 
     return MatchEvidence(
         candidate=candidate,
@@ -232,6 +278,7 @@ def evaluate_match(candidate: Candidate, track: TrackMetadata, *, fuzzy: bool = 
         album_match=album_match,
         similarity_score=similarity_score,
         duration_delta=duration_delta,
+        reason=reason,
     )
 
 
@@ -247,6 +294,24 @@ def _evidence_sort_key(evidence: MatchEvidence) -> tuple[int, float, float]:
         evidence.similarity_score,
         duration_rank,
     )
+
+
+def nearest_miss(candidates: list[Candidate], track: TrackMetadata, *, fuzzy: bool = False) -> str:
+    """Why the closest candidate was refused, for a lookup that found nothing.
+
+    "No lyrics" is the same message whether the catalogue has never heard of the
+    song, holds only a re-cut of it, or holds it under a name the search never
+    reached — and those want opposite fixes. The refusals are counted so the one
+    that dominates is named, with the closest title as the example.
+    """
+    refusals = [evaluate_match(c, track, fuzzy=fuzzy) for c in candidates]
+    refusals = [r for r in refusals if r.confidence is MatchConfidence.NONE]
+    if not refusals:
+        return "nothing came back"
+    counts = Counter(r.reason for r in refusals)
+    reason, count = counts.most_common(1)[0]
+    closest = max(refusals, key=lambda r: r.similarity_score)
+    return f"{reason} ({count} of {len(refusals)}, closest {closest.candidate.title!r})"
 
 
 def best_match(

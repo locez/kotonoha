@@ -17,6 +17,7 @@ from .match import (
     MatchEvidence,
     QueryVariant,
     TrackMetadata,
+    nearest_miss,
     query_variants,
     ranked_matches,
 )
@@ -155,8 +156,10 @@ async def fetch_artifact(
         return await _artifact_for_match(session, match)
 
     medium_matches: dict[str, MatchEvidence] = {}
+    seen: list[Candidate] = []
     for batch in _ladder_batches(query_variants(track, fuzzy=fuzzy)):
         for candidates in await _search_batch(session, batch):
+            seen.extend(candidates)
             for match in ranked_matches(candidates, track, fuzzy=fuzzy):
                 if match.confidence is MatchConfidence.HIGH:
                     artifact = await try_fetch(match)  # a HIGH is almost certainly the song
@@ -176,6 +179,10 @@ async def fetch_artifact(
         artifact = await try_fetch(match)
         if artifact is not None:
             return artifact
+    # Say what it was that did not line up. "Nothing found" reads the same whether
+    # the catalogue has never heard of the song, holds only a re-cut of it, or holds
+    # it under a name the search never reached, and those want opposite fixes.
+    logger.debug("netease refused %r: %s", track.title, nearest_miss(seen, track, fuzzy=fuzzy))
     return None
 
 
