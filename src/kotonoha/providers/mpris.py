@@ -91,6 +91,11 @@ class ResolverLike(Protocol):
         /,
     ) -> ResolvedLyrics | None: ...
 
+    @property
+    def last_failures(self) -> frozenset[str]:
+        """The sources that could not be reached during the last resolve."""
+        ...
+
     def reset_memory(self) -> None: ...
 
     def set_cache_enabled(self, enabled: bool, /) -> None: ...
@@ -562,11 +567,17 @@ class MprisProvider:
                 # skips and nothing for the songs that were asked for and not found,
                 # so "never queried" and "queried and absent" looked identical from
                 # the outside. They call for opposite fixes.
+                # Name the sources that could not be reached separately from the
+                # ones that answered: a request that failed says nothing about
+                # whether the song is there, and the two call for opposite responses.
+                unreachable = self._resolver.last_failures
+                answered = [s for s in self._lyrics_sources if s not in unreachable]
                 logger.info(
-                    "MPRIS %r / %r -> no lyrics from %s",
+                    "MPRIS %r / %r -> no lyrics from %s%s",
                     commit.info.title,
                     commit.info.artist,
-                    ", ".join(self._lyrics_sources) or "no source",
+                    ", ".join(answered) or "no source",
+                    f" ({', '.join(sorted(unreachable))} could not be reached)" if unreachable else "",
                 )
             return
         if result.source == "cider" and result.live_snapshot is not None:

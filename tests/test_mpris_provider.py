@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 from kotonoha.lyrics.resolver import ResolvedLyrics
 from kotonoha.model import LyricLine, LyricsSnapshot
@@ -54,6 +55,10 @@ class RecordingResolver:
 
     async def resolve_hint(self, _session, _track, _sources, _hint):
         return None
+
+    @property
+    def last_failures(self) -> frozenset[str]:
+        return frozenset()
 
     def reset_memory(self):
         return None
@@ -747,3 +752,38 @@ def test_a_catalogue_length_shorter_than_the_words_is_not_believed():
     provider._recalibrate_against(_commit_with_length(3776.7), lines, song_length=30.0)
 
     assert abs(provider._song_offset - 3571.7) < 0.5  # falls back to the last line
+
+
+async def test_a_source_that_could_not_be_reached_is_named_apart(caplog):
+    # "No lyrics" and "nobody could be reached" looked identical from the outside,
+    # and they call for opposite responses: one says the catalogues do not have the
+    # song, the other says nothing was actually asked.
+    class _Unreachable(RecordingResolver):
+        @property
+        def last_failures(self) -> frozenset[str]:
+            return frozenset({"lrclib"})
+
+    provider = MprisProvider(LyricsState(), resolver=_Unreachable(), gate=SourceGate())
+    provider._lyrics_sources = ["netease", "lrclib"]
+
+    with caplog.at_level(logging.INFO, logger="kotonoha.providers.mpris"):
+        provider._schedule_load(track_commit(1, "Song", "Artist"))
+        load = provider._load_task
+        assert load is not None
+        await load
+
+    assert "no lyrics from netease (lrclib could not be reached)" in caplog.text
+
+
+async def test_a_plain_miss_names_no_failure(caplog):
+    provider = MprisProvider(LyricsState(), resolver=RecordingResolver(), gate=SourceGate())
+    provider._lyrics_sources = ["netease", "lrclib"]
+
+    with caplog.at_level(logging.INFO, logger="kotonoha.providers.mpris"):
+        provider._schedule_load(track_commit(1, "Song", "Artist"))
+        load = provider._load_task
+        assert load is not None
+        await load
+
+    assert "no lyrics from netease, lrclib" in caplog.text
+    assert "could not be reached" not in caplog.text

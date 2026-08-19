@@ -24,6 +24,10 @@ class RecordingResolver:
     async def resolve_hint(self, _session, _track, _sources, _hint):
         return None
 
+    @property
+    def last_failures(self) -> frozenset[str]:
+        return frozenset()
+
     def reset_memory(self):
         return None
 
