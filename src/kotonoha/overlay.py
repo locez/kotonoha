@@ -35,9 +35,10 @@ from PyQt6.QtWidgets import (
 from .clock import MediaClock
 from .config import TRACK_OFFSET_STEP_MS, Config, set_track_offset, track_identity_key
 from .icons import earlier_icon, later_icon, lock_icon, settings_icon
+from .karaoke import interlude_text
 from .karaoke_label import KaraokeLabel
 from .lyrics.hanzi_fold import convert_script
-from .model import EMPTY_SNAPSHOT, LyricLine, LyricsSnapshot
+from .model import EMPTY_SNAPSHOT, Interlude, LyricLine, LyricsSnapshot
 from .platform import (
     DefaultOverlayPlatformFactory,
     LayerShellController,
@@ -55,7 +56,15 @@ logger = logging.getLogger(__name__)
 
 RENDER_INTERVAL_MS = 16  # ~60fps
 CONTROL_ICON_COLOR = "#9AA0A6"  # soft grey so the lock/gear don't glare against the panel
+#: The marker stands in for a lyric, so it is drawn under the lyric size — but it
+#: still has to read as part of the same panel, which at 0.42 it did not: it sat
+#: small and crowded against the lines above and below.
+INTERLUDE_SCALE = 0.62
 PILL_RADIUS = 16  # corner radius shared by the pill paint and the input region
+# How many CJK characters wide a line may grow before it scrolls with the sweep;
+# latin text fits roughly twice as many. Fit mode sizes the window from this and
+# the font, because the room a line needs follows the font size.
+FIT_LINE_CHARS = 28
 
 # Appended after the user's chosen family so a Latin-only font (e.g. Inter) still
 # renders CJK lyrics via Qt's per-glyph substitution instead of showing tofu.
@@ -103,6 +112,10 @@ class LyricsOverlay(QWidget):
         self._drag_applied = True
         self._drag_local = QPoint()
         self._track_key = ""
+        # The wait currently on screen; None whenever a line is being sung.
+        self._interlude: Interlude | None = None
+        #: What the marker last read, so the layout is rebuilt only when it changes.
+        self._interlude_text = ""
         self._feedback_timer = QTimer(self)
         self._feedback_timer.setSingleShot(True)
         self._feedback_timer.timeout.connect(self._restore_after_offset_feedback)
@@ -512,7 +525,12 @@ class LyricsOverlay(QWidget):
             pill = max(240, min(self._config.panel_width, int(screen_w * 0.98)))
             width = min(int(screen_w * 0.98), pill + 48)  # small transparent drag margin
         else:
-            width = min(int(screen_w * 0.9), 1100)
+            # The pill hugs its text here, so the window only has to be wide enough
+            # to hold a line. A flat 1100 stopped scaling once the font grew: at
+            # font_size 80 an ordinary English line measures about 2000px against
+            # 1044px of room, so half of every line sat outside the window. The
+            # floor keeps the previous width for the default font sizes.
+            width = min(int(screen_w * 0.9), max(1100, self._config.font_size * FIT_LINE_CHARS))
         return width, self._band_height()
 
     def _compute_layer_pos(self, width: int, height: int) -> QPoint:
@@ -583,6 +601,14 @@ class LyricsOverlay(QWidget):
         if snapshot.current_time is not None:
             self._clock.sync(snapshot.current_time, snapshot.is_playing)
 
+        if snapshot.found and snapshot.current is None and snapshot.interlude is not None:
+            self._show_interlude(snapshot)
+            self._refresh_input_region()
+            return
+
+        if self._interlude is not None:
+            self._interlude = None
+            self._current.set_scale(1.0)
         if not snapshot.found or snapshot.current is None:
             self._show_empty(snapshot)
             self._refresh_input_region()
@@ -627,6 +653,53 @@ class LyricsOverlay(QWidget):
             words=words,
         )
 
+    def _show_interlude(self, snapshot: LyricsSnapshot) -> None:
+        """Stand in for the line while an intro or a break is playing.
+
+        The surrounding lines stay put: the panel is mid-song, and collapsing it to
+        the idle state would read as though playback had stopped.
+        """
+        self._interlude = snapshot.interlude
+        self._interlude_text = ""
+        # A marker stands in for the words; drawn at the lyric size it dwarfs them.
+        self._current.set_scale(INTERLUDE_SCALE)
+        self._container.setVisible(True)
+        previous = self._convert_line(snapshot.previous)
+        next_line = self._convert_line(snapshot.next)
+        self._set_context_text(self._prev_label, previous.text if previous else "")
+        self._set_context_text(self._next_label, next_line.text if next_line else "")
+        self._translation.set_line(None, False)
+        self._translation.setVisible(False)
+        self._paint_interlude(snapshot.current_time or 0.0)
+
+    def _paint_interlude(self, position: float) -> None:
+        """Redraw the marker for where the wait has got to.
+
+        The marker is handed to the sweep as a line spanning the wait, so the accent
+        runs across it exactly as it runs across a sung line — the wait shows its own
+        progress in the same language as the rest of the panel. Only the text is
+        rebuilt, and only when it changes: the sweep itself is a per-frame paint.
+        """
+        interlude = self._interlude
+        if interlude is None:
+            return
+        text = interlude_text(
+            interlude,
+            position,
+            style=self._config.interlude_style,
+            countdown=self._config.interlude_countdown,
+        )
+        if text != self._interlude_text:
+            self._interlude_text = text
+            self._current.set_line(
+                LyricLine(
+                    index=0, id="interlude", start=interlude.start, end=interlude.end,
+                    text=text, translation="", words=(),
+                ),
+                False,
+            )
+        self._current.set_media_time(position)
+
     def _show_empty(self, snapshot: LyricsSnapshot) -> None:
         self._track_key = ""
         self._prev_label.setText("")
@@ -651,6 +724,10 @@ class LyricsOverlay(QWidget):
         if t is not None:
             offset = self._config.track_offsets.get(self._track_key, 0)
             t += (self._config.lead_ms + offset) / 1000.0  # global latency plus recording-specific correction
+        if self._interlude is not None:
+            if t is not None:
+                self._paint_interlude(t)
+            return
         self._current.set_media_time(t)
         self._translation.set_media_time(t)
 

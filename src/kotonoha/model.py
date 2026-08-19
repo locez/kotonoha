@@ -40,6 +40,26 @@ class LyricLine:
 
 
 @dataclass(frozen=True)
+class Interlude:
+    """The stretch of music between two sung lines, or before the first one.
+
+    Carried so the overlay can show how far the wait has run instead of guessing:
+    the lines themselves cannot say, since an LRC gives every line the next one's
+    start and so leaves no gap to read.
+    """
+
+    start: float
+    end: float
+
+    def progress(self, position: float) -> float:
+        """How far the wait has run at ``position``, clamped to 0.0-1.0."""
+        span = self.end - self.start
+        if span <= 0.0:
+            return 1.0
+        return min(1.0, max(0.0, (position - self.start) / span))
+
+
+@dataclass(frozen=True)
 class LyricsSnapshot:
     found: bool = False
     provider: str = ""
@@ -48,6 +68,8 @@ class LyricsSnapshot:
     language: str | None = None
     current_time: float | None = None
     current: LyricLine | None = None
+    # Set only while no line is being sung inside a song that has lyrics.
+    interlude: Interlude | None = None
     previous: LyricLine | None = None
     next: LyricLine | None = None
     around: tuple[LyricLine, ...] = ()

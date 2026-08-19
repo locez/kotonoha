@@ -7,7 +7,9 @@ Qt so it is trivially unit-testable.
 
 from __future__ import annotations
 
-from .model import LyricLine, LyricWord
+import math
+
+from .model import Interlude, LyricLine, LyricWord
 
 
 def _clamp01(value: float) -> float:
@@ -69,3 +71,27 @@ def line_progress(line: LyricLine, t: float) -> float:
             last = next((w for w in reversed(line.words) if w.start is not None and w.end is not None), first)
             return line_fill_fraction(first.start or line.start, last.end or line.end, t)
     return line_fill_fraction(line.start, line.end, t)
+
+
+# The marker is handed to the sweep, so the accent runs across it as the wait does:
+# the dots are what the colour moves over, not a counter of their own.
+_INTERLUDE_DOTS = "\u25cf\u2003\u25cf\u2003\u25cf"  # em spaces: the dots need air between them
+_STILL_NOTE = "\u266a"
+
+
+def interlude_text(interlude: Interlude, position: float, *, style: str, countdown: str) -> str:
+    """What stands in for a lyric while the music has no words.
+
+    ``style`` is "dots" (a row the sweep runs across) or "symbol" (a still note);
+    ``countdown``
+    adds "percent" or "seconds" remaining, or "off" for neither. An unknown value
+    of either falls back to the default rather than showing nothing, since this is
+    the only thing on screen at the time.
+    """
+    indicator = _STILL_NOTE if style == "symbol" else _INTERLUDE_DOTS
+    if countdown == "percent":
+        return f"{indicator}\u2003\u2003{round(interlude.progress(position) * 100)}%"
+    if countdown == "seconds":
+        # Rounded up, so the last whole second still reads as 1 rather than 0.
+        return f"{indicator}\u2003\u2003{max(0, math.ceil(interlude.end - position))}s"
+    return indicator

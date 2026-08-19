@@ -348,7 +348,8 @@ _PAGE_FIELDS: tuple[tuple[str, ...], ...] = (
     ("panel_style", "panel_width_mode", "panel_width", "opacity", "frost_opacity", "panel_accent_tint"),  # Panel
     ("accent_start", "accent_end", "accent_sweep", "fx_animate", "fx_transition",
      "fx_glow", "fx_word_pop", "fx_intensity"),                                          # Effects
-    ("karaoke", "lead_ms", "show_translation", "current_line_only", "lyrics_script"),  # Lyrics
+    ("karaoke", "lead_ms", "show_translation", "current_line_only", "lyrics_script",
+     "interlude_style", "interlude_countdown"),                                          # Lyrics
     ("anchor_top", "margin_edge", "margin_x", "passthrough"),                            # Position
     ("lyrics_sources", "player_lock", "prefer_best_lyrics", "fuzzy_match", "cache_enabled"),  # Sources
 )
@@ -902,6 +903,22 @@ class SettingsDialog(QDialog):
         self._lyrics_script.setCurrentIndex(script_idx if script_idx >= 0 else 0)
         form.addRow(t("set.lyrics_script"), self._lyrics_script)
         form.addRow(self._hint(t("set.lyrics_script_hint")))
+
+        self._interlude_style = QComboBox()
+        self._interlude_style.addItem(t("set.interlude.dots"), "dots")
+        self._interlude_style.addItem(t("set.interlude.symbol"), "symbol")
+        style_idx = self._interlude_style.findData(c.interlude_style)
+        self._interlude_style.setCurrentIndex(style_idx if style_idx >= 0 else 0)
+        form.addRow(t("set.interlude_style"), self._interlude_style)
+
+        self._interlude_countdown = QComboBox()
+        self._interlude_countdown.addItem(t("set.interlude.count_off"), "off")
+        self._interlude_countdown.addItem(t("set.interlude.count_percent"), "percent")
+        self._interlude_countdown.addItem(t("set.interlude.count_seconds"), "seconds")
+        count_idx = self._interlude_countdown.findData(c.interlude_countdown)
+        self._interlude_countdown.setCurrentIndex(count_idx if count_idx >= 0 else 0)
+        form.addRow(t("set.interlude_countdown"), self._interlude_countdown)
+        form.addRow(self._hint(t("set.interlude_hint")))
         return page
 
     def _position_tab(self) -> QWidget:
@@ -1186,6 +1203,8 @@ class SettingsDialog(QDialog):
             frost_window=self._frost_window.isChecked(),
             settings_opacity=self._settings_opacity.value() / 100.0,
             lyrics_script=str(self._lyrics_script.currentData()),
+            interlude_style=str(self._interlude_style.currentData()),
+            interlude_countdown=str(self._interlude_countdown.currentData()),
             icon_name=self._picked_icon(self._tray_icon_list),
             window_icon_name=self._picked_icon(self._window_icon_list),
             font_family=self._chosen_font_family(),

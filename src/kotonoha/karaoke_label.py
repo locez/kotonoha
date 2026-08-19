@@ -67,6 +67,14 @@ def _scale_alpha(color: QColor, factor: float) -> QColor:
     return out
 
 
+def _scaled(font: QFont, scale: float) -> QFont:
+    if scale == 1.0:
+        return font
+    scaled = QFont(font)
+    scaled.setPixelSize(max(8, int(round(font.pixelSize() * scale))))
+    return scaled
+
+
 class KaraokeLabel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -74,6 +82,10 @@ class KaraokeLabel(QWidget):
         self._word_mode = False
         self._media_time: float | None = None
         self._font = QFont()
+        #: The font as configured. ``_font`` is this at the current scale, so a
+        #: marker that stands in for a lyric can be smaller than the words are.
+        self._base_font = QFont()
+        self._scale = 1.0
         self._accent_start = QColor("#FF4FA3")
         self._accent_end = QColor("#FF8FCB")
         self._accent_sweep = QColor("#FF6EC7")
@@ -110,7 +122,8 @@ class KaraokeLabel(QWidget):
         base_color: QColor | None = None,
         shadow_color: QColor | None = None,
     ) -> None:
-        self._font = font
+        self._base_font = font
+        self._font = _scaled(font, self._scale)
         self._accent_start = QColor(accent_start)
         self._accent_end = QColor(accent_end)
         self._accent_sweep = QColor(accent_sweep)
@@ -131,6 +144,17 @@ class KaraokeLabel(QWidget):
         self._intensity = intensity if intensity in _FX else "subtle"
         self._animate = animate
         self._transition = transition if transition in _TRANSITIONS else "rise"
+        self.update()
+
+    def set_scale(self, scale: float) -> None:
+        """Draw at a fraction of the configured size, or 1.0 for the size itself."""
+        if abs(scale - self._scale) < 0.001:
+            return
+        self._scale = scale
+        self._font = _scaled(self._base_font, scale)
+        self._fm = QFontMetrics(self._font)
+        self._rebuild_layout()
+        self.updateGeometry()
         self.update()
 
     def set_line(self, line: LyricLine | None, word_mode: bool) -> None:

@@ -74,3 +74,40 @@ def test_the_sweep_follows_a_line_with_no_separators(_session_qapp):
     end_of_last_word = label._word_offsets[-1] + label._word_widths[-1]
 
     assert end_of_last_word == rendered, "the sweep geometry is wider than the text it sweeps"
+
+
+def test_the_interlude_marker_is_a_row_the_sweep_runs_across():
+    # The only thing on screen during a break, so it has to say something at every
+    # point in the span, including both ends.
+    from kotonoha.karaoke import interlude_text
+    from kotonoha.model import Interlude
+
+    wait = Interlude(100.0, 130.0)
+
+    # The row is what the sweep runs across, so it does not change with the wait;
+    # the accent moving over it is the progress.
+    assert interlude_text(wait, 100.0, style="dots", countdown="off") == "●\u2003●\u2003●"
+    assert interlude_text(wait, 115.0, style="dots", countdown="off") == "●\u2003●\u2003●"
+    assert interlude_text(wait, 115.0, style="symbol", countdown="off") == "♪"
+
+
+def test_the_interlude_countdown_is_optional_and_typed():
+    from kotonoha.karaoke import interlude_text
+    from kotonoha.model import Interlude
+
+    wait = Interlude(100.0, 130.0)
+
+    assert interlude_text(wait, 115.0, style="dots", countdown="percent").endswith("50%")
+    assert interlude_text(wait, 115.0, style="dots", countdown="seconds").endswith("15s")
+    # Rounded up, so the last whole second still reads as 1 rather than 0.
+    assert interlude_text(wait, 129.2, style="symbol", countdown="seconds") == "♪\u2003\u20031s"
+    assert interlude_text(wait, 131.0, style="symbol", countdown="seconds") == "♪\u2003\u20030s"
+
+
+def test_an_unknown_marker_setting_still_shows_something():
+    # This is the only thing on screen at the time, so an unreadable config value
+    # must not blank the panel.
+    from kotonoha.karaoke import interlude_text
+    from kotonoha.model import Interlude
+
+    assert interlude_text(Interlude(0.0, 10.0), 5.0, style="nonsense", countdown="nonsense") == "●\u2003●\u2003●"

@@ -90,6 +90,11 @@ class Config:
     frost_window: bool = True        # frosted-glass settings window (needs a blur-capable compositor)
     settings_opacity: float = 0.95   # settings-window opacity 0.0..1.0 (a touch see-through by default)
     lyrics_script: str = "off"       # display-convert lyrics: "off" | "zh-Hans" | "zh-Hant"
+    # An intro or an instrumental break has no line to show. What stands in for one:
+    # "dots" fills three dots as the wait runs, "symbol" holds a still note.
+    interlude_style: str = "dots"
+    # Whether the wait also counts itself down, and in what: "off" | "percent" | "seconds".
+    interlude_countdown: str = "off"
     # Pink accent (sung text gradient + sweep highlight)
     accent_start: str = "#FF4FA3"
     accent_end: str = "#FF8FCB"
@@ -152,6 +157,10 @@ class Config:
             frost_window=bool(self.frost_window),
             settings_opacity=_clamp_float(self.settings_opacity, 0.0, 1.0, 0.95),
             lyrics_script=self.lyrics_script if self.lyrics_script in ("off", "zh-Hans", "zh-Hant") else "off",
+            interlude_style=self.interlude_style if self.interlude_style in ("dots", "symbol") else "dots",
+            interlude_countdown=(
+                self.interlude_countdown if self.interlude_countdown in ("off", "percent", "seconds") else "off"
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
