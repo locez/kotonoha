@@ -12,15 +12,9 @@ import aiohttp
 from ..model import LyricLine
 from .artifact import LyricsArtifact
 from .lrc_parser import parse_lrc
-from .match import (
-    Candidate,
-    TrackMetadata,
-    base_title,
-    best_match,
-    noisy_title_queries,
-    primary_artist,
-)
+from .match import Candidate, TrackMetadata, best_match, query_variants
 from .payload import read_json_capped
+from .titles import base_title, primary_artist
 
 logger = logging.getLogger(__name__)
 
@@ -116,8 +110,14 @@ async def fetch_artifact(
         # Salvage noisy browser titles: search each cleaned CJK/Latin run on its own
         # (no artist, since a YouTube "artist" is usually the channel), so a
         # bracket-and-channel-laden title still finds the track.
-        for cleaned in noisy_title_queries(track):
-            pending[asyncio.create_task(_search(session, cleaned, ""))] = "fuzzy"
+        # Only the salvaged rungs: the exact and search stages above already sent the
+        # reported metadata, and the ladder's other readings are built from it. The
+        # simplified folds are new here — this provider used to assemble its own
+        # ladder and go without them.
+        for variant in query_variants(track, fuzzy=True):
+            if not variant.rung.startswith("salvaged"):
+                continue
+            pending[asyncio.create_task(_search(session, variant.title, variant.artist))] = "fuzzy"
     records: list[Record] = []
     errors: list[Exception] = []
     successful_requests = 0

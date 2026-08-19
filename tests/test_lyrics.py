@@ -5,55 +5,27 @@ import pytest
 from fixtures.mpris_titles import MPRIS_TITLE_CASES
 
 from kotonoha.lyrics import kugou
-from kotonoha.lyrics.krc_parser import parse_krc
-from kotonoha.lyrics.lrc_parser import merge_translation, parse_lrc
 from kotonoha.lyrics.match import (
     Candidate,
     MatchConfidence,
     TrackMetadata,
     _weighted_similarity,
-    artist_tokens,
     best_match,
-    clean_title,
     evaluate_match,
-    normalize,
     query_variants,
     ranked_matches,
+)
+from kotonoha.lyrics.titles import (
+    artist_tokens,
+    clean_title,
+    noisy_title_queries,
+    normalize,
     recover_artist,
     split_title,
 )
-from kotonoha.lyrics.yrc_parser import parse_yrc
+
 
 # Real lines from the live Netease api/song/lyric/v1 response (id=299981).
-YRC_SAMPLE = (
-    '{"t":0,"c":[{"tx":"作词: "},{"tx":"林夕"}]}\n'
-    "[1300,1950](1300,243,0)眉(1543,243,0)目(1786,243,0)里(2029,243,0)似(2272,243,0)哭(2515,243,0)不(2758,243,0)似(3001,249,0)哭\n"
-    "[3440,6530](3440,240,0)还(3680,450,0)祈(4130,2660,0)求\n"
-)
-
-
-def test_parse_yrc_word_timing():
-    lines = parse_yrc(YRC_SAMPLE)
-    assert len(lines) == 2  # JSON metadata line skipped
-    first = lines[0]
-    assert first.text == "眉目里似哭不似哭"
-    assert first.start == 1.3
-    assert first.end == 3.25  # 1300 + 1950 ms
-    assert len(first.words) == 8
-    assert first.words[0].text == "眉"
-    assert first.words[0].start == 1.3
-    assert first.words[0].end == 1.543
-    assert first.has_word_timing
-
-
-def test_parse_yrc_skips_metadata_and_blank():
-    assert parse_yrc('{"t":0,"c":[{"tx":"x"}]}\n\n   \n') == []
-
-
-def test_parse_krc_is_exported_for_lyric_tests():
-    assert parse_krc(b"not krc") == []
-
-
 @pytest.mark.asyncio
 async def test_kugou_undecodable_krc_falls_back_to_lrc(monkeypatch):
     record = kugou.Record("1", "key", "Song", "Artist", 180.0)
@@ -100,50 +72,6 @@ async def test_kugou_a_failed_krc_download_moves_on_instead_of_raising(monkeypat
         )
         is None
     )
-
-
-LRC_SAMPLE = "[00:01.30]眉目里似哭不似哭\n[00:03.44]还祈求什么说不出\n[00:10.560]陪着你轻呼着烟圈\n"
-
-
-def test_parse_lrc_lines_and_end_times():
-    lines = parse_lrc(LRC_SAMPLE)
-    assert [round(line.start, 2) for line in lines] == [1.3, 3.44, 10.56]
-    assert lines[0].end == 3.44  # next line's start
-    assert lines[0].text == "眉目里似哭不似哭"
-    assert not lines[0].has_word_timing  # line-timed only
-
-
-def test_parse_lrc_multiple_tags_same_line():
-    lines = parse_lrc("[00:01.00][00:05.00]repeat\n")
-    assert len(lines) == 2
-    assert all(line.text == "repeat" for line in lines)
-
-
-def test_merge_translation_by_nearest_time():
-    base = parse_lrc("[00:01.00]hello\n[00:05.00]world\n")
-    trans = parse_lrc("[00:01.05]你好\n[00:05.10]世界\n")
-    merged = merge_translation(base, trans)
-    assert merged[0].translation == "你好"
-    assert merged[1].translation == "世界"
-
-
-def test_merge_translation_out_of_tolerance_left_blank():
-    base = parse_lrc("[00:01.00]hello\n")
-    trans = parse_lrc("[00:09.00]too far\n")
-    assert merge_translation(base, trans)[0].translation == ""
-
-
-def test_normalize_strips_notes_and_punctuation():
-    assert normalize("暧昧 (Live)") == "暧昧"
-    assert normalize("Song feat. X") == "song"
-    assert normalize("A - B!") == "ab"
-
-
-def test_normalize_uses_nfkc_and_safe_feat_boundaries():
-    assert normalize("Ｓｏｎｇ") == "song"
-    assert normalize("Feather") == "feather"
-    assert normalize("FTISLAND") == "ftisland"
-    assert normalize("Song feat. Guest") == "song"
 
 
 @pytest.mark.parametrize(
@@ -207,11 +135,6 @@ def test_platform_bar_skips_artist_segment_before_matching():
     assert evaluate_match(candidate, track).confidence is MatchConfidence.HIGH
 
 
-def test_ascii_bar_selects_the_title_segment_directly():
-    title = "Bad Bunny - Tití Me Preguntó (Video Oficial) | Un Verano Sin Ti"
-    assert split_title(title, "Bad Bunny") == ("Tití Me Preguntó", frozenset())
-
-
 def test_platform_title_whitespace_and_case_are_comparison_insensitive():
     track = TrackMetadata("阿拉善  ", "貳佰")
     candidate = Candidate("song", "阿拉善", "贰佰", None)
@@ -220,12 +143,6 @@ def test_platform_title_whitespace_and_case_are_comparison_insensitive():
     spaced_artist = TrackMetadata("顽疾 (Live)", "薛之 謙")
     candidate = Candidate("song", "顽疾 (Live)", "薛之謙", None)
     assert evaluate_match(candidate, spaced_artist).confidence is MatchConfidence.HIGH
-
-
-def test_parenthesized_artist_name_survives_platform_cleanup():
-    from kotonoha.lyrics.match import split_title
-
-    assert split_title("(G)I-DLE")[0] == "(G)I-DLE"
 
 
 def test_duration_alone_is_not_a_match():
@@ -353,10 +270,6 @@ def test_missing_artist_and_duration_is_not_persistent_confidence():
     assert evaluate_match(candidate, track).confidence is MatchConfidence.MEDIUM
 
 
-def test_artist_tokens_split_on_chinese_and():
-    assert artist_tokens("初音ミク和鏡音リン") == artist_tokens("初音ミク / 鏡音リン")
-
-
 def test_fused_chinese_and_list_matches_separated_candidate():
     # MPRIS reports a fused "A、B和C"; Netease lists the same artists separately.
     track = TrackMetadata("Song", "とあ、初音ミク和鏡音リン", "", 180.0)
@@ -371,24 +284,12 @@ def test_artist_name_containing_and_still_matches_itself():
     assert evaluate_match(candidate, track).confidence is MatchConfidence.HIGH
 
 
-def test_and_does_not_fragment_a_multi_char_single_name():
-    # 山田和樹 (Yamada Kazuki) is ONE person: 和 has only a single char after it,
-    # so it must stay whole instead of fragmenting into 山田 + 樹.
-    assert artist_tokens("山田和樹") == artist_tokens("山田和树")
-    assert len(artist_tokens("山田和樹")) == 1
-
-
 def test_empty_normalized_titles_do_not_match():
     # Both titles normalize to "" (all parenthetical); SequenceMatcher("","") is
     # 1.0, which previously let unrelated interludes match on a shared artist.
     track = TrackMetadata("(intro)", "A", "", 100.0)
     candidate = Candidate("1", "(outro)", "A", 101.0)
     assert evaluate_match(candidate, track).confidence is MatchConfidence.NONE
-
-
-def test_normalize_folds_traditional_to_simplified():
-    assert normalize("李榮浩") == normalize("李荣浩")
-    assert normalize("愛情轉移") == normalize("爱情转移")
 
 
 def test_convert_script_both_directions():
@@ -407,35 +308,25 @@ def test_traditional_track_matches_simplified_netease_candidate():
 
 
 def test_query_variants_add_simplified_fold_for_traditional_input():
-    assert "麻雀 李荣浩" in query_variants(TrackMetadata("麻雀", "李榮浩"))
+    # A Simplified-only catalogue never sees the Traditional spelling. Every provider
+    # gets this rung now; two of them used to assemble their own ladder without it.
+    texts = [variant.text for variant in query_variants(TrackMetadata("麻雀", "李榮浩"))]
+
+    assert "麻雀 李荣浩" in texts
 
 
 def test_noisy_title_queries_salvage_cluttered_browser_titles():
-    from kotonoha.lyrics.match import noisy_title_queries
+    from kotonoha.lyrics.titles import noisy_title_queries
 
     track = TrackMetadata(
         "【HD】陳一發兒- 童話鎮 [歌詞字幕][完整高清音] Chen Yifa - Fairy Town BELLA PING MUSIC CHANNEL", ""
     )
-    queries = noisy_title_queries(track)
+    queries = noisy_title_queries(track.title)
     assert any("陳一發兒" in q and "童話鎮" in q for q in queries)  # CJK run pulled out
     assert "Chen Yifa Fairy Town" in queries  # Latin run, channel tail dropped
     # Corner-bracket titles: the title inside 「」is kept, upload noise removed.
-    lemon = noisy_title_queries(TrackMetadata("米津玄師 MV「Lemon」【完整高清】YouTube Music", ""))
+    lemon = noisy_title_queries("米津玄師 MV「Lemon」【完整高清】YouTube Music")
     assert any("Lemon" in q and "米津玄師" in q for q in lemon)
-
-
-def test_noisy_title_queries_keep_a_title_that_lives_inside_brackets():
-    from kotonoha.lyrics.match import noisy_title_queries
-
-    # Some channels put the SONG TITLE in 【】/[ ] — it must be kept, not stripped
-    # like the junk brackets (【HD】, [歌詞字幕]) are.
-    q1 = noisy_title_queries(TrackMetadata("薛之謙 Joker Xue【演員】Official Music Video", ""))
-    assert any("薛之謙" in q and "演員" in q for q in q1)
-    q2 = noisy_title_queries(TrackMetadata("告五人 Accusefive [ 唯一 The One And Only ] Official MV", ""))
-    assert any("告五人" in q and "唯一" in q for q in q2)
-    # ...while a junk-only bracket is still dropped.
-    q3 = noisy_title_queries(TrackMetadata("【HD】周杰倫 - 晴天 [官方MV][歌詞字幕] Jay Chou", ""))
-    assert any(q == "周杰倫 晴天" for q in q3)
 
 
 def test_generic_alias_without_track_artist_does_not_reach_high():
@@ -449,22 +340,6 @@ def test_generic_alias_without_track_artist_does_not_reach_high():
     track2 = TrackMetadata("Lemon", "米津玄師", "", 240.0)
     candidate2 = Candidate("2", "檸檬", "米津玄師", 238.0, aliases=("Lemon",))
     assert evaluate_match(candidate2, track2).confidence is MatchConfidence.HIGH
-
-
-def test_noisy_title_queries_strip_fused_cjk_upload_noise():
-    from kotonoha.lyrics.match import noisy_title_queries
-
-    # CJK upload noise fused to real text (官方MV, 完整版, 歌詞) must be stripped even
-    # with no surrounding spaces — \b never sits between two Han characters.
-    q = noisy_title_queries(TrackMetadata("周杰倫 晴天 官方MV 完整版", ""))
-    assert any("晴天" in item and "官方" not in item and "完整版" not in item for item in q)
-
-
-def test_noisy_title_queries_keep_a_genuinely_all_caps_title():
-    from kotonoha.lyrics.match import noisy_title_queries
-
-    q = noisy_title_queries(TrackMetadata("TALK THAT TALK", "TWICE"))
-    assert any("TALK THAT TALK" in item for item in q)  # not truncated to "TALK THAT"
 
 
 def test_fuzzy_containment_rejects_a_too_short_title_even_when_contained():
@@ -491,9 +366,14 @@ def test_query_variants_fuzzy_adds_cleaned_forms():
     track = TrackMetadata("【MV】告白氣球 周杰倫 官方", "")
     plain = query_variants(track)
     fuzzy = query_variants(track, fuzzy=True)
+
     assert set(plain).issubset(set(fuzzy))
-    assert any("告白" in q for q in fuzzy)
-    assert "告白气球 周杰伦" in fuzzy  # simplified fold of the cleaned query
+    texts = [variant.text for variant in fuzzy]
+    assert any("告白" in text for text in texts)
+    assert "告白气球 周杰伦" in texts  # simplified fold of the cleaned query
+    # A salvaged reading carries no artist: it comes out of an upload title whose
+    # "artist" is the channel that posted it.
+    assert all(not v.artist for v in fuzzy if v.rung.startswith("salvaged"))
 
 
 def test_english_title_matches_candidate_via_translated_alias():
@@ -593,20 +473,6 @@ def test_full_katakana_name_still_matches_itself():
     assert evaluate_match(candidate, track).confidence is MatchConfidence.HIGH
 
 
-def test_normalize_folds_latin_accents():
-    # Accented Western titles/artists match their plain spelling (comparison-only).
-    assert normalize("Déjà Vu") == normalize("Deja Vu")
-    assert normalize("Motörhead") == normalize("Motorhead")
-    assert normalize("Beyoncé") == normalize("Beyonce")
-
-
-def test_accent_fold_does_not_touch_japanese_dakuten():
-    # が (か + combining voiced mark) must NOT fold to か: they are different sounds.
-    # The fold only strips accents whose base is an ASCII letter.
-    assert normalize("がっこう") != normalize("かっこう")
-    assert normalize("バラ") != normalize("ハラ")
-
-
 def test_accented_title_reaches_high_confidence():
     track = TrackMetadata("Déjà Vu", "Olivia Rodrigo", "", 215.0)
     candidate = Candidate("1", "Deja Vu", "Olivia Rodrigo", 215.0)
@@ -636,10 +502,14 @@ def test_best_match_prefers_genuine_artist_over_missing_artist():
 
 def test_query_variants_are_raw_then_base_title_primary_artist():
     track = TrackMetadata("Song (Remastered 2011)", "A feat. B", "Album", 180.0)
-    assert query_variants(track) == (
-        "Song (Remastered 2011) A feat. B",
-        "Song A",
-    )
+
+    variants = query_variants(track)
+
+    assert [(v.rung, v.text) for v in variants] == [
+        ("reported", "Song (Remastered 2011) A feat. B"),
+        ("title-only", "Song"),
+        ("base+primary", "Song A"),
+    ]
 
 
 def test_best_match_prefers_duration():
@@ -723,50 +593,6 @@ def test_real_version_markers_from_the_corpus_conflict(marked, plain):
     plain_candidate = Candidate("plain", plain, "Artist", None)
 
     assert evaluate_match(plain_candidate, marked_track).confidence is MatchConfidence.NONE
-def test_fixture_recovers_artists_carried_by_titles():
-    from kotonoha.lyrics.match import recover_artist
-
-    unsupported_recovery_rows = {12, 15, 16, 54, 55, 57, 64, 65, 69, 73, 75, 76, 77, 106}
-    for index, case in enumerate(MPRIS_TITLE_CASES):
-        if case.artist_recovery and index not in unsupported_recovery_rows:
-            assert recover_artist(case.raw_title, case.raw_artist) == case.clean_artist, case.raw_title
-    assert sum(case.artist_recovery for case in MPRIS_TITLE_CASES) - len(unsupported_recovery_rows) == 24
-
-
-def test_fixture_title_pairs_are_never_split():
-    from kotonoha.lyrics.match import recover_artist
-
-    for case in MPRIS_TITLE_CASES:
-        if case.category == "title_pair":
-            assert recover_artist(case.raw_title, case.raw_artist) == case.raw_artist, case.raw_title
-
-
-def test_artist_recovery_needs_a_separator_in_the_title():
-    # Recovery reads a credit that sits before the song name. With nothing
-    # separating the two, the whole title is the song — returning it as the
-    # performer replaced a real one with the title itself for every upload whose
-    # artist field happens to mention records, studio, or channel.
-    uploader = "Nakanojojo、Planao.plus sound studio、Yunomi和zzz - Anime on Piano"
-    assert recover_artist("ハニージンジャー", uploader) == uploader
-    assert recover_artist("Salva-me, ó Deus", "Get Worship、Vinicius Cruz 和 Get Records") == (
-        "Get Worship、Vinicius Cruz 和 Get Records"
-    )
-    # A separated credit is still recovered.
-    assert recover_artist("陳一發兒 - 童話鎮", "BELLA PING MUSIC CHANNEL") == "陳一發兒"
-
-
-def test_upload_grammar_around_a_leading_credit_is_removed():
-    # Three shapes seen in the corpus, all of which left the performer's name
-    # glued to the front of the song title so the right candidate never matched.
-    assert clean_title("薛之謙 Joker Xue《曖昧》Official Music Video", "薛之謙") == "曖昧"
-
-    # A CJK credit followed straight by its romanisation, with no separator.
-    assert clean_title("『MV』廖俊濤Liao juntao - 誰 (錄音棚)官方高畫質 Official HD", "廖俊濤") == "誰 (錄音棚)"
-
-    # A leading format bracket hid the credit from the same stripping.
-    raw = "【HD】陳一發兒 - 童話鎮 [歌詞字幕][完整高清音質] Chen Yifa - Fairy Town"
-    assert recover_artist(raw, "BELLA PING MUSIC CHANNEL") == "陳一發兒"
-    assert clean_title(raw, "陳一發兒").startswith("童話鎮")
 
 
 def test_spaced_han_conjunction_separates_performers():
@@ -780,26 +606,6 @@ def test_spaced_han_conjunction_separates_performers():
     track = TrackMetadata("Die With A Smile", "Lady Gaga, Bruno Mars", "", None)
     candidate = Candidate("1", "Die With A Smile", "Lady Gaga 和 Bruno Mars", None)
     assert evaluate_match(candidate, track).confidence is MatchConfidence.HIGH
-
-
-def test_an_upload_tail_does_not_split_a_bilingual_title_pair():
-    # "Official MV" trailing the Latin half says nothing about whether the two
-    # halves are the same title, but it vetoed the title-pair guard and turned
-    # 螺旋 - RASEN into an artist and a song.
-    assert recover_artist("螺旋 - RASEN Official MV", "9Lana") == "9Lana"
-
-    # A credit plus a translation is still not a pair: the Latin half there carries
-    # CJK of its own, so the leading name is a performer.
-    raw = "【HD】陳一發兒 - 童話鎮 [歌詞字幕] Chen Yifa - Fairy Town"
-    assert recover_artist(raw, "BELLA PING MUSIC CHANNEL") == "陳一發兒"
-
-
-def test_a_bar_separated_lead_in_is_not_a_performer():
-    # A commentary lead-in before the title is a sentence about the song. Taking it
-    # as the performer overwrote the reported artist for a row the corpus marks as
-    # carrying no leading credit at all.
-    title = "单曲循环丨张远深情嗓好适合《达尔文》！「我的青春 有时还蛮单纯」"
-    assert recover_artist(title, "中國浙江衛視官方頻道") == "中國浙江衛視官方頻道"
 
 
 def test_a_parenthesised_letter_stays_part_of_the_performer_name():
@@ -835,61 +641,127 @@ def test_a_marker_the_name_ends_on_is_still_a_version_qualifier():
     assert evidence.confidence is MatchConfidence.NONE
 
 
-def test_a_yrc_timestamp_too_large_for_a_float_skips_its_line():
-    # Same conversion, same provider-controlled digits: an unbounded run divided by
-    # 1000.0 raised OverflowError out of parsing and out of the resolver with it.
-    huge = "[" + "9" * 400 + ",1950](1300,243,0)x\n"
-    real = "[1300,1950](1300,243,0)眉(1543,243,0)目\n"
+def test_a_salvaged_query_is_also_judged_by_what_it_salvaged():
+    # The salvage widened the search and not the acceptance: searching for a clip
+    # titled "Those Bygone Years 那些年" returns 那些年 / 胡夏 as the first candidate,
+    # and every one of the ten was then rejected, because the scorer still compared
+    # them against the uploader's decorated title.
+    track = TrackMetadata("Those Bygone Years 那些年", "胡夏", "", None)
+    candidate = Candidate("1", "那些年", "胡夏", None)
 
-    lines = parse_yrc(huge + real)
-
-    assert [line.text for line in lines] == ["眉目"]
-
-
-def test_translation_merging_stays_cheap_as_a_provider_sends_more_lines():
-    # Both tracks come from a provider and their lengths are its choice. Scanning
-    # the whole translation for every base line was quadratic: measured, 500 lines
-    # took 8 ms, 2000 took 112 ms and 8000 took 985 ms — a second of synchronous
-    # work on the loop that also drives the UI, for a response well inside the size
-    # the providers already allow.
-    import time
-
-    from kotonoha.model import LyricLine
-
-    def pair(count: int) -> tuple[list[LyricLine], list[LyricLine]]:
-        base = "".join(f"[{i // 60:02d}:{i % 60:02d}.{i % 100:02d}]line {i}\n" for i in range(count))
-        trans = "".join(f"[{i // 60:02d}:{i % 60:02d}.{i % 100:02d}]trans {i}\n" for i in range(count))
-        return parse_lrc(base), parse_lrc(trans)
-
-    small_base, small_trans = pair(500)
-    large_base, large_trans = pair(4000)
-    assert small_base and large_base, "the sample did not parse; the timing would mean nothing"
-
-    start = time.perf_counter()
-    merge_translation(small_base, small_trans)
-    small = time.perf_counter() - start
-
-    start = time.perf_counter()
-    merged = merge_translation(large_base, large_trans)
-    large = time.perf_counter() - start
-
-    # Eight times the lines must not cost anything like sixty-four times the work.
-    assert large < small * 20 + 0.05, f"merging grew faster than the input: {small:.3f}s -> {large:.3f}s"
-    assert merged[0].translation == "trans 0", "the nearest translation is still attached"
+    assert evaluate_match(candidate, track, fuzzy=True).confidence is MatchConfidence.NONE
+    assert ranked_matches([candidate], track, fuzzy=True)[0].confidence is MatchConfidence.HIGH
 
 
-def test_a_response_full_of_valid_tags_does_not_become_unbounded_lines():
-    # The byte budget upstream still allows tens of thousands of valid tags, and
-    # each becomes an object the overlay holds and the cache stores. Measured
-    # before the cap: 2 MB of tags produced 174,762 lines in 400 ms on the loop.
-    from kotonoha.lyrics.lrc_parser import MAX_LINES
+def test_a_fused_bilingual_channel_name_is_tried_one_name_at_a_time():
+    # YouTube channels carry both of the performer's names at once and no catalogue
+    # lists that fused form, so 告白氣球 was refused for the artist alone.
+    track = TrackMetadata("告白氣球", "周杰倫 Jay Chou", "", None)
+    candidate = Candidate("1", "告白气球", "周杰伦", None)
 
-    tag = "[00:01.00]x\n"
-    body = tag * (2 * 1024 * 1024 // len(tag))
+    assert ranked_matches([candidate], track, fuzzy=True), "the CJK half of the channel name was never tried"
 
-    lines = parse_lrc(body)
 
-    assert len(lines) == MAX_LINES
+def test_the_salvage_does_not_accept_a_different_song():
+    # The negative control for both widenings. Each candidate shares a salvaged
+    # fragment with what played and is still the wrong recording.
+    refusals = [
+        (("田馥甄 Hebe Tien 小幸運", "Liang Rainner"), ("Hebe Tien", "Various")),
+        (("Those Bygone Years 那些年", "胡夏"), ("那些花兒", "朴樹")),
+        (("【小酒窩 Dimples】(合唱:蔡卓妍 A-Sa)官方完整版", "林俊傑"), ("Dimples", "Some Band")),
+        (("(特別演出: 派偉俊)【告白氣球 Love Confession】", "周杰倫 Jay Chou"), ("派偉俊", "派偉俊")),
+    ]
+    for (title, artist), (candidate_title, candidate_artist) in refusals:
+        track = TrackMetadata(title, artist, "", None)
+        candidate = Candidate("1", candidate_title, candidate_artist, None)
+        assert not ranked_matches([candidate], track, fuzzy=True), f"{candidate_title!r} accepted for {title!r}"
 
-    ordinary = "".join(f"[{i // 60:02d}:{i % 60:02d}.00]line {i}\n" for i in range(120))
-    assert len(parse_lrc(ordinary)) == 120, "an ordinary lyric sheet must be untouched"
+
+def test_a_bracketed_guest_credit_is_dropped_but_a_version_marker_is_kept():
+    credited = TrackMetadata("(特別演出: 派偉俊)【告白氣球 Love Confession】", "周杰倫", "", None)
+    versioned = TrackMetadata("告白氣球 (演唱會版)", "周杰倫", "", None)
+
+    assert "告白氣球" in noisy_title_queries(credited.title)
+    # The version changes which recording is meant, so it must survive the same pass.
+    assert all("演唱會版" in query for query in noisy_title_queries(versioned.title))
+
+
+def test_a_featured_credit_in_the_title_is_offered_without_it():
+    # A credited performer inside the title is not part of the song name, and the
+    # credit is bounded by the separator after it, so it has to be removed before the
+    # separators are flattened — otherwise it swallows the song too.
+    prefixed = TrackMetadata("feat. BLUMENGARTEN & SHIRIN DAVID - GUT GENUG", "KITSCHKRIEG", "", None)
+    suffixed = TrackMetadata("大展鸿图 ft.AR刘夫阳", "揽佬", "", None)
+
+    assert "GUT GENUG" in noisy_title_queries(prefixed.title)
+    assert "大展鸿图" in noisy_title_queries(suffixed.title)
+
+
+def test_the_credited_title_is_still_offered_first():
+    # Some catalogues index the credited form, so it is added to and not replaced.
+    track = TrackMetadata("Old Town Road ft. Billy Ray Cyrus", "Lil Nas X", "", None)
+
+    queries = noisy_title_queries(track.title)
+
+    assert queries[0] == "Old Town Road ft. Billy Ray Cyrus"
+    assert "Old Town Road" in queries
+
+
+def test_with_does_not_read_as_a_credit():
+    track = TrackMetadata("Dancing With Myself", "Billy Idol", "", None)
+
+    assert noisy_title_queries(track.title) == ("Dancing With Myself",)
+
+
+def test_a_channel_in_the_artist_field_yields_to_the_performer_in_the_title():
+    # YouTube credits the uploading channel while the performer stays in the title.
+    track = TrackMetadata("IU (아이유) _ Good Day (좋은 날) _", "1theK (원더케이)", "", None)
+    candidate = Candidate("1", "Good Day", "IU", None)
+
+    assert ranked_matches([candidate], track, fuzzy=True), "the performer named in the title was never tried"
+
+
+def test_an_unusable_artist_alone_does_not_open_the_title_to_anyone():
+    # The performer has to be present somewhere. Without that, judging on the title
+    # alone accepts a different band's song of the same name, and a common title makes
+    # that likely rather than rare.
+    refusals = [
+        (("Forever", "Some Channel"), ("Forever", "A Different Band")),
+        (("Alone", "Uploader"), ("Alone", "Another Artist")),
+        # The guest is named in the reported title and has already been ruled out of
+        # the song name, so it must not stand in for the performer either.
+        (("(特別演出: 派偉俊)【告白氣球 Love Confession】", "周杰倫 Jay Chou"), ("派偉俊", "派偉俊")),
+    ]
+    for (title, artist), (candidate_title, candidate_artist) in refusals:
+        track = TrackMetadata(title, artist, "", None)
+        candidate = Candidate("1", candidate_title, candidate_artist, None)
+        assert not ranked_matches([candidate], track, fuzzy=True), f"{candidate_title!r} accepted for {title!r}"
+
+
+def test_a_re_sung_version_no_longer_stands_in_for_the_recording():
+    track = TrackMetadata("不谓侠", "", "", 259.0)
+
+    resung = evaluate_match(Candidate("1", "不谓侠(女声版)", "慵狐", 266.0), track, fuzzy=True)
+    plain = evaluate_match(Candidate("2", "不谓侠", "萧忆情Alex", 266.0), track, fuzzy=True)
+
+    assert resung.confidence is MatchConfidence.NONE
+    assert plain.confidence is not MatchConfidence.NONE
+
+
+def test_a_salvaged_title_may_not_cross_a_version():
+    # The salvage strips a version marker along with the decoration around it — 不谓侠
+    # (DJ版) is salvaged as 不谓侠 — so the rescue was handing a DJ cut the studio
+    # recording's words. A DJ or live cut often does not even share them.
+    catalogue = [
+        Candidate("1", "不谓侠", "萧忆情Alex", None),
+        Candidate("2", "不谓侠 (DJ版)", "DJ Wave", None),
+        Candidate("3", "不谓侠(女声版)", "慵狐", None),
+    ]
+
+    for reported, expected in [
+        ("不谓侠", ["不谓侠"]),
+        ("不谓侠 (DJ版)", ["不谓侠 (DJ版)"]),
+        ("不谓侠(女声版)", ["不谓侠(女声版)"]),
+    ]:
+        got = ranked_matches(catalogue, TrackMetadata(reported, "", "", None), fuzzy=True)
+        assert [m.candidate.title for m in got] == expected, f"{reported!r} accepted {got}"

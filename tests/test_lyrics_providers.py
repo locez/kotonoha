@@ -3,6 +3,7 @@ import json
 from typing import cast
 
 import aiohttp
+import pytest
 
 from kotonoha.lyrics import kugou, lrclib, netease
 from kotonoha.lyrics.match import Candidate, MatchConfidence, TrackMetadata
@@ -152,7 +153,10 @@ async def test_netease_tries_normalized_query_before_accepting_medium_match(monk
     track = TrackMetadata("Song (Remastered 2011)", "Artist feat. Guest", duration_s=180.0)
     artifact = await netease.fetch_artifact(SESSION, track)
 
-    assert queries == ["Song (Remastered 2011) Artist feat. Guest", "Song Artist"]
+    # The reported reading goes alone, so the common case still costs one request.
+    # The rest are searched a batch at a time, which is why the reading after the one
+    # that hit was sent too: the batch buys a round trip and pays for it in requests.
+    assert queries == ["Song (Remastered 2011) Artist feat. Guest", "Song", "Song Artist"]
     assert artifact is not None
     assert artifact.provider_song_id == "high"
     assert artifact.confidence is MatchConfidence.HIGH
@@ -391,7 +395,8 @@ async def test_kugou_also_queries_the_title_with_the_performer():
     session = cast(aiohttp.ClientSession, _RecordingSession())
     art = await kugou.fetch_artifact(session, TrackMetadata("晴天", "周杰伦", "", 269.0))
 
-    assert seen == ["晴天", "晴天 周杰伦"]
+    # Both forms, in the ladder's order — which of them wins is the point, not when.
+    assert set(seen) == {"晴天", "晴天 周杰伦"}
     assert art is not None
     assert [line.text for line in art.lines] == ["found by the second keyword"]
 
@@ -460,3 +465,48 @@ async def test_a_body_larger_than_one_read_arrives_whole():
     got = await read_capped(cast(aiohttp.ClientResponse, _Resp(body)), "test")
 
     assert got == body
+
+
+def test_the_reported_reading_is_searched_on_its_own():
+    # It is right most of the time, so batching it with the salvage would make every
+    # ordinary lookup pay for readings nobody needed.
+    from kotonoha.lyrics.match import QueryVariant
+    from kotonoha.lyrics.netease import _ladder_batches
+
+    rungs = tuple(QueryVariant(f"t{i}", "", "r") for i in range(7))
+
+    batches = [tuple(v.title for v in batch) for batch in _ladder_batches(rungs)]
+
+    assert batches[0] == ("t0",)
+    assert [len(b) for b in batches] == [1, 4, 2]
+    assert [title for batch in batches for title in batch] == [f"t{i}" for i in range(7)]
+    assert list(_ladder_batches(())) == []
+
+
+async def test_one_failed_reading_does_not_abandon_its_batch(monkeypatch):
+    # The rungs of a batch are independent readings of the same track; a request that
+    # fails says nothing about the others, which may hold the song.
+    from kotonoha.lyrics import netease
+    from kotonoha.lyrics.match import QueryVariant
+
+    async def flaky(_session, query, limit=10):
+        if query == "bad":
+            raise aiohttp.ClientError("boom")
+        return [Candidate("1", query, "Artist", None)]
+
+    monkeypatch.setattr(netease, "search", flaky)
+    pages = await netease._search_batch(SESSION, (QueryVariant("bad", "", "r"), QueryVariant("good", "", "r")))
+
+    assert [c.title for page in pages for c in page] == ["good"]
+
+
+async def test_a_batch_that_fails_entirely_still_reports(monkeypatch):
+    from kotonoha.lyrics import netease
+    from kotonoha.lyrics.match import QueryVariant
+
+    async def always_fails(_session, _query, limit=10):
+        raise aiohttp.ClientError("boom")
+
+    monkeypatch.setattr(netease, "search", always_fails)
+    with pytest.raises(aiohttp.ClientError):
+        await netease._search_batch(SESSION, (QueryVariant("a", "", "r"), QueryVariant("b", "", "r")))

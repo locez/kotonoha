@@ -12,14 +12,8 @@ from pathlib import Path
 
 from ..model import LyricLine
 from .artifact import LyricsArtifact
-from .match import (
-    NORMALIZER_VERSION,
-    Candidate,
-    MatchConfidence,
-    MatchEvidence,
-    TrackMetadata,
-    evaluate_match,
-)
+from .match import Candidate, MatchConfidence, MatchEvidence, TrackMetadata, evaluate_match
+from .titles import NORMALIZER_VERSION
 
 CACHE_SCHEMA_VERSION = 1
 DEFAULT_MAX_ENTRIES = 1000

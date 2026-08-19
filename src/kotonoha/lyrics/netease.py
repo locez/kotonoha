@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 
 import aiohttp
 
@@ -14,6 +15,7 @@ from .match import (
     Candidate,
     MatchConfidence,
     MatchEvidence,
+    QueryVariant,
     TrackMetadata,
     query_variants,
     ranked_matches,
@@ -153,14 +155,15 @@ async def fetch_artifact(
         return await _artifact_for_match(session, match)
 
     medium_matches: dict[str, MatchEvidence] = {}
-    for query in query_variants(track, fuzzy=fuzzy):
-        for match in ranked_matches(await search(session, query), track, fuzzy=fuzzy):
-            if match.confidence is MatchConfidence.HIGH:
-                artifact = await try_fetch(match)  # a HIGH is almost certainly the song
-                if artifact is not None:
-                    return artifact
-            else:
-                medium_matches.setdefault(match.candidate.song_id, match)
+    for batch in _ladder_batches(query_variants(track, fuzzy=fuzzy)):
+        for candidates in await _search_batch(session, batch):
+            for match in ranked_matches(candidates, track, fuzzy=fuzzy):
+                if match.confidence is MatchConfidence.HIGH:
+                    artifact = await try_fetch(match)  # a HIGH is almost certainly the song
+                    if artifact is not None:
+                        return artifact
+                else:
+                    medium_matches.setdefault(match.candidate.song_id, match)
 
     # Best-ranked mediums next: try several so a lyric-less top pick doesn't hide a
     # good one just below it. Rank by title/artist evidence, then closest duration.
@@ -174,6 +177,46 @@ async def fetch_artifact(
         if artifact is not None:
             return artifact
     return None
+
+
+#: How many readings are searched at once once the reported one has missed. The
+#: ladder was walked a rung at a time, so a title needing all of it waited for nine
+#: round trips in a row — 3.55s measured against 0.4s for one.
+_LADDER_BATCH = 4
+
+
+def _ladder_batches(variants: tuple[QueryVariant, ...]) -> Iterator[tuple[QueryVariant, ...]]:
+    """The ladder in the order it must be judged, a few rungs at a time.
+
+    The reported reading goes alone: it is right most of the time, and keeping it a
+    single request is what stops the common case paying for the salvage. Batching the
+    rest still lets a hit end the walk, so a rung nobody needed is never sent.
+    """
+    if not variants:
+        return
+    yield variants[:1]
+    for start in range(1, len(variants), _LADDER_BATCH):
+        yield variants[start : start + _LADDER_BATCH]
+
+
+async def _search_batch(
+    session: aiohttp.ClientSession, variants: tuple[QueryVariant, ...]
+) -> list[list[Candidate]]:
+    """Search a batch concurrently, keeping the results in the ladder's order.
+
+    A rung that fails is dropped rather than abandoning the batch: the others may
+    still hold the song. When every rung in the batch failed the first error is
+    raised, so a provider that is simply down still reports as much.
+    """
+    results = await asyncio.gather(
+        *(search(session, variant.text) for variant in variants), return_exceptions=True
+    )
+    pages = [page for page in results if not isinstance(page, BaseException)]
+    if not pages:
+        failures = [page for page in results if isinstance(page, BaseException)]
+        if failures:
+            raise failures[0]
+    return pages
 
 
 async def fetch_lyrics(session: aiohttp.ClientSession, song_id: str) -> list[LyricLine]:

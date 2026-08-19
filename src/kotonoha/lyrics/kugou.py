@@ -21,14 +21,7 @@ from ..model import LyricLine
 from .artifact import LyricsArtifact
 from .krc_parser import parse_krc
 from .lrc_parser import parse_lrc
-from .match import (
-    Candidate,
-    MatchConfidence,
-    TrackMetadata,
-    base_title,
-    noisy_title_queries,
-    ranked_matches,
-)
+from .match import Candidate, MatchConfidence, TrackMetadata, query_variants, ranked_matches
 from .payload import read_json_capped
 
 logger = logging.getLogger(__name__)
@@ -135,21 +128,17 @@ def parse_payload(payload: Mapping[str, str]) -> tuple[LyricLine, ...]:
 
 
 def _query_keywords(track: TrackMetadata, fuzzy: bool) -> tuple[str, ...]:
-    """Queries for Kugou: the base title, the title with the performer, then (in
-    fuzzy mode) the cleaned CJK/Latin runs salvaged from a noisy browser title.
+    """The search strings for one track, from the shared ladder.
 
-    Kugou's lyric search answers 200/OK with an empty candidate list for titles it
-    holds under a different keyword, and neither form dominates — measured over
+    Kugou takes a single string per request, so each reading is fused. Measured over
     twelve tracks, title alone found 3 and title with performer found 4, while
-    sending both found 6. The extra request buys that recall."""
-    title = base_title(track.title).strip()
-    keywords = [title]
-    artist = track.artist.strip()
-    if title and artist:
-        keywords.append(f"{title} {artist}")
-    if fuzzy:
-        keywords.extend(noisy_title_queries(track))
-    return tuple(dict.fromkeys(keyword for keyword in keywords if len(keyword) >= 2))
+    sending both found 6; the ladder yields both, and now also the simplified folds
+    this provider used to go without."""
+    return tuple(
+        dict.fromkeys(
+            variant.text for variant in query_variants(track, fuzzy=fuzzy) if len(variant.text) >= 2
+        )
+    )
 
 
 async def fetch_artifact(

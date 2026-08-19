@@ -19,7 +19,8 @@ from .artifact import LyricsArtifact
 from .cache import LyricsCache
 from .hint import LyricsHint
 from .local import load_local_lyrics
-from .match import MatchConfidence, TrackMetadata, artist_tokens, normalize, split_title
+from .match import MatchConfidence, TrackMetadata
+from .titles import artist_tokens, normalize, split_title
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,9 @@ class ResolvedLyrics:
     live_snapshot: LyricsSnapshot | None = None
     cider_client_id: int | None = None
     confidence: MatchConfidence = MatchConfidence.NONE
+    #: How long the catalogue says this recording is. The player's own figure can be
+    #: a running total across a queue; this one is about the song itself.
+    duration_s: float | None = None
 
 
 @dataclass(frozen=True)
@@ -221,7 +225,8 @@ class LyricsResolver:
                     logger.warning("%s lyrics cache lookup failed: %s", source, exc)
                 else:
                     if cached is not None:
-                        return ResolvedLyrics(source, lines=cached.lines, confidence=cached.confidence)
+                        return ResolvedLyrics(source, lines=cached.lines, confidence=cached.confidence,
+                                              duration_s=cached.duration_s)
 
             negative_key = source, track_key
             if self._negative_until.get(negative_key, 0.0) > time.monotonic():
@@ -239,7 +244,8 @@ class LyricsResolver:
                     await self._cache.store(artifact)
                 except (OSError, sqlite3.Error) as exc:
                     logger.warning("%s lyrics cache write failed: %s", source, exc)
-            return ResolvedLyrics(source, lines=artifact.lines, confidence=artifact.confidence)
+            return ResolvedLyrics(source, lines=artifact.lines, confidence=artifact.confidence,
+                                  duration_s=artifact.duration_s)
         return None
 
     async def _resolved_artifact(
@@ -297,7 +303,10 @@ class LyricsResolver:
                     logger.warning("%s lyrics cache lookup failed: %s", source, exc)
                     cached = None
                 if cached is not None:
-                    candidate = ResolvedLyrics(source, lines=cached.lines, confidence=cached.confidence)
+                    candidate = ResolvedLyrics(
+                        source, lines=cached.lines, confidence=cached.confidence,
+                        duration_s=cached.duration_s,
+                    )
             if candidate is not None:
                 resolved.add(source)
                 score = (_CONF_RANK[candidate.confidence], -index)
@@ -332,7 +341,10 @@ class LyricsResolver:
                     score = (_CONF_RANK[artifact.confidence], -sources.index(source))
                     if best_score is None or score > best_score:
                         best_score = score
-                        best = ResolvedLyrics(source, lines=artifact.lines, confidence=artifact.confidence)
+                        best = ResolvedLyrics(
+                            source, lines=artifact.lines, confidence=artifact.confidence,
+                            duration_s=artifact.duration_s,
+                        )
                 if best_score is not None and pending:
                     # Nothing still pending can beat a HIGH from an earlier-ordered source.
                     ceiling = (_CONF_RANK[MatchConfidence.HIGH], -min(sources.index(s) for s in pending))
