@@ -7,10 +7,17 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from ..lyrics.match import TrackMetadata, clean_title, recover_artist
+from ..lyrics.match import TrackMetadata
+from ..lyrics.titles import clean_title, performing_artist, recover_artist
 
 _MAX_TRACK_LENGTH_S = 24 * 60 * 60
 _LYRICS_LOOKUP_MAX_LENGTH_S = 2 * 60 * 60
+# How far the reported length may drift from the wall clock and still count as
+# advancing with it. Measured over a night of radio playback: 126 of 134 track
+# changes landed within 20s of the elapsed time, and the median was 0.2s.
+_COUNTER_TOLERANCE_S = 20.0
+# One coincidence is not evidence; a counter matches the clock every time.
+_COUNTER_STRIKES = 2
 
 _NON_SONG_TITLE_MARKERS = (
     "complete performance",
@@ -27,6 +34,10 @@ _NON_SONG_TITLE_MARKERS = (
     "精选",
     "精選",
     "演唱會",
+    # A televised gala runs for hours over dozens of performances, the same reason
+    # 演唱會 is here: B's New Year gala publishes one page title for the whole night.
+    "晚会",
+    "晚會",
     "オンラインコンサート",
     "完整演出",
     "單曲循環",
@@ -40,7 +51,13 @@ _NON_SONG_TITLE_MARKERS = (
 # browser-sourced title lines up with the clean one Plasma Browser Integration
 # reports for the same track.
 _TITLE_BADGE_PREFIX = re.compile(r"^\(\d+\)\s+")
-_TITLE_SITE_SUFFIX = re.compile(r"\s*[-|–—]\s*YouTube(?:\s+Music)?\s*$", re.IGNORECASE)
+# Bilibili publishes no MediaSession artist at all, so even the Plasma bridge falls
+# back to the page title and the site name rode into every query:
+# "傲寒同学-不谓侠_哔哩哔哩_bilibili" was searched with 哔哩哔哩 and bilibili still
+# attached. The suffix repeats there, hence the trailing +.
+_TITLE_SITE_SUFFIX = re.compile(
+    r"(?:\s*[-|–—_]\s*(?:YouTube(?:\s+Music)?|哔哩哔哩|嗶哩嗶哩|bilibili))+\s*$", re.IGNORECASE
+)
 
 
 def _clean_title(title: str, artist: str = "") -> str:
@@ -55,8 +72,6 @@ def _clean_title(title: str, artist: str = "") -> str:
                 trailing = remainder.lstrip(" \t\r\n-–—－")
                 cleaned = artist if before.endswith(("-", "–", "—", "－")) and trailing else trailing
     cleaned = clean_title(cleaned, artist)
-    cleaned = re.sub(r"『[^』]*動態歌詞[^』]*』", "", cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r"『[^』]*歌词[^』]*』", "", cleaned, flags=re.IGNORECASE)
     # Never strip a title down to nothing (a page literally titled "YouTube").
     return cleaned.strip() or title.strip()
 
@@ -79,6 +94,68 @@ def _length_seconds(value: Any) -> float | None:
     if length_s <= 0.0 or length_s > _MAX_TRACK_LENGTH_S:
         return None
     return length_s
+
+
+class CumulativeLengthDetector:
+    """Recognise a player that reports session playtime as ``mpris:length``.
+
+    plasma-browser-integration on a YouTube Music radio publishes how long the
+    session has been playing rather than how long the current track is: the value
+    grows by the elapsed wall time at every track change, so by the third song it
+    is past the hour. Passed on, it reads as a compilation upload and
+    :func:`lyrics_lookup_reason` skips the lookup entirely -- over one night that
+    silenced 88 of 140 songs, none of which was ever queried.
+
+    A length that advances in step with the clock is a counter, so the track's own
+    length is unknown. Saying so beats passing the number on: an absent duration
+    still matches at HIGH confidence, while a wrong one drops the match or loses
+    it outright.
+
+    The verdict is re-earned at every track change, so a player that goes back to
+    reporting real durations -- a reloaded page starts the counter over -- is
+    trusted again on the next song.
+    """
+
+    def __init__(self) -> None:
+        self._player = ""
+        self._track_id = ""
+        self._length_s: float | None = None
+        self._at = 0.0
+        self._strikes = 0
+
+    @property
+    def trusted(self) -> bool:
+        return self._strikes < _COUNTER_STRIKES
+
+    def observe(self, player: str, track_id: str, length_s: float | None, now: float) -> bool:
+        """Record a reading and return whether ``length_s`` can be believed.
+
+        ``now`` is a monotonic timestamp. Readings for the track already being
+        watched carry no new evidence and leave the verdict untouched.
+        """
+        if track_id == self._track_id and player == self._player:
+            return self.trusted
+        if player != self._player:
+            self._player = player
+            self._strikes = 0
+        elif self._advanced_with_clock(length_s, now):
+            self._strikes += 1
+        else:
+            self._strikes = 0
+        self._track_id, self._length_s, self._at = track_id, length_s, now
+        return self.trusted
+
+    def _advanced_with_clock(self, length_s: float | None, now: float) -> bool:
+        previous, elapsed = self._length_s, now - self._at
+        if previous is None or length_s is None or elapsed <= 0.0:
+            return False
+        growth = length_s - previous
+        # The match has to hold in both directions. Merely growing by less than the
+        # time that passed is what an ordinary playlist does whenever one track is
+        # longer than the last, and treating that as evidence flagged back-to-back
+        # videos on youtube.com. A counter grows by the time that passed: over a
+        # night of radio playback the median difference was 0.2s.
+        return growth > 0.0 and abs(growth - elapsed) <= _COUNTER_TOLERANCE_S
 
 
 def lyrics_lookup_reason(track: TrackInfo) -> str | None:
@@ -127,7 +204,7 @@ class TrackInfo:
 def parse_metadata(raw: dict[str, Any]) -> TrackInfo:
     length_s = _length_seconds(raw.get("mpris:length"))
     reported = _as_text(raw.get("xesam:title"))
-    artist = recover_artist(reported, _as_text(raw.get("xesam:artist")))
+    artist = recover_artist(reported, performing_artist(_as_text(raw.get("xesam:artist"))))
     return TrackInfo(
         title=_clean_title(reported, artist),
         artist=artist,

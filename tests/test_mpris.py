@@ -7,7 +7,7 @@ from kotonoha.providers.mpris import (
     _unwrap,
     parse_metadata,
 )
-from kotonoha.providers.mpris_track import lyrics_lookup_reason
+from kotonoha.providers.mpris_track import CumulativeLengthDetector, lyrics_lookup_reason
 
 
 def observation(track_id, title, artist, *, at, duration=180.0, pos=0.0):
@@ -252,3 +252,87 @@ def test_a_bar_separated_remix_medley_is_not_queried():
 
     assert info.title == "春天里", "the cleaner should still tidy the title"
     assert lyrics_lookup_reason(info) == "title combines several song names"
+
+
+def test_a_length_that_advances_with_the_clock_is_not_a_track_duration():
+    # Recorded from plasma-browser-integration on a YouTube Music radio: the
+    # reported length is the session's playtime, growing by the wall-clock gap at
+    # every track change. By the third song it is past the two-hour gate, so the
+    # lookup is skipped -- 88 of one night's 140 songs were never queried.
+    detector = CumulativeLengthDetector()
+    session = [(0.0, 319.0), (309.0, 628.0), (604.0, 923.0), (900.0, 1219.0)]
+
+    verdicts = [detector.observe("browser", f"/track/{i}", length, at) for i, (at, length) in enumerate(session)]
+
+    assert verdicts[:2] == [True, True], "one rising length is not yet evidence of a counter"
+    assert verdicts[2:] == [False, False], "a length tracking the clock stayed trusted"
+
+
+def test_an_ordinary_playlist_keeps_its_durations():
+    # The negative control: real tracks played end to end. Each length is unrelated
+    # to the gap before it, which is what separates a duration from a counter.
+    detector = CumulativeLengthDetector()
+    playlist = [(0.0, 319.0), (319.0, 214.0), (533.0, 402.0), (935.0, 187.0), (1122.0, 250.0)]
+
+    verdicts = [detector.observe("browser", f"/track/{i}", length, at) for i, (at, length) in enumerate(playlist)]
+
+    assert all(verdicts), "an ordinary playlist was mistaken for a session counter"
+
+
+def test_a_reloaded_page_is_trusted_again():
+    detector = CumulativeLengthDetector()
+    for i, (at, length) in enumerate([(0.0, 319.0), (309.0, 628.0), (604.0, 923.0)]):
+        detector.observe("browser", f"/track/{i}", length, at)
+    assert not detector.trusted
+
+    # The counter starts over, and the next lengths are ordinary durations again.
+    detector.observe("browser", "/track/9", 240.0, 900.0)
+
+    assert detector.trusted
+
+
+def test_back_to_back_videos_keep_their_durations():
+    # youtube.com and Bilibili play one video after another with no gap, so the time
+    # between track changes is the previous video's length. A rule that only asked
+    # whether the length grew by *at most* the elapsed time flagged this: every clip
+    # longer than the last one looked like a counter advancing.
+    detector = CumulativeLengthDetector()
+    videos = [(0.0, 180.0), (180.0, 300.0), (480.0, 520.0), (1000.0, 610.0)]
+
+    verdicts = [detector.observe("browser", f"/video/{i}", length, at) for i, (at, length) in enumerate(videos)]
+
+    assert all(verdicts), "consecutive videos of rising length were read as a session counter"
+
+
+def test_a_topic_channel_is_the_performer_without_the_suffix():
+    # YouTube names an auto-generated artist channel "<Artist> - Topic" and Plasma
+    # passes it on as the performer, so the artist reached the catalogues in a form
+    # none of them lists: 富士山下 found nothing under "Eason Chan - Topic" and 41
+    # lines under "Eason Chan".
+    info = parse_metadata({"xesam:title": "富士山下", "xesam:artist": "Eason Chan - Topic"})
+
+    assert info.artist == "Eason Chan"
+
+
+def test_a_hyphen_in_a_real_name_survives():
+    info = parse_metadata({"xesam:title": "Song", "xesam:artist": "Jay-Z"})
+
+    assert info.artist == "Jay-Z"
+
+
+def test_the_bilibili_site_suffix_leaves_the_title():
+    # Bilibili reports no artist at all, so the page title is all there is and the
+    # site name rode into every query.
+    info = parse_metadata({"xesam:title": "周深-大鱼_哔哩哔哩_bilibili", "xesam:artist": ""})
+
+    assert info.title == "周深-大鱼"
+
+
+def test_a_televised_gala_is_not_a_song():
+    # One page title covers a whole night of performances, which is why 演唱會 is
+    # already refused; the New Year gala publishes the same shape.
+    gala = parse_metadata({"xesam:title": "2026最美的夜bilibili跨年晚会_哔哩哔哩_bilibili", "xesam:artist": ""})
+    song = parse_metadata({"xesam:title": "告白氣球", "xesam:artist": "周杰倫"})
+
+    assert lyrics_lookup_reason(gala) == "title contains non-song marker '晚会'"
+    assert lyrics_lookup_reason(song) is None
