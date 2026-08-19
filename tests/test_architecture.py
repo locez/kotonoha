@@ -98,3 +98,25 @@ def test_desktop_environment_has_one_reader():
         ):
             readers.append(path.relative_to(SOURCE_ROOT).as_posix())
     assert readers == ["platform/detect.py"]
+
+
+def test_the_title_grammar_knows_nothing_about_matching():
+    # The grammar has to serve every ingest path — MPRIS, a browser bridge, a player
+    # plugin — so it must not depend on how a candidate is scored. When the two lived
+    # in one module a rule could only be reached through the matcher, and the three
+    # bilibili rules ended up stranded in the MPRIS parser for exactly that reason.
+    titles = SOURCE_ROOT / "lyrics" / "titles.py"
+
+    for node in _imports(titles):
+        module = getattr(node, "module", "") or ""
+        assert "match" not in module.split("."), f"titles.py imports {module}"
+        for alias in node.names:
+            assert "match" not in alias.name.split("."), f"titles.py imports {alias.name}"
+
+
+def test_the_matcher_holds_no_platform_grammar():
+    # Every regex that describes how a publisher decorates a title belongs to the
+    # grammar module; match.py should only be scoring.
+    match_source = (SOURCE_ROOT / "lyrics" / "match.py").read_text(encoding="utf-8")
+
+    assert "re.compile" not in match_source, "a grammar rule has drifted back into the matcher"

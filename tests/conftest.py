@@ -41,3 +41,12 @@ if not LIVE_SESSION:
 def _session_qapp():
     app = QApplication.instance() or QApplication([])
     yield app
+
+
+
+# A module-scoped alias for the session app, kept because the overlay tests ask for
+# it by name to make their dependence on Qt explicit at the test signature.
+@pytest.fixture(scope="module")
+def qapp():
+    app = QApplication.instance() or QApplication([])
+    yield app
