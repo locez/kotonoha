@@ -14,7 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QSignalBlocker, Qt
 from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import QMenu, QSystemTrayIcon, QWidget
 
@@ -192,7 +192,8 @@ class KotonohaTray(QSystemTrayIcon):
             self._lock_action.toggle()
 
     def set_passthrough_checked(self, checked: bool) -> None:
-        self._lock_action.setChecked(checked)
+        with QSignalBlocker(self._lock_action):
+            self._lock_action.setChecked(checked)
 
     def set_icon_name(self, icon_name: str, accent: str = "#FF4FA3") -> None:
         self.setIcon(load_icon(icon_name, accent=accent))
