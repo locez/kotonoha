@@ -9,7 +9,7 @@ from overlay_helpers import build_overlay as LyricsOverlay
 from PyQt6.QtCore import QEvent, QPointF, QRect, Qt
 from PyQt6.QtGui import QMouseEvent
 
-from kotonoha.config import Config, FxIntensity, PanelStyle, PanelWidthMode
+from kotonoha.config import Config, FxIntensity, PanelStyle, PanelWidthMode, UiLanguage
 from kotonoha.display.models import (
     EMPTY_FRAME,
     DisplayFrame,
@@ -492,7 +492,7 @@ def test_click_without_motion_does_not_persist_a_new_horizontal_offset(qapp):
 
 
 def test_offset_buttons_shift_sweep_and_hide_with_lock(qapp):
-    overlay = LyricsOverlay(LyricsState(), Config(), UnavailableController())
+    overlay = LyricsOverlay(LyricsState(), Config(ui_language=UiLanguage.EN), UnavailableController())
     snapshot = display_frame(
         has_lyrics=True, title="Song", artist="Artist", duration_s=180.0,
         current=LyricLine(0, "line", 0.0, 4.0, "line", "", ()), current_time=1.0, is_playing=True,

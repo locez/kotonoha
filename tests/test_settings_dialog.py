@@ -142,7 +142,10 @@ def test_display_sources_keep_enabled_order_for_runtime_priority(qapp):
 
 
 def test_unavailable_player_lock_survives_dialog_roundtrip(qapp):
-    dialog = SettingsDialog(Config(player_lock="org.mpris.MediaPlayer2.closed"), players=[])
+    dialog = SettingsDialog(
+        Config(ui_language=UiLanguage.EN, player_lock="org.mpris.MediaPlayer2.closed"),
+        players=[],
+    )
 
     assert dialog.form_widgets.player_combo.currentData() == "org.mpris.MediaPlayer2.closed"
     assert "unavailable" in dialog.form_widgets.player_combo.currentText().lower()
@@ -152,7 +155,7 @@ def test_unavailable_player_lock_survives_dialog_roundtrip(qapp):
 
 def test_detected_players_are_readable_and_store_bus_name(qapp):
     dialog = SettingsDialog(
-        Config(),
+        Config(ui_language=UiLanguage.EN),
         players=[PlayerInfo("org.mpris.MediaPlayer2.youtube", "YouTube Music", "Song", "Artist", "Playing", True)],
     )
 
@@ -167,7 +170,7 @@ def test_detected_players_are_readable_and_store_bus_name(qapp):
 def test_idle_player_row_has_status_and_unavailable_choice_stays_selected(qapp):
     bus_name = "org.mpris.MediaPlayer2.closed"
     dialog = SettingsDialog(
-        Config(player_lock=bus_name),
+        Config(ui_language=UiLanguage.EN, player_lock=bus_name),
         players=[PlayerInfo("org.mpris.MediaPlayer2.idle", "Idle player", playback_status="Stopped")],
     )
 
@@ -383,7 +386,7 @@ def test_frost_checkbox_is_greyed_out_and_noted_when_blur_unavailable(qapp):
     # Offscreen has no blur protocol, so frosted glass can't work: the checkbox
     # reads as unavailable (disabled), and the note under it names which of the
     # three causes it is rather than restating the requirement.
-    dialog = SettingsDialog(Config())
+    dialog = SettingsDialog(Config(ui_language=UiLanguage.EN))
     assert dialog._blur_capable is False
     assert dialog.form_widgets.frost_window.isEnabled() is False
     hints = [w.text() for w in dialog.findChildren(QLabel) if w.objectName() == "hint"]
