@@ -241,11 +241,11 @@ class AppController:
         return self._display.apply_manual_artifact(result.artifact, expected_track)
 
     def _on_toggle_passthrough(self, checked: bool) -> None:
-        if checked == self._config.passthrough:
-            self._overlay.set_passthrough(checked)
-            return
+        """Synchronize click-through state across the overlay, config, and tray."""
         self._overlay.set_passthrough(checked)
-        self._config = self._config_service.set_passthrough(checked)
+        if checked != self._config.passthrough:
+            self._config = self._config_service.set_passthrough(checked)
+        self._tray.set_passthrough_checked(checked)
 
     def _handle_intent(self, intent: SettingsIntent) -> None:
         """Route typed UI commands to the owning application workflow."""

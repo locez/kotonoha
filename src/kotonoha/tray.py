@@ -189,9 +189,7 @@ class KotonohaTray(QSystemTrayIcon):
         # Left-click toggles the lock — the quick unlock affordance for a
         # click-through overlay.
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
-            callback = self._on_toggle_passthrough
-            if callback is not None:
-                callback(not self._lock_action.isChecked())
+            self._lock_action.toggle()
 
     def set_passthrough_checked(self, checked: bool) -> None:
         self._lock_action.setChecked(checked)
