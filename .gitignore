@@ -16,6 +16,10 @@ dist/
 .eggs/
 pip-wheel-metadata/
 
+# Nix build result symlinks
+/result
+/result-*
+
 # Virtual environments
 .venv/
 venv/
