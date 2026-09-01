@@ -30,37 +30,6 @@ Kotonoha 支持浏览器、Spotify、VLC、mpv、Cider 以及其他兼容 MPRIS 
 
 ## 安装
 
-### NixOS / Nix
-
-仓库提供支持 `x86_64-linux` 和 `aarch64-linux` 的 Nix flake。无需安装即可直接运行：
-
-```bash
-nix run github:locez/kotonoha
-```
-
-也可以安装到当前用户的 profile：
-
-```bash
-nix profile install github:locez/kotonoha
-```
-
-在 flake 化的 NixOS 配置中，将 Kotonoha 声明为输入并加入系统包：
-
-```nix
-# flake.nix
-inputs.kotonoha = {
-  url = "github:locez/kotonoha";
-  inputs.nixpkgs.follows = "nixpkgs";
-};
-
-# NixOS module（参数中需要包含 inputs 和 pkgs）
-environment.systemPackages = [
-  inputs.kotonoha.packages.${pkgs.stdenv.hostPlatform.system}.default
-];
-```
-
-Nix 包包含桌面入口、原生 Wayland bridge 和用于读取内嵌歌词的 `mutagen` 可选功能。
-
 ### Release 包
 
 从 [GitHub Releases](https://github.com/locez/kotonoha/releases) 下载最新构建产物。
@@ -75,6 +44,19 @@ Gentoo 用户可以启用 [gentoo-zh overlay](https://github.com/gentoo-zh/overl
 sudo eselect repository enable gentoo-zh
 sudo emaint sync
 sudo emerge --ask media-plugins/kotonoha::gentoo-zh
+```
+
+NixOS 用户可以在 flake 配置中添加：
+
+```nix
+inputs.kotonoha = {
+  url = "github:locez/kotonoha";
+  inputs.nixpkgs.follows = "nixpkgs";
+};
+
+environment.systemPackages = [
+  inputs.kotonoha.packages.${pkgs.stdenv.hostPlatform.system}.default
+];
 ```
 
 启动已安装的程序：

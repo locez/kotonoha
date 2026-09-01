@@ -12,7 +12,7 @@
 }:
 
 let
-  project = builtins.fromTOML (builtins.readFile ../pyproject.toml);
+  project = builtins.fromTOML (builtins.readFile ../../pyproject.toml);
 in
 python3Packages.buildPythonApplication {
   inherit (project.project) version;
@@ -20,15 +20,15 @@ python3Packages.buildPythonApplication {
   pyproject = true;
 
   src = lib.fileset.toSource {
-    root = ../.;
+    root = ../..;
     fileset = lib.fileset.unions [
-      ../CMakeLists.txt
-      ../LICENSE
-      ../LICENSES
-      ../README.md
-      ../packaging
-      ../pyproject.toml
-      ../src
+      ../../CMakeLists.txt
+      ../../LICENSE
+      ../../LICENSES
+      ../../README.md
+      ../../packaging
+      ../../pyproject.toml
+      ../../src
     ];
   };
 

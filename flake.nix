@@ -12,7 +12,7 @@
       ];
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
       overlay = final: _previous: {
-        kotonoha = final.callPackage ./nix/package.nix { };
+        kotonoha = final.callPackage ./packaging/nix/package.nix { };
       };
       packagesFor =
         system:
