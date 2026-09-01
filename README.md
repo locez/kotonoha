@@ -30,6 +30,37 @@ Install the optional `mutagen` dependency to read LRC lyrics embedded in local a
 
 ## Installation
 
+### NixOS / Nix
+
+The repository provides a Nix flake for `x86_64-linux` and `aarch64-linux`. Run it without installing:
+
+```bash
+nix run github:locez/kotonoha
+```
+
+Or install it in the current user's profile:
+
+```bash
+nix profile install github:locez/kotonoha
+```
+
+For a flake-based NixOS configuration, add Kotonoha as an input and include its package:
+
+```nix
+# flake.nix
+inputs.kotonoha = {
+  url = "github:locez/kotonoha";
+  inputs.nixpkgs.follows = "nixpkgs";
+};
+
+# NixOS module (include inputs and pkgs in the module arguments)
+environment.systemPackages = [
+  inputs.kotonoha.packages.${pkgs.stdenv.hostPlatform.system}.default
+];
+```
+
+The Nix package includes the desktop entry, native Wayland bridge, and the optional `mutagen` feature for embedded lyrics.
+
 ### Release packages
 
 Download the latest artifacts from [GitHub Releases](https://github.com/locez/kotonoha/releases).
