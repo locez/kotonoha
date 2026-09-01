@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from behavior_corpus import (
     DISPLAY_CASES,
+    ENHANCED_LRC_CASES,
     KRC_BUDGET_CASES,
     KRC_CASES,
     LOOKUP_CASES,
@@ -75,6 +76,10 @@ def _lrc_projection(body: str) -> tuple[LineOutput, ...]:
 def _lrc_budget_projection(case: LrcBudgetInput) -> int:
     body = "\n".join(f"[00:00.00]line-{index}" for index in range(case.line_count))
     return len(parse_lrc(body))
+
+
+def _enhanced_lrc_projection(body: str) -> tuple[WordLineOutput, ...]:
+    return _word_line_projection(parse_lrc(body))
 
 
 def _word_line_projection(lines: list[LyricLine]) -> tuple[WordLineOutput, ...]:
@@ -220,6 +225,7 @@ def test_corpus_cases_have_rule_and_nearest_negative_evidence() -> None:
     all_cases = (
         *TITLE_CASES,
         *LRC_CASES,
+        *ENHANCED_LRC_CASES,
         *YRC_CASES,
         *KRC_CASES,
         *KRC_BUDGET_CASES,
@@ -236,7 +242,15 @@ def test_corpus_cases_have_rule_and_nearest_negative_evidence() -> None:
 
 
 def test_every_grammar_rule_has_a_public_case_and_nearest_negative() -> None:
-    grammar_cases = (*TITLE_CASES, *LRC_CASES, *LRC_BUDGET_CASES, *YRC_CASES, *KRC_CASES, *KRC_BUDGET_CASES)
+    grammar_cases = (
+        *TITLE_CASES,
+        *LRC_CASES,
+        *ENHANCED_LRC_CASES,
+        *LRC_BUDGET_CASES,
+        *YRC_CASES,
+        *KRC_CASES,
+        *KRC_BUDGET_CASES,
+    )
     cases_by_id = {case.case_id: case for case in grammar_cases}
     registered_rule_ids = {coverage.rule_id for coverage in GRAMMAR_RULE_COVERAGE}
     corpus_rule_ids = {rule_id for case in grammar_cases for rule_id in case.rule_ids}
@@ -255,6 +269,10 @@ def test_title_corpus_matches_the_current_public_oracle() -> None:
 
 def test_lrc_corpus_matches_the_current_public_oracle() -> None:
     assert compare_to_baseline(LRC_CASES, lambda case: _lrc_projection(case.body)) == ()
+
+
+def test_enhanced_lrc_corpus_matches_the_current_public_oracle() -> None:
+    assert compare_to_baseline(ENHANCED_LRC_CASES, lambda case: _enhanced_lrc_projection(case.body)) == ()
 
 
 def test_lrc_budget_corpus_freezes_the_current_truncation_baseline() -> None:
@@ -298,6 +316,8 @@ def test_nearest_negative_cases_do_not_repeat_the_positive_public_result() -> No
         assert all(_title_projection(negative) != case.expected for negative in case.negative_variants)
     for case in LRC_CASES:
         assert all(_lrc_projection(negative.body) != case.expected for negative in case.negative_variants)
+    for case in ENHANCED_LRC_CASES:
+        assert all(_enhanced_lrc_projection(negative.body) != case.expected for negative in case.negative_variants)
     for case in LRC_BUDGET_CASES:
         assert all(_lrc_budget_projection(negative) != case.expected for negative in case.negative_variants)
     for case in YRC_CASES:

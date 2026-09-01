@@ -33,6 +33,11 @@ metadata manual-search capability，搜索界面会返回具体的 unavailable r
 
 ## 解析策略
 
+LRC 解析器同时支持普通行级时间标签和 Enhanced LRC 的 inline
+`<mm:ss.xx>` 时间标签。inline 标签会被规范化为 `LyricWord`；没有 inline
+标签的输入仍然是行级歌词。每个词的结束时间取下一个 inline 标签，或在行末
+取该行的结束时间。
+
 每个稳定的 MPRIS track 有独立 generation。旧 generation 的 task 会被取消，过期结果不能更新当前显示。
 
 自动解析优先级如下：

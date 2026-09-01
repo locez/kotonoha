@@ -187,12 +187,45 @@ class WordOutput:
 
 @dataclass(frozen=True)
 class WordLineOutput:
-    """Canonical line and word timing exposed by YRC/KRC parsers."""
+    """Canonical line and word timing exposed by word-timed parsers."""
 
     start: float
     end: float
     text: str
     words: tuple[WordOutput, ...]
+
+
+ENHANCED_LRC_CASES: tuple[BehaviorCase[LrcInput, tuple[WordLineOutput, ...]], ...] = (
+    BehaviorCase(
+        case_id="lrc.enhanced-inline-word-timing",
+        input=LrcInput(
+            "[00:00.000]<00:00.000>堕<00:00.155><00:00.156> - <00:00.311>Zyboy"
+            "<00:00.466><00:00.467>忠<00:00.622>\n"
+            "[00:01.000]next"
+        ),
+        expected=(
+            WordLineOutput(
+                0.0,
+                1.0,
+                "堕 - Zyboy忠",
+                (
+                    WordOutput(0.0, 0.155, "堕"),
+                    WordOutput(0.156, 0.311, " - "),
+                    WordOutput(0.311, 0.466, "Zyboy"),
+                    WordOutput(0.467, 0.622, "忠"),
+                ),
+            ),
+            WordLineOutput(1.0, 6.0, "next", ()),
+        ),
+        negative_variants=(
+            LrcInput("[00:00.000]堕 - Zyboy忠\n[00:01.000]next"),
+        ),
+        source=RegressionSource(
+            "#72", "inline angle timestamps become word spans while ordinary LRC remains line-timed"
+        ),
+        rule_ids=("lrc.enhanced_timestamp", "lrc.enhanced_word_end", "lrc.enhanced_empty_marker"),
+    ),
+)
 
 
 @dataclass(frozen=True)

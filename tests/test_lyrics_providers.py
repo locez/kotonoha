@@ -98,6 +98,19 @@ def test_provider_timeouts_are_per_provider_and_generous_enough():
     assert lrclib.TIMEOUT.total > netease.TIMEOUT.total
 
 
+def test_lrclib_payload_preserves_enhanced_lrc_word_timing():
+    lines = lrclib.parse_payload(
+        {"syncedLyrics": "[00:00.00]<00:00.00>hello<00:00.50>world<00:01.00>"}
+    )
+
+    assert lines[0].text == "helloworld"
+    assert lines[0].has_word_timing
+    assert [(word.start, word.end, word.text) for word in lines[0].words] == [
+        (0.0, 0.5, "hello"),
+        (0.5, 1.0, "world"),
+    ]
+
+
 async def test_netease_search_uses_provider_timeout():
     session = _RecordingSession({"result": {"songs": []}})
     await netease.search(cast(LyricsSession, session), "query")

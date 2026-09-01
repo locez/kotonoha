@@ -9,7 +9,7 @@ import pytest
 
 from kotonoha.lyrics.krc_parser import parse_krc
 from kotonoha.lyrics.lrc_parser import merge_translation, parse_lrc
-from kotonoha.lyrics.models import LyricLine, LyricsDocument
+from kotonoha.lyrics.models import LyricLine, LyricsDocument, LyricWord
 from kotonoha.lyrics.translation import TranslationMerger
 from kotonoha.lyrics.yrc_parser import parse_yrc
 
@@ -57,6 +57,30 @@ def test_parse_lrc_multiple_tags_same_line():
     lines = parse_lrc("[00:01.00][00:05.00]repeat\n")
     assert len(lines) == 2
     assert all(line.text == "repeat" for line in lines)
+
+
+def test_parse_lrc_enhanced_inline_timestamps_into_word_spans():
+    lines = parse_lrc(
+        "[00:00.000]<00:00.000>堕<00:00.155><00:00.156> - <00:00.311>Zyboy"
+        "<00:00.466><00:00.467>忠<00:00.622>\n[00:01.000]next\n"
+    )
+
+    assert lines[0].text == "堕 - Zyboy忠"
+    assert lines[0].end == 1.0
+    assert lines[0].words == (
+        LyricWord(0.0, 0.155, "堕"),
+        LyricWord(0.156, 0.311, " - "),
+        LyricWord(0.311, 0.466, "Zyboy"),
+        LyricWord(0.467, 0.622, "忠"),
+    )
+    assert lines[0].has_word_timing
+
+
+def test_parse_lrc_enhanced_applies_offset_to_line_and_word_timestamps():
+    lines = parse_lrc("[offset:+100]\n[00:01.000]<00:01.000>hello<00:01.500>\n")
+
+    assert lines[0].start == 0.9
+    assert lines[0].words == (LyricWord(0.9, 1.4, "hello"),)
 
 
 def test_merge_translation_by_nearest_time():

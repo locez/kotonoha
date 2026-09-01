@@ -35,6 +35,11 @@ reason for them.
 
 ## Resolution policy
 
+The LRC parser accepts both standard line timestamps and Enhanced LRC inline
+`<mm:ss.xx>` timestamps. Inline timestamps are normalized into `LyricWord`; input
+without inline timestamps remains line-timed. A word ends at the next inline
+timestamp, or at the line end when it is the final segment.
+
 Each stable MPRIS track starts a new generation. Tasks from an older generation
 are cancelled, and stale results cannot update the active display.
 
