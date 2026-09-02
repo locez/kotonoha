@@ -128,6 +128,9 @@ class SettingsPageBuilder:
         w.font_family_shown = resolve_font_family(self._config.font_family)
         w.font_family_configured = self._config.font_family
         w.font_family.setCurrentFont(QFont(w.font_family_shown))
+        # QFontComboBox can normalize a family that is absent from its own list;
+        # compare against what the control actually shows, not the requested name.
+        w.font_family_shown = w.font_family.currentFont().family()
         form.addRow(t("set.font_family"), w.font_family)
 
         w.font_style_configured = self._config.font_style

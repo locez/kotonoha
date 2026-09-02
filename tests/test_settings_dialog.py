@@ -96,6 +96,7 @@ def test_apply_intent_reports_only_fields_changed_since_last_apply(qapp):
 def test_unchanged_font_style_survives_platform_font_normalization(qapp, monkeypatch):
     from kotonoha.ui.settings import pages
 
+    monkeypatch.setattr(pages, "resolve_font_family", lambda _family: "__missing_font_for_test__")
     monkeypatch.setattr(pages, "available_font_styles", lambda _family: ["Book"])
     dialog = SettingsDialog(Config(font_style="Regular"))
     intents = []
