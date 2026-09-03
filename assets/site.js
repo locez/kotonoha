@@ -563,9 +563,24 @@
     function open() {
       list.hidden = false;
       button.setAttribute("aria-expanded", "true");
+      dropWhereItFits();
       var at = options.findIndex(function (o) { return o.getAttribute("aria-selected") === "true"; });
       move(at < 0 ? 0 : at);
     }
+    // The window clips what leaves it, so a list opened downwards with no room
+    // below is not merely awkward — it is cut off. Measured on the effects page:
+    // 12px past the window on a desktop, 92px of a 122px list on a phone, with
+    // 279px standing free above the field. A real combo flips; this one did not.
+    function dropWhereItFits() {
+      var frame = button.closest(".kwin") || document.documentElement;
+      var room = frame.getBoundingClientRect();
+      var field = button.getBoundingClientRect();
+      var wanted = list.getBoundingClientRect().height;
+      var below = room.bottom - field.bottom;
+      var above = field.top - room.top;
+      list.dataset.drop = wanted > below && above > below ? "up" : "down";
+    }
+
     function move(index) {
       var wrapped = (index + options.length) % options.length;
       options.forEach(function (o, i) { o.dataset.active = String(i === wrapped); });
@@ -710,13 +725,13 @@
     { id: "nixos", mark: "nixos", label: "NixOS",
       noteKey: "get.nixos.note",
       cmd: 'inputs.kotonoha = {\n  url = "github:locez/kotonoha";\n  inputs.nixpkgs.follows = "nixpkgs";\n};\n\nenvironment.systemPackages = [\n  inputs.kotonoha.packages.${pkgs.stdenv.hostPlatform.system}.default\n];' },
-    { id: "deb", labelKey: "get.deb",
+    { id: "deb", mark: "debian", labelKey: "get.deb",
       noteKey: "get.deb.note",
       cmd: releaseCommand("_amd64.deb", "kotonoha.deb", "sudo apt install ./kotonoha.deb") },
-    { id: "rpm", labelKey: "get.rpm",
+    { id: "rpm", mark: "fedora", labelKey: "get.rpm",
       noteKey: "get.rpm.note",
       cmd: releaseCommand(".x86_64.rpm", "kotonoha.rpm", "sudo dnf install ./kotonoha.rpm") },
-    { id: "source", labelKey: "get.source",
+    { id: "source", mark: "terminal", line: true, labelKey: "get.source",
       noteKey: "get.source.note",
       cmd: "# Arch\nsudo pacman -S cmake qt6-base qt6-wayland layer-shell-qt\n# Gentoo\nsudo emerge -a dev-build/cmake kde-plasma/layer-shell-qt dev-qt/qtwayland\n\ngit clone https://github.com/locez/kotonoha.git\ncd kotonoha\nuv sync\nuv run kotonoha" }
   ];
@@ -772,6 +787,7 @@
         var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
         svg.setAttribute("viewBox", "0 0 24 24");
         svg.setAttribute("aria-hidden", "true");
+        if (entry.line) { svg.setAttribute("class", "line"); }
         var use = document.createElementNS("http://www.w3.org/2000/svg", "use");
         use.setAttribute("href", "#m-" + entry.mark);
         use.setAttribute("width", "24"); use.setAttribute("height", "24");

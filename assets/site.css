@@ -352,10 +352,13 @@ a { color: var(--accent); }
 @media (hover: hover) { .lb__btn:hover { border-color: var(--text-dim); } }
 .lb__list {
   position: absolute; inset-inline: 0; inset-block-start: calc(100% + var(--s-1));
+  /* `drop` is set from the measured room, not from where the field sits: a field
+     in the middle of a short window has no room either. */
   z-index: 5; padding: var(--s-1);
   background: var(--card-solid); border: 1px solid var(--field-edge);
   border-radius: var(--r-md); box-shadow: var(--shadow-lift);
 }
+.lb__list[data-drop="up"] { inset-block-start: auto; inset-block-end: calc(100% + var(--s-1)); }
 .lb__list [role="option"] { padding: var(--s-2) var(--s-3); border-radius: var(--r-sm); font-size: 0.8125rem; color: var(--text-dim); cursor: pointer; }
 .lb__list [role="option"][data-active="true"] { background: var(--field); color: var(--text-strong); }
 .lb__list [role="option"][aria-selected="true"] { color: var(--accent); }
@@ -510,6 +513,10 @@ a { color: var(--accent); }
   transition: color var(--dur) var(--ease-enter), background-color var(--dur) var(--ease-enter);
 }
 .get__tabs button svg { inline-size: calc(var(--s) * 4.5); block-size: calc(var(--s) * 4.5); fill: currentColor; flex: none; opacity: 0.85; }
+/* A distribution mark is a filled shape and an interface glyph is a stroked one.
+   The rule above fills whatever it is given, so a stroked icon needs to say so
+   or it arrives as a solid block. */
+.get__tabs button svg.line { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .get__tabs button[aria-selected="true"], .get__sub button[aria-selected="true"] { background: var(--card-solid); color: var(--text-strong); box-shadow: var(--shadow-card); }
 @media (hover: hover) { .get__tabs button:hover, .get__sub button:hover { color: var(--text-strong); } }
 .get__body { display: flex; align-items: flex-start; gap: var(--s-3); padding: var(--s-4); }
