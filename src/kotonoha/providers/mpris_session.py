@@ -14,11 +14,20 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any, TypeVar
 
-from dbus_fast.errors import DBusFastError
-
 from ..playback.models import MprisPlayerPort, MprisPropertyChange
 from .mpris_track import TrackInfo, parse_metadata
 from .mpris_track import unwrap as _unwrap
+
+DBUS_ERRORS: tuple[type[Exception], ...]
+try:
+    from dbus_fast.errors import DBusFastError
+except ImportError:
+    from dbus_fast.errors import AuthError, DBusError, InterfaceNotFoundError, SignalDisabledError
+
+    # TODO: Remove this fallback when the minimum supported dbus-fast version is 5.0.
+    DBUS_ERRORS = (AuthError, DBusError, InterfaceNotFoundError, SignalDisabledError)
+else:
+    DBUS_ERRORS = (DBusFastError,)
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +51,7 @@ MPRIS_INTROSPECTION = """<node>
 #: answers is not an error, it is silence, and there is one poll task: without a
 #: deadline it waits inside that call and every other player stops being looked at.
 DBUS_CALL_TIMEOUT = 2.0
-_MPRIS_BOUNDARY_ERRORS = (DBusFastError, OSError, TimeoutError, RuntimeError, ValueError, TypeError)
+_MPRIS_BOUNDARY_ERRORS = DBUS_ERRORS + (OSError, TimeoutError, RuntimeError, ValueError, TypeError)
 _MPRIS_DETAIL_ERRORS = _MPRIS_BOUNDARY_ERRORS + (KeyError, IndexError, OverflowError)
 
 _T = TypeVar("_T")

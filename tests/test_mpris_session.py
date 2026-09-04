@@ -2,9 +2,10 @@
 
 import pytest
 from dbus_fast import Variant
+from dbus_fast.errors import AuthError, DBusError, InterfaceNotFoundError, SignalDisabledError
 
 from kotonoha.playback.models import MprisPropertyChange
-from kotonoha.providers.mpris_session import MprisSession
+from kotonoha.providers.mpris_session import DBUS_ERRORS, MprisSession
 
 
 class _Props:
@@ -85,6 +86,15 @@ async def test_a_read_that_never_answers_gives_up():
         assert await MprisSession.ask("status read", never(), "") == ""
     finally:
         mpris_session.DBUS_CALL_TIMEOUT = original
+
+
+def test_dbus_errors_match_the_installed_dbus_fast_api():
+    try:
+        from dbus_fast.errors import DBusFastError
+    except ImportError:
+        assert DBUS_ERRORS == (AuthError, DBusError, InterfaceNotFoundError, SignalDisabledError)
+    else:
+        assert DBUS_ERRORS == (DBusFastError,)
 
 
 def test_a_property_reads_the_same_wrapped_or_not():
