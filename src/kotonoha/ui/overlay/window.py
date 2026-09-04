@@ -479,18 +479,21 @@ class LyricsOverlay(QWidget):
 
     # --- drag to reposition (only while unlocked) ---
     #
-    # Wayland forbids client-side self.move(); a layer surface is moved by updating
-    # its margins. The selected platform drag port owns the compositor-specific
-    # pointer model: local press-relative feedback for KWin and incremental global
-    # feedback for niri. Both return the position actually applied after coordinate
+    # An ordinary Wayland window delegates the entire gesture to the compositor via
+    # startSystemMove(), so it never enters the manual update/persistence path.
+    # Layer Shell and X11 use the selected platform drag port's manual model:
+    # press-relative feedback for KWin and incremental global feedback for niri.
+    # Manual strategies return the position actually applied after coordinate
     # conversion, so persistence never reconstructs movement from a second source.
-    # The platform commit also avoids repainting heavy lyric text.
 
     def mousePressEvent(self, a0: QMouseEvent | None) -> None:
         if a0 is not None and not self._passthrough and a0.button() == Qt.MouseButton.LeftButton:
             local = a0.position().toPoint()
             global_position = a0.globalPosition().toPoint()
             mode = self._surface.begin_drag(local, global_position)
+            if mode is DragMode.SYSTEM:
+                a0.accept()
+                return
             if mode is not DragMode.MANUAL:
                 super().mousePressEvent(a0)
                 return

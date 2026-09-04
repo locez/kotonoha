@@ -107,6 +107,7 @@ uv run kotonoha
 ## 使用条件
 
 - 如果要悬浮在全屏窗口上方，需要实现 `wlr-layer-shell` 的 compositor，例如 KDE/KWin 或基于 wlroots 的 compositor。GNOME/Mutter 会回退到普通的置顶窗口。
+- 在 GNOME/Mutter Wayland 中，解锁后的悬浮窗会使用 compositor 的系统移动手势，因此不会发送客户端窗口移动请求，也不会保存客户端无法确认的坐标。
 - 毛玻璃需要 `ext-background-effect-v1`（KWin 6.7+、Mutter）或旧版 `org_kde_kwin_blur`（Plasma 6.6 及更早版本）。两者都不可用时，面板仍保持半透明但不会模糊，毛玻璃选项会被禁用。
 - 浏览器播放器可以通过 [Plasma Browser Integration](https://github.com/KDE/plasma-browser-integration) 和/或 `playerctld` 提供 MPRIS。
 

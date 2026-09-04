@@ -53,6 +53,7 @@ class _FakeHost:
         self.policies: list[WindowPolicy] = []
         self.lifecycle: list[str] = []
         self.alive = True
+        self.system_move_started = False
 
     def is_alive(self) -> bool:
         return self.alive
@@ -89,6 +90,10 @@ class _FakeHost:
 
     def move_window(self, position: WindowPoint) -> None:
         del position
+
+    def start_system_move(self) -> bool:
+        self.system_move_started = True
+        return True
 
     def refresh(self) -> None:
         pass
@@ -273,6 +278,28 @@ def test_a_wayland_fallback_reports_that_it_cannot_place_its_own_window() -> Non
 
     assert platform.capabilities.client_positioning is False
     assert platform.placement is None
+    assert platform.capabilities.system_move is True
+    assert platform.capabilities.system_move_reason is None
+
+
+def test_a_wayland_fallback_uses_the_compositor_system_move_contract() -> None:
+    host = _FakeHost()
+    platform = DefaultOverlayPlatformFactory(
+        _FakeController(False), platform_name="wayland", current_desktop="GNOME"
+    )(host)
+    result = platform.drag.begin_drag(WindowPoint(10, 10), WindowPoint(100, 100), _drag_geometry())
+    assert result.mode is DragMode.SYSTEM
+    assert host.system_move_started is True
+    assert platform.drag.system_move is True
+
+
+def test_x11_keeps_manual_window_drag_contract() -> None:
+    host = _FakeHost()
+    platform = DefaultOverlayPlatformFactory(_FakeController(False), platform_name="xcb")(host)
+    result = platform.drag.begin_drag(WindowPoint(10, 10), WindowPoint(100, 100), _drag_geometry())
+    assert result.mode is DragMode.MANUAL
+    assert host.system_move_started is False
+    assert platform.drag.system_move is False
 
 
 def test_an_x11_fallback_can_place_its_own_window() -> None:

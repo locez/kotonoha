@@ -50,6 +50,11 @@ class _LayerShellDragStrategy:
         return True
 
     @property
+    def system_move(self) -> bool:
+        """Layer Shell keeps its existing manual anchor-drag contract."""
+        return False
+
+    @property
     def can_rebind_output(self) -> bool:
         """Return whether release coordinates can select another output."""
         return self._can_rebind_output
@@ -247,6 +252,11 @@ class LayerShellPlatform:
     def client_positioning(self) -> bool:
         """Expose the drag-relevant placement capability through the drag port."""
         return self.capabilities.client_positioning
+
+    @property
+    def system_move(self) -> bool:
+        """Layer Shell keeps its existing manual anchor-drag contract."""
+        return False
 
     @property
     def can_rebind_output(self) -> bool:

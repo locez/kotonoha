@@ -154,6 +154,7 @@ class _WaylandFallbackProvider:
             # Wayland gives a client no way to place its own toplevel, and no
             # readback can tell: Qt reports the requested position either way.
             client_positioning=False,
+            system_move=True,
             # Nor a way to set the window's opacity.
             window_opacity=False,
         )

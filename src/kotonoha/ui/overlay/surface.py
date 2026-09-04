@@ -387,7 +387,7 @@ class OverlaySurfaceController:
         return result
 
     def begin_drag(self, local: QPoint, global_position: QPoint) -> DragMode:
-        """Start a manual drag through the selected drag port."""
+        """Start a manual or compositor-owned drag through the selected port."""
         return self._position.begin_drag(
             local,
             global_position,

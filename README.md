@@ -107,6 +107,7 @@ uv run kotonoha
 ## Before you start
 
 - Floating above fullscreen requires a compositor that implements `wlr-layer-shell`, such as KDE/KWin or a wlroots-based compositor. GNOME/Mutter falls back to a normal top-most window.
+- On GNOME/Mutter Wayland, an unlocked overlay uses the compositor's system move gesture, so dragging does not send client-side window moves or save coordinates that the client cannot verify.
 - Frosted glass requires `ext-background-effect-v1` (KWin 6.7+, Mutter) or the older `org_kde_kwin_blur` (Plasma 6.6 and earlier). Without either, the panel stays translucent but unblurred and the frosted-glass options are greyed out.
 - Browser players expose MPRIS through extensions such as [Plasma Browser Integration](https://github.com/KDE/plasma-browser-integration) and/or `playerctld`.
 

@@ -22,11 +22,12 @@ _NO_CLIENT_POSITIONING = "This compositor ignores a client-side move of an ordin
 
 
 class OrdinaryWindowDragStrategy:
-    """Move an ordinary window from the press-relative local pointer anchor."""
+    """Choose compositor-owned or client-side movement for an ordinary window."""
 
-    def __init__(self, host: WindowHost, *, client_positioning: bool = True) -> None:
+    def __init__(self, host: WindowHost, *, client_positioning: bool = True, system_move: bool = False) -> None:
         self._host = host
         self._client_positioning = client_positioning
+        self._system_move = system_move
         self._origin: WindowPoint | None = None
         self._window_origin = WindowPoint(0, 0)
         self._surface_position = WindowPoint(0, 0)
@@ -42,6 +43,11 @@ class OrdinaryWindowDragStrategy:
         """Return whether Qt coordinates can safely select another output."""
         return self._client_positioning
 
+    @property
+    def system_move(self) -> bool:
+        """Whether a press delegates movement to the compositor."""
+        return self._system_move
+
     def begin_drag(
         self,
         local_position: WindowPoint,
@@ -49,6 +55,13 @@ class OrdinaryWindowDragStrategy:
         geometry: DragGeometry,
     ) -> DragStartResult:
         del global_position
+        if self._system_move:
+            # Wayland requires the move request to carry the serial from this
+            # press. The host calls QWindow.startSystemMove immediately rather
+            # than trying to reconstruct the gesture from later pointer events.
+            if self._host.start_system_move():
+                return DragStartResult(DragMode.SYSTEM)
+            return DragStartResult(DragMode.UNAVAILABLE, "The compositor declined the system window move.")
         current = self._host.window_position()
         if current is None:
             current = self._window_origin
@@ -133,6 +146,7 @@ class QtWindowPlatform:
         blur: LayerShellBridge | None = None,
         client_positioning: bool = True,
         window_opacity: bool = True,
+        system_move: bool = False,
     ) -> None:
         self._host = host
         self._reason = reason
@@ -143,6 +157,7 @@ class QtWindowPlatform:
         # Wayland has no client-side window-opacity protocol either, and the same
         # provider knows which session this is.
         self._window_opacity = window_opacity
+        self._system_move = system_move
         self._surface_released = False
         self._closed = False
         # Blur is a separate capability from Layer Shell: Mutter offers no
@@ -151,7 +166,7 @@ class QtWindowPlatform:
         # blur work was for. When a bridge is available the answer comes from it.
         self._blur = blur
         self._drag_strategy: DragPort = OrdinaryWindowDragStrategy(
-            host, client_positioning=client_positioning
+            host, client_positioning=client_positioning, system_move=system_move
         )
 
     @property
@@ -175,6 +190,8 @@ class QtWindowPlatform:
             client_positioning_reason=None
             if self._client_positioning
             else _NO_CLIENT_POSITIONING,
+            system_move=self._system_move,
+            system_move_reason=None if self._system_move else "System window movement is unavailable.",
             window_opacity=self._window_opacity,
             window_opacity_reason=None if self._window_opacity else _NO_WINDOW_OPACITY,
         )
@@ -183,6 +200,11 @@ class QtWindowPlatform:
     def client_positioning(self) -> bool:
         """Expose the drag-relevant placement capability through the drag port."""
         return self._client_positioning
+
+    @property
+    def system_move(self) -> bool:
+        """Expose whether the ordinary window delegates movement to Wayland."""
+        return self._system_move
 
     @property
     def can_rebind_output(self) -> bool:

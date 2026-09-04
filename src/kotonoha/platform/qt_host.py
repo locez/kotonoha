@@ -117,6 +117,14 @@ class QtWindowHost:
     def move_window(self, position: WindowPoint) -> None:
         self._widget.move(position.x, position.y)
 
+    def start_system_move(self) -> bool:
+        """Delegate the current pointer gesture to the compositor."""
+        try:
+            handle = self._widget.windowHandle()
+            return handle is not None and handle.startSystemMove()
+        except RuntimeError:
+            return False
+
     def set_input_mask(self, region: WindowRectangle) -> None:
         """Confine pointer input to one rectangle.
 

@@ -26,6 +26,8 @@ class OverlayCapabilities:
     # stated from the protocol rather than observed.
     client_positioning: bool = True
     client_positioning_reason: str | None = None
+    system_move: bool = False
+    system_move_reason: str | None = None
     # Whether setting the window's opacity does anything. Wayland has no client-side
     # window-opacity protocol, so animating it there only logs "plugin does not
     # support setting window opacity" once per frame. Which session this is remains a
@@ -239,6 +241,9 @@ class WindowHost(Protocol):
     def hide_window(self) -> None: ...
     def destroy_surface(self) -> None: ...
     def move_window(self, position: WindowPoint) -> None: ...
+    def start_system_move(self) -> bool:
+        """Ask the compositor to own the move begun by the current press event."""
+        ...
     # Shape where an ordinary window accepts input. Two calls rather than one
     # nullable argument: the public operation uses None to mean "click through
     # everywhere", and a mask of None conventionally means "no shaping at all",
@@ -314,6 +319,11 @@ class DragPort(Protocol):
         ...
 
     @property
+    def system_move(self) -> bool:
+        """Whether a press can delegate movement to the compositor."""
+        ...
+
+    @property
     def can_rebind_output(self) -> bool:
         """Whether release coordinates can safely select another output."""
         ...
@@ -324,7 +334,7 @@ class DragPort(Protocol):
         global_position: WindowPoint,
         geometry: DragGeometry,
     ) -> DragStartResult:
-        """Start a platform-specific gesture from the pointer coordinates."""
+        """Start a manual or compositor-owned gesture from the pointer coordinates."""
         ...
 
     def update_drag(

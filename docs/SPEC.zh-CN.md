@@ -70,7 +70,7 @@ Domain 不依赖 Qt、网络客户端、D-Bus 或 native bridge。Presentation �
 - 缓存管理使用 `LyricsCacheManagementPort`，手动应用使用 `LyricsCacheWritePort`。两者都指向组合根创建的同一个 `LyricsCache`，缓存 CRUD 不经过 MPRIS port。
 - 时序偏移使用由规范化录音 metadata、按整秒归一化的时长和歌词 identity（`source_id`、provider song ID、内容 digest）构成的 `TrackOffsetKey`。每次变化只执行一条 SQLite upsert；HUD 和 display projection 共享 `TrackOffsetService`，由 `AppController` 立即应用新的显示选项。
 - 平台能力以带原因的 capability/result 返回；UI 不直接读取 compositor 名称或 native bridge。
-- overlay 拖动使用平台策略进行坐标换算和位置同步。普通窗口和支持该行为的 Layer Shell 桌面保持连续跨屏；Niri 的 Layer Shell surface 绑定单一 output，因此拖动期间将面板限制在当前 output 的逻辑矩形内，释放时也保持在该 output。KDE 默认的 Layer Shell 策略继续在释放时根据指针选择 output 并执行重绑。
+- overlay 拖动使用平台策略进行坐标换算和位置同步。X11 普通窗口和 Layer Shell compositor 保持现有的客户端手动拖动模型；在 GNOME/Mutter 这类没有 Layer Shell 的 Wayland 会话中，普通窗口会在按下事件中请求由 compositor 接管的系统移动，后续客户端坐标不会用于更新或持久化，因为 Wayland 不提供可靠的客户端定位能力。Niri 的 Layer Shell surface 绑定单一 output，因此拖动期间将面板限制在当前 output 的逻辑矩形内，释放时也保持在该 output。KDE 默认的 Layer Shell 策略继续在释放时根据指针选择 output 并执行重绑。
 
 ## 生命周期
 

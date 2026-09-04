@@ -29,6 +29,7 @@ from PyQt6.QtWidgets import QApplication, QWidget
 
 from kotonoha.config import Config, PanelStyle
 from kotonoha.platform.overlay_contracts import (
+    DragMode,
     DragUpdateResult,
     Output,
     SurfaceResult,
@@ -387,6 +388,52 @@ def test_a_drag_whose_update_failed_is_not_persisted(qapp):
         )
 
     assert committed == [], "a drag that never took effect was saved"
+    overlay.deleteLater()
+    qapp.processEvents()
+
+
+def test_system_drag_press_skips_manual_updates_and_position_persistence(qapp):
+    # startSystemMove gives the compositor ownership of the whole gesture. The
+    # overlay must not feed later events into the client-side update path or save
+    # coordinates reconstructed from those events.
+    overlay = LyricsOverlay(LyricsState(), Config(), UnavailableController())
+    press = QMouseEvent(
+        QEvent.Type.MouseButtonPress,
+        QPointF(10, 10),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    move = QMouseEvent(
+        QEvent.Type.MouseMove,
+        QPointF(80, 10),
+        Qt.MouseButton.NoButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    release = QMouseEvent(
+        QEvent.Type.MouseButtonRelease,
+        QPointF(80, 10),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+
+    with (
+        patch.object(overlay._surface, "begin_drag", return_value=DragMode.SYSTEM) as begin_drag,
+        patch.object(overlay._surface, "update_drag") as update_drag,
+        patch.object(overlay._surface, "end_drag") as end_drag,
+        patch.object(overlay, "_commit_drag_position") as commit,
+    ):
+        overlay.mousePressEvent(press)
+        overlay.mouseMoveEvent(move)
+        overlay.mouseReleaseEvent(release)
+
+    begin_drag.assert_called_once()
+    update_drag.assert_not_called()
+    end_drag.assert_not_called()
+    commit.assert_not_called()
+    assert overlay._dragging is False
     overlay.deleteLater()
     qapp.processEvents()
 
