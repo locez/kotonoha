@@ -1467,7 +1467,9 @@
       return best;
     }
     var capsField = dotField(capsCanvas, {
-      fill: 0.42, at: 0.73, scrollWith: capsCanvas.parentNode,
+      // 画布从 1296 变成整屏宽之后，同一个比例会把图标往右挪 33px；这里换成
+      // 让它落在原来那个位置上的比例。
+      fill: 0.42, at: 0.707, scrollWith: capsCanvas.parentNode,
       centreOf: function (c, h) {
         // On a narrow screen the copy runs the full width and the canvas sits
         // straight behind it, so a gathered glyph lands on the words. There the

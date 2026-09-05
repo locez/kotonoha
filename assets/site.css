@@ -1048,10 +1048,17 @@ footer { border-block-start: 1px solid var(--card-edge); padding-block: var(--s-
    It is never display:none — a canvas that is not laid out is a canvas that
    stopped, and the section then reads as broken rather than as plain. */
 .caps__fx {
+  /* 破格到整屏宽。它本来跟着 .shell 的宽度走，于是这一节的颗粒在左右各 72px
+     处齐刷刷断掉，成了一条别的分区都没有的竖边 —— 那几节的场是 section 的直接
+     子元素，本来就是满宽的。这一块是 sticky、宽屏下还是网格项，挪出去会连
+     布局一起换，所以就地外扩；section 上用 clip 裁掉由此多出的横向溢出，
+     clip 不会造出滚动容器，sticky 照常。 */
   position: sticky; inset-block-start: 0; z-index: 0;
-  display: block; inline-size: 100%; block-size: 100svh;
+  display: block; inline-size: 100vw; margin-inline: calc(50% - 50vw);
+  block-size: 100svh;
   margin-block-end: -100svh; opacity: 0.45; pointer-events: none;
 }
+#does { overflow-x: clip; }
 .cap { z-index: 1; }
 
 /* One capability fills the reading area and the next arrives on a scroll: the
