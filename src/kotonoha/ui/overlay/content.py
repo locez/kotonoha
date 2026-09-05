@@ -32,6 +32,7 @@ class OverlayContentController:
         config: Config,
         previous: QLabel,
         current: KaraokeLabel,
+        feedback: QLabel,
         translation: KaraokeLabel,
         next_label: QLabel,
         container: QWidget,
@@ -47,6 +48,7 @@ class OverlayContentController:
         self._config = config
         self._previous = previous
         self._current = current
+        self._feedback = feedback
         self._translation = translation
         self._next = next_label
         self._container = container
@@ -131,16 +133,10 @@ class OverlayContentController:
 
     def show_offset_feedback(self, offset_ms: int) -> None:
         """Show the applied offset briefly without changing the canonical frame."""
-        line = LyricLine(
-            0,
-            "offset-feedback",
-            0.0,
-            1e9,
-            self._translator.text("overlay.offset.value").format(offset=offset_ms),
-            "",
-            (),
+        self._feedback.setText(
+            self._translator.text("overlay.offset.value").format(offset=offset_ms)
         )
-        self._current.set_line(line, False)
+        self._feedback.setVisible(True)
         self._feedback_timer.start(1200)
 
     def reset(self) -> None:
@@ -159,7 +155,7 @@ class OverlayContentController:
 
     def _restore_after_offset_feedback(self) -> None:
         """Restore the latest canonical frame after the feedback timer expires."""
-        self.on_frame(self._state.frame)
+        self._feedback.clear()
 
     def _set_track_key_from_frame(self, frame: DisplayFrame) -> None:
         """Use the identity calculated once by the display projection."""

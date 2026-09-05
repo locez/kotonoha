@@ -14,7 +14,7 @@ from ..lyrics.models import LyricsDocument
 from ..playback.models import TrackIdentity
 
 TRACK_OFFSET_LIMIT_MS = 10_000
-TRACK_OFFSET_STEP_MS = 50
+TRACK_OFFSET_STEP_MS = 100
 MAX_OFFSET_IDENTITY_TEXT = 2048
 
 

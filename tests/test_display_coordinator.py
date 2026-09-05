@@ -223,3 +223,38 @@ def test_manual_lyrics_replace_the_active_document_and_survive_late_provider_res
     assert state.frame.document is automatic_document
     assert coordinator.current_lyrics_status().origin is LyricsOrigin.NETWORK
     assert coordinator.current_lyrics_status().cache_state is LyricsCacheState.NONE
+
+
+def test_set_options_reprojects_a_small_offset_across_a_line_boundary():
+    state = LyricsState()
+    coordinator = DisplayCoordinator(
+        QtDisplayPublisher(state),
+        presenter=DisplayEngine(),
+        timeline=TimelineEngine(),
+    )
+    track = TrackIdentity("test", "player", stable_id="song", title="Song", artist="Artist")
+    playback = PlaybackObservation("test", "player", track, PlaybackStatus.PAUSED, 0.98, 2.0, 100.0)
+    document = LyricsDocument(
+        "test",
+        title="Song",
+        artist="Artist",
+        timing=TimingKind.LINE,
+        duration_s=2.0,
+        lines=(
+            LyricLine(0, "line-0", 0.0, 1.0, "first", ""),
+            LyricLine(1, "line-1", 1.0, 2.0, "second", ""),
+        ),
+    )
+
+    coordinator.publish_resolution(playback, document, ResolutionState.AVAILABLE)
+    key = track_offset_key(track, document)
+    assert key is not None
+    assert state.frame.current_time == 0.98
+    assert state.frame.current is not None
+    assert state.frame.current.id == "line-0"
+
+    coordinator.set_options(DisplayOptions(track_offsets_ms={key: 50}))
+
+    assert state.frame.current_time == 1.03
+    assert state.frame.current is not None
+    assert state.frame.current.id == "line-1"

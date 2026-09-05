@@ -26,6 +26,7 @@ class OverlayPresentationController:
         container: QWidget,
         previous: QLabel,
         current: KaraokeLabel,
+        feedback: QLabel,
         translation: KaraokeLabel,
         next_label: QLabel,
         *,
@@ -36,6 +37,7 @@ class OverlayPresentationController:
         self._container = container
         self._previous = previous
         self._current = current
+        self._feedback = feedback
         self._translation = translation
         self._next = next_label
         self._window_size = window_size
@@ -66,7 +68,7 @@ class OverlayPresentationController:
         self._current.set_max_width(available_width)
 
         family_stack = ", ".join(f"'{name}'" for name in families)
-        for label in (self._previous, self._next):
+        for label in (self._previous, self._feedback, self._next):
             label.setStyleSheet(
                 f"color: {context_css}; font-size: {config.context_font_size}px; "
                 f"font-family: {family_stack};"
@@ -103,7 +105,8 @@ class OverlayPresentationController:
         main = self._config.font_size
         context = 0 if self._config.current_line_only else self._config.context_font_size
         translation = self._config.translation_font_size if self._config.show_translation else 0
-        lines = int(main * 1.6) + 2 * int(context * 1.4) + int(translation * 1.6)
+        feedback = 20
+        lines = int(main * 1.6) + 2 * int(context * 1.4) + int(translation * 1.6) + feedback
         chrome = 22 + 24 + 34
         return max(140, lines + chrome)
 

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import QGraphicsDropShadowEffect, QLabel, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QGraphicsDropShadowEffect, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from .chrome import OverlayChromeController
 from .karaoke_label import KaraokeLabel
@@ -19,6 +19,7 @@ class OverlayWidgets:
     container: QWidget
     previous: QLabel
     current: KaraokeLabel
+    feedback: QLabel
     translation: KaraokeLabel
     next: QLabel
 
@@ -41,11 +42,12 @@ class OverlayViewBuilder:
 
         previous = self._context_label()
         current = KaraokeLabel(container)
+        feedback = self._feedback_label()
         translation = KaraokeLabel(container)
         next_label = self._context_label()
-        for widget in (previous, current, translation, next_label):
+        for widget in (previous, current, translation, next_label, feedback):
             layout.addWidget(widget, alignment=Qt.AlignmentFlag.AlignHCenter)
-        for label in (previous, next_label):
+        for label in (previous, feedback, next_label):
             label.setGraphicsEffect(self._text_shadow())
 
         root = QVBoxLayout(self._owner)
@@ -54,13 +56,20 @@ class OverlayViewBuilder:
         root.addStretch(1)
         root.addWidget(container, 0, Qt.AlignmentFlag.AlignHCenter)
         root.addStretch(1)
-        return OverlayWidgets(container, previous, current, translation, next_label)
+        return OverlayWidgets(container, previous, current, feedback, translation, next_label)
 
     def _context_label(self) -> QLabel:
         """Create a centered translucent label for surrounding lyric context."""
         label = QLabel("")
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         label.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        return label
+
+    def _feedback_label(self) -> QLabel:
+        """Create a reserved status row that cannot replace the current lyric."""
+        label = self._context_label()
+        label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        label.setFixedHeight(20)
         return label
 
     def _text_shadow(self) -> QGraphicsDropShadowEffect:

@@ -48,6 +48,11 @@ class OverlaySurfaceController:
         self._container_geometry = container_geometry
         self._geometry = OverlayGeometry(config, band_height)
         self._passthrough = config.passthrough
+        # Smooth display frames change lyric progress, not the visible pill
+        # geometry. Keep the last successful region at this platform boundary so
+        # those frames do not become repeated native commits.
+        self._input_region_applied = False
+        self._applied_input_region: WindowRectangle | None = None
         self._host = QtWindowHost(widget)
         self._platform: OverlayPlatform = platform_factory(self._host)
         self._rebuild_complete_handler: Callable[[], None] | None = None
@@ -311,6 +316,10 @@ class OverlaySurfaceController:
             primary=QApplication.primaryScreen(),
         )
         self.bind_widget_screen(screen)
+        # A first activation or a retry after degradation may create a new native
+        # surface; an already active surface retains its committed region.
+        if self._lifecycle.state is not SurfaceState.ACTIVE:
+            self._input_region_applied = False
         result = self._lifecycle.activate(self.output(screen))
         capabilities = self._platform.capabilities
         if capabilities.layer_shell and result.succeeded:
@@ -364,10 +373,16 @@ class OverlaySurfaceController:
             self._log_result("input region", result, debug=True)
             return result
         if self._passthrough:
-            result = input_region.set_input_region(None)
+            region: WindowRectangle | None = None
         else:
             rect = self._container_geometry()
-            result = input_region.set_input_region(WindowRectangle(rect.x(), rect.y(), rect.width(), rect.height()))
+            region = WindowRectangle(rect.x(), rect.y(), rect.width(), rect.height())
+        if self._input_region_applied and region == self._applied_input_region:
+            return SurfaceResult.applied()
+        result = input_region.set_input_region(region)
+        if result.succeeded:
+            self._applied_input_region = region
+            self._input_region_applied = True
         self._log_result("input region", result)
         return result
 
@@ -444,6 +459,10 @@ class OverlaySurfaceController:
         """Recreate a surface on one current Qt output for the lifecycle owner."""
         if not self._host.is_alive():
             return SurfaceResult.failed("The overlay window is gone.", retryable=False)
+        # The old output-bound surface was released by the lifecycle owner. Even
+        # if the requested region is unchanged, it must be submitted to the new
+        # native surface after activation.
+        self._input_region_applied = False
         screens = QApplication.screens()
         screen = next((candidate for candidate in screens if candidate.name() == output.name), None)
         if screen is None or self.usable_screen(screen) is None:

@@ -55,6 +55,81 @@ def test_container_geometry_change_schedules_surface_repaint(qapp, event_type):
     qapp.processEvents()
 
 
+def test_playback_frame_refreshes_do_not_repeat_the_same_input_region(qapp):
+    # Smooth display frames change lyric progress, not the visible pill geometry.
+    # Re-submitting the same region for every frame turns the 60 Hz display clock
+    # into repeated toolkit/native surface work.
+    overlay = LyricsOverlay(
+        LyricsState(),
+        Config(passthrough=True, panel_style=PanelStyle.PILL),
+        UnavailableController(),
+    )
+    regions: list[object] = []
+    with patch.object(
+        overlay._platform,
+        "set_input_region",
+        side_effect=lambda region: regions.append(region) or _ok(),
+    ):
+        overlay.set_passthrough(False)
+        qapp.processEvents()
+        settled_count = len(regions)
+
+        for _ in range(60):
+            overlay._refresh_input_region()
+            qapp.processEvents()
+
+        assert len(regions) == settled_count
+        assert settled_count >= 1
+    overlay.deleteLater()
+    qapp.processEvents()
+
+
+def test_input_region_cache_tracks_lock_state_and_geometry(qapp):
+    overlay = LyricsOverlay(
+        LyricsState(),
+        Config(passthrough=True, panel_style=PanelStyle.PILL),
+        UnavailableController(),
+    )
+    regions: list[object] = []
+    with patch.object(
+        overlay._platform,
+        "set_input_region",
+        side_effect=lambda region: regions.append(region) or _ok(),
+    ):
+        overlay.set_passthrough(False)
+        qapp.processEvents()
+        first_region_count = len(regions)
+        first_region = regions[-1]
+        assert isinstance(first_region, WindowRectangle)
+
+        overlay._surface.apply_input_region()
+        assert len(regions) == first_region_count
+
+        overlay.set_passthrough(True)
+        qapp.processEvents()
+        assert len(regions) == first_region_count + 1
+        assert regions[-1] is None
+
+        overlay.set_passthrough(True)
+        qapp.processEvents()
+        assert len(regions) == first_region_count + 1
+
+        overlay.set_passthrough(False)
+        qapp.processEvents()
+        assert len(regions) == first_region_count + 2
+
+        current = overlay._container.geometry()
+        overlay._container.setGeometry(
+            QRect(current.x(), current.y(), current.width() + 1, current.height())
+        )
+        overlay._surface.apply_input_region()
+        assert len(regions) == first_region_count + 3
+        assert isinstance(regions[-1], WindowRectangle)
+        assert regions[-1] != first_region
+    overlay.deleteLater()
+    qapp.processEvents()
+
+
 def test_drag_crosses_output_without_recreating_the_layer_surface(qapp):
     source = FakeScreen("HDMI-A-1", 0, 0, 2048, 1152)
     target = FakeScreen("DP-1", 2048, 0, 1920, 1080)

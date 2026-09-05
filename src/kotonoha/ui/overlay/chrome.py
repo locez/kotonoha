@@ -69,12 +69,15 @@ class OverlayChromeController:
         overlay._lock_btn.clicked.connect(overlay._on_lock_clicked)
         bar.addWidget(overlay._lock_btn)
 
-        overlay._earlier_btn = self._make_offset_button(container, earlier_icon, "overlay.offset.earlier")
-        overlay._earlier_btn.clicked.connect(overlay._on_earlier_clicked)
-        bar.addWidget(overlay._earlier_btn)
-        overlay._later_btn = self._make_offset_button(container, later_icon, "overlay.offset.later")
+        # The arrows describe the direction the lyrics should move on the
+        # timeline: the left arrow delays lyrics, while the right arrow advances
+        # them. Keep the action-owned fields named for their timing effect.
+        overlay._later_btn = self._make_offset_button(container, earlier_icon, "overlay.offset.later")
         overlay._later_btn.clicked.connect(overlay._on_later_clicked)
         bar.addWidget(overlay._later_btn)
+        overlay._earlier_btn = self._make_offset_button(container, later_icon, "overlay.offset.earlier")
+        overlay._earlier_btn.clicked.connect(overlay._on_earlier_clicked)
+        bar.addWidget(overlay._earlier_btn)
 
         overlay._settings_btn = QToolButton(container)
         overlay._settings_btn.setFixedSize(22, 22)
@@ -98,8 +101,8 @@ class OverlayChromeController:
             if overlay._passthrough
             else self._translator.text("overlay.unlocked")
         )
-        overlay._earlier_btn.setIcon(earlier_icon(color))
-        overlay._later_btn.setIcon(later_icon(color))
+        overlay._earlier_btn.setIcon(later_icon(color))
+        overlay._later_btn.setIcon(earlier_icon(color))
         overlay._settings_btn.setIcon(settings_icon(color))
 
     def update_track(self, has_track: bool) -> None:

@@ -6,6 +6,7 @@ and what it asks of the platform — and both need the same scaffolding.
 
 from PyQt6.QtCore import QRect
 
+from kotonoha.display.offsets import EMPTY_TRACK_OFFSETS, TrackOffsetReader
 from kotonoha.platform.native import LayerShellController
 from kotonoha.platform.overlay_contracts import SurfaceResult
 from kotonoha.platform.window_platform import DefaultOverlayPlatformFactory
@@ -52,7 +53,13 @@ def _ok():
     return SurfaceResult.applied()
 
 
-def build_overlay(state: LyricsState, config, controller=None):
+def build_overlay(
+    state: LyricsState,
+    config,
+    controller=None,
+    *,
+    track_offsets: TrackOffsetReader = EMPTY_TRACK_OFFSETS,
+):
     """Build an overlay through the same factory boundary as production."""
     selected_controller = controller if controller is not None else UnavailableController()
     layer_shell = isinstance(selected_controller, LayerShellStub)
@@ -62,4 +69,9 @@ def build_overlay(state: LyricsState, config, controller=None):
         current_desktop="KDE" if layer_shell else "GNOME",
         niri_socket_present=False,
     )
-    return ProductionLyricsOverlay(state, config, platform_factory=factory)
+    return ProductionLyricsOverlay(
+        state,
+        config,
+        platform_factory=factory,
+        track_offsets=track_offsets,
+    )

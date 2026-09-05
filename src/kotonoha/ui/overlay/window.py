@@ -22,6 +22,7 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import (
     QApplication,
+    QLabel,
     QToolButton,
     QWidget,
 )
@@ -59,6 +60,7 @@ class LyricsOverlay(QWidget):
     track_offset_changed = pyqtSignal(object)
 
     _container: QWidget
+    _feedback: QLabel
     _control_bar: QWidget
     _search_btn: QToolButton
     _lock_btn: QToolButton
@@ -229,6 +231,7 @@ class LyricsOverlay(QWidget):
         self._container.installEventFilter(self)
         self._prev_label = widgets.previous
         self._current = widgets.current
+        self._feedback = widgets.feedback
         self._translation = widgets.translation
         self._next_label = widgets.next
         self._presentation = OverlayPresentationController(
@@ -236,6 +239,7 @@ class LyricsOverlay(QWidget):
             self._container,
             self._prev_label,
             self._current,
+            self._feedback,
             self._translation,
             self._next_label,
             window_size=self._window_size,
@@ -245,6 +249,7 @@ class LyricsOverlay(QWidget):
             self._config,
             self._prev_label,
             self._current,
+            self._feedback,
             self._translation,
             self._next_label,
             self._container,

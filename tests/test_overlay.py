@@ -9,6 +9,8 @@ from overlay_helpers import build_overlay as LyricsOverlay
 from PyQt6.QtCore import QEvent, QPointF, QRect, Qt
 from PyQt6.QtGui import QMouseEvent
 
+from kotonoha.app.display_coordinator import DisplayCoordinator
+from kotonoha.app.intents import ChangeTrackOffset
 from kotonoha.config import Config, FxIntensity, PanelStyle, PanelWidthMode
 from kotonoha.display.models import (
     EMPTY_FRAME,
@@ -21,11 +23,13 @@ from kotonoha.display.models import (
     ResolutionState,
     WordProgress,
 )
-from kotonoha.display.offsets import track_offset_key
+from kotonoha.display.offsets import TrackOffsetKey, track_offset_key
 from kotonoha.display.presentation import DisplayEngine
+from kotonoha.display.timeline import TimelineEngine
 from kotonoha.lyrics.models import LyricLine, LyricsDocument, LyricWord, TimingKind
 from kotonoha.platform.overlay_contracts import SurfaceResult
 from kotonoha.playback.models import PlaybackObservation, PlaybackStatus, TrackIdentity
+from kotonoha.ui.overlay.publisher import QtDisplayPublisher
 from kotonoha.ui.overlay.state import LyricsState
 
 
@@ -492,7 +496,10 @@ def test_click_without_motion_does_not_persist_a_new_horizontal_offset(qapp):
 
 
 def test_offset_buttons_shift_sweep_and_hide_with_lock(qapp):
-    overlay = LyricsOverlay(LyricsState(), Config(), UnavailableController())
+    offsets = _MutableTrackOffsets()
+    overlay = LyricsOverlay(
+        LyricsState(), Config(), UnavailableController(), track_offsets=offsets
+    )
     snapshot = display_frame(
         has_lyrics=True, title="Song", artist="Artist", duration_s=180.0,
         current=LyricLine(0, "line", 0.0, 4.0, "line", "", ()), current_time=1.0, is_playing=True,
@@ -500,15 +507,76 @@ def test_offset_buttons_shift_sweep_and_hide_with_lock(qapp):
     overlay._on_frame(snapshot)
     changes = []
     overlay.track_offset_changed.connect(changes.append)
+    overlay.track_offset_changed.connect(offsets.apply)
     overlay._earlier_btn.click()
     key = track_offset_key(snapshot.track, snapshot.document)
     assert key is not None
     assert changes[-1].key == key
-    assert changes[-1].offset_ms == 50
-    assert overlay._current.text == "Sync offset: +50 ms"
+    assert changes[-1].offset_ms == 100
+    assert overlay._current.text == "line"
+    assert overlay._feedback.text() == "Sync offset: +100 ms"
+    assert overlay._feedback.isHidden() is False
+    assert overlay._later_btn.toolTip() == "Move lyrics later by 100 ms"
+    assert overlay._earlier_btn.toolTip() == "Move lyrics earlier by 100 ms"
+    overlay._later_btn.click()
+    assert changes[-1].offset_ms == 0
+    overlay._later_btn.click()
+    assert changes[-1].offset_ms == -100
+    assert overlay._current.text == "line"
+    assert overlay._feedback.text() == "Sync offset: -100 ms"
     overlay.set_passthrough(True)
     assert overlay._earlier_btn.isHidden() is True
     assert overlay._later_btn.isHidden() is True
+    overlay.deleteLater()
+    qapp.processEvents()
+
+
+def test_offset_feedback_preserves_paused_current_line_and_progress(qapp):
+    offsets = _MutableTrackOffsets()
+    state = LyricsState()
+    overlay = LyricsOverlay(state, Config(), UnavailableController(), track_offsets=offsets)
+    track = TrackIdentity("test", "player", stable_id="song", title="Song", artist="Artist")
+    playback = PlaybackObservation("test", "player", track, PlaybackStatus.PAUSED, 0.98, 2.0, 100.0)
+    first = LyricLine(
+        0, "line-0", 0.0, 1.0, "first", "", (LyricWord(0.0, 1.0, "first"),)
+    )
+    second = LyricLine(
+        1, "line-1", 1.0, 2.0, "second", "", (LyricWord(1.0, 2.0, "second"),)
+    )
+    document = LyricsDocument(
+        "test", title="Song", artist="Artist", timing=TimingKind.WORD, duration_s=2.0,
+        lines=(first, second),
+    )
+    coordinator = DisplayCoordinator(
+        QtDisplayPublisher(state), presenter=DisplayEngine(), timeline=TimelineEngine()
+    )
+
+    coordinator.publish_resolution(playback, document, ResolutionState.AVAILABLE)
+    state.frame_changed.connect(overlay._on_frame)
+    overlay._on_frame(state.frame)
+
+    def apply_offset(change: ChangeTrackOffset) -> None:
+        offsets.apply(change)
+        coordinator.set_options(DisplayOptions(track_offsets_ms={change.key: change.offset_ms}))
+
+    overlay.track_offset_changed.connect(apply_offset)
+    overlay._earlier_btn.click()
+
+    assert state.frame.current_time == pytest.approx(1.08)
+    assert state.frame.current is second
+    assert state.frame.line_progress is not None
+    assert state.frame.line_progress.line_id == "line-1"
+    assert state.frame.line_progress.fraction == pytest.approx(0.08)
+    assert state.frame.word_progress is not None
+    assert state.frame.word_progress.line_id == "line-1"
+    assert state.frame.word_progress.fractions == (pytest.approx(0.08),)
+    assert state.frame.word_progress.active_index == 0
+    assert overlay._current.text == "second"
+    assert overlay._current._line is second
+    assert overlay._current._line_progress == state.frame.line_progress
+    assert overlay._current._word_progress == state.frame.word_progress
+    assert overlay._feedback.text() == "Sync offset: +100 ms"
+
     overlay.deleteLater()
     qapp.processEvents()
 
@@ -530,6 +598,17 @@ def test_track_without_offset_uses_global_lead(qapp):
 
 
 
+
+
+class _MutableTrackOffsets:
+    def __init__(self) -> None:
+        self._values: dict[TrackOffsetKey, int] = {}
+
+    def offset_for(self, key: TrackOffsetKey) -> int:
+        return self._values.get(key, 0)
+
+    def apply(self, change: ChangeTrackOffset) -> None:
+        self._values[change.key] = change.offset_ms
 
 
 def test_turning_off_word_highlight_stops_the_word_sweep(qapp):
