@@ -8,7 +8,7 @@ from PyQt6.QtCore import QRect, Qt
 from PyQt6.QtGui import QColor, QFont, QPainter
 from PyQt6.QtWidgets import QGraphicsDropShadowEffect, QLabel, QWidget
 
-from ...config import Config
+from ...config import Config, PanelOverflowMode, PanelWidthMode
 from ...display.layout import FontFitPolicy
 from .karaoke_label import KaraokeLabel
 from .style import OverlayAppearance
@@ -65,6 +65,12 @@ class OverlayPresentationController:
             animate=config.fx_animate,
             transition=config.fx_transition,
         )
+        mode = (
+            config.panel_overflow_mode
+            if config.panel_width_mode is PanelWidthMode.FIXED
+            else PanelOverflowMode.SCROLL
+        )
+        self._current.set_overflow_mode(mode)
         self._current.set_max_width(available_width)
 
         family_stack = ", ".join(f"'{name}'" for name in families)
@@ -92,6 +98,7 @@ class OverlayPresentationController:
             animate=config.fx_animate,
             transition=config.fx_transition,
         )
+        self._translation.set_overflow_mode(mode)
         self._translation.set_max_width(available_width)
         self._translation.setVisible(config.show_translation)
         self._update_context_visibility()
@@ -108,7 +115,31 @@ class OverlayPresentationController:
         feedback = 20
         lines = int(main * 1.6) + 2 * int(context * 1.4) + int(translation * 1.6) + feedback
         chrome = 22 + 24 + 34
-        return max(140, lines + chrome)
+        baseline = max(140, lines + chrome)
+        if not self.wrapping:
+            return baseline
+        main_extra = max(0, self._current.sizeHint().height() - int(main * 1.6))
+        translation_extra = (
+            max(0, self._translation.sizeHint().height() - int(translation * 1.6))
+            if not self._translation.isHidden() else 0
+        )
+        layout = self._container.layout()
+        measured = layout.sizeHint().height() if layout is not None else 0
+        return max(baseline + main_extra + translation_extra, measured)
+
+    @property
+    def wrapping(self) -> bool:
+        """Return whether fixed-width wrapping is configured."""
+        return (
+            self._config.panel_width_mode is PanelWidthMode.FIXED
+            and self._config.panel_overflow_mode is PanelOverflowMode.WRAP
+        )
+
+    def refresh_width(self) -> None:
+        """Resolve output-dependent content width before measuring wrapped height."""
+        available = self._configure_panel_width()
+        self._current.set_max_width(available)
+        self._translation.set_max_width(available)
 
     def text_colors(self) -> tuple[QColor, QColor, str]:
         """Return lyric, shadow, and context colors for the current appearance."""

@@ -1,15 +1,18 @@
 """Behavioral coverage for fixed-width lyric wrapping."""
 
-
 from dataclasses import replace
+from unittest.mock import patch
 
 import pytest
+from overlay_helpers import LayerShellStub, UnavailableController, build_overlay
 from PyQt6.QtGui import QFont
 
 from kotonoha.config import Config, PanelOverflowMode, PanelWidthMode
 from kotonoha.display.models import LineProgress, WordProgress
 from kotonoha.lyrics.models import LyricLine, LyricWord
+from kotonoha.platform.overlay_contracts import SurfaceResult
 from kotonoha.ui.overlay.karaoke_label import KaraokeLabel
+from kotonoha.ui.overlay.state import LyricsState
 from kotonoha.ui.overlay.text_layout import WrappedTextLayout
 from kotonoha.ui.settings.dialog import SettingsDialog
 from kotonoha.ui.settings.form_state import SettingsFormState
@@ -127,6 +130,34 @@ def test_timed_word_spanning_rows_uses_whole_word_progress(_session_qapp):
     label.deleteLater()
 
 
+@pytest.mark.parametrize("top", [True, False])
+def test_wrapped_overlay_grows_and_preserves_surface_edge(_session_qapp, top):
+    from test_overlay import display_frame
+
+    config = Config(
+        panel_width_mode=PanelWidthMode.FIXED, panel_width=300,
+        panel_overflow_mode=PanelOverflowMode.WRAP, anchor_top=top, fx_animate=False,
+    )
+    overlay = build_overlay(LyricsState(), config, LayerShellStub())
+    initial_height = overlay.height()
+    initial_y = overlay._surface.layer_pos.y()
+    overlay._on_frame(display_frame(has_lyrics=True, current=lyric("long lyric " * 40)))
+    with patch.object(overlay._platform, "move_to", return_value=SurfaceResult.applied()) as move:
+        _session_qapp.processEvents()
+    assert overlay.height() > initial_height
+    assert overlay._container.width() == 300
+    y = overlay._surface.layer_pos.y()
+    assert y == (initial_y if top else initial_y + initial_height - overlay.height())
+    assert move.call_count == 1
+    assert overlay._config.margin_edge == config.margin_edge
+    tall = overlay.height()
+    overlay._on_frame(display_frame(has_lyrics=True, current=lyric("short")))
+    with patch.object(overlay._platform, "move_to", return_value=SurfaceResult.applied()):
+        _session_qapp.processEvents()
+    assert overlay.height() < tall
+    overlay.close()
+
+
 def test_short_wrapped_line_and_font_changes(_session_qapp):
     label = configured_label("short")
     single = label.sizeHint().height()
@@ -139,6 +170,51 @@ def test_short_wrapped_line_and_font_changes(_session_qapp):
     label.set_style(font, "#ff0000", "#ff0000", "#ff0000")
     assert label.sizeHint().height() > normal_height
     label.deleteLater()
+
+
+def test_translation_visibility_and_fit_mode_release_wrapped_height(_session_qapp):
+    from test_overlay import display_frame
+
+    config = Config(
+        panel_width_mode=PanelWidthMode.FIXED, panel_width=300,
+        panel_overflow_mode=PanelOverflowMode.WRAP, fx_animate=False,
+    )
+    overlay = build_overlay(LyricsState(), config, UnavailableController())
+    frame = display_frame(has_lyrics=True, current=lyric("short"))
+    overlay._on_frame(replace(frame, translation=lyric("translation " * 35)))
+    _session_qapp.processEvents()
+    tall = overlay.height()
+    assert overlay._translation.sizeHint().height() > 40
+    overlay.apply_config(replace(config, show_translation=False))
+    _session_qapp.processEvents()
+    assert overlay.height() < tall
+    overlay.apply_config(replace(config, panel_width_mode=PanelWidthMode.FIT))
+    _session_qapp.processEvents()
+    assert overlay._translation.sizeHint().height() < 40
+    assert overlay._config.panel_overflow_mode is PanelOverflowMode.WRAP
+    overlay.close()
+
+
+def test_repeated_frames_do_not_resize_or_remeasure(_session_qapp):
+    from test_overlay import display_frame
+
+    config = Config(
+        panel_width_mode=PanelWidthMode.FIXED, panel_width=300,
+        panel_overflow_mode=PanelOverflowMode.WRAP, fx_animate=False,
+    )
+    overlay = build_overlay(LyricsState(), config, UnavailableController())
+    frame = display_frame(has_lyrics=True, current=lyric("long lyric " * 20))
+    overlay._on_frame(frame)
+    _session_qapp.processEvents()
+    with patch("kotonoha.ui.overlay.karaoke_label.WrappedTextLayout") as layout, patch.object(
+        overlay._surface, "resize_content"
+    ) as resize:
+        for fraction in (0.1, 0.5, 1.0):
+            overlay._on_frame(replace(frame, line_progress=LineProgress("line", fraction)))
+            _session_qapp.processEvents()
+        assert not layout.called
+        assert not resize.called
+    overlay.close()
 
 
 @pytest.mark.parametrize("second", [0.0, 0.5, 1.0])
@@ -156,3 +232,38 @@ def test_word_boundary_highlight_stays_in_its_row(_session_qapp, second):
     assert red_pixels(image, 0, midpoint) > 0
     assert (red_pixels(image, midpoint, image.height()) > 0) is (second > 0.0)
     label.deleteLater()
+
+
+def test_failed_resize_placement_does_not_commit_position(_session_qapp):
+    from test_overlay import display_frame
+
+    config = Config(
+        panel_width_mode=PanelWidthMode.FIXED, panel_width=300,
+        panel_overflow_mode=PanelOverflowMode.WRAP, anchor_top=False, fx_animate=False,
+    )
+    overlay = build_overlay(LyricsState(), config, LayerShellStub())
+    _session_qapp.processEvents()
+    position = overlay._surface.layer_pos
+    original_size = overlay.size()
+    original_bottom = position.y() + original_size.height()
+    with patch.object(
+        overlay._platform, "move_to", return_value=SurfaceResult.rejected("test rejection")
+    ) as move:
+        overlay._on_frame(display_frame(has_lyrics=True, current=lyric("long lyric " * 30)))
+        _session_qapp.processEvents()
+        assert overlay.size() == original_size
+        for _ in range(3):
+            _session_qapp.processEvents()
+        assert move.call_count == 1
+    assert overlay._surface.layer_pos == position
+    assert overlay._config.margin_edge == config.margin_edge
+    with patch.object(overlay._platform, "move_to", return_value=SurfaceResult.applied()) as move:
+        overlay._on_frame(display_frame(has_lyrics=True, current=lyric("short")))
+        _session_qapp.processEvents()
+        assert overlay._surface.layer_pos.y() + overlay.height() == original_bottom
+        overlay._on_frame(display_frame(has_lyrics=True, current=lyric("long lyric " * 20)))
+        _session_qapp.processEvents()
+        assert overlay.height() > original_size.height()
+        assert overlay._surface.layer_pos.y() + overlay.height() == original_bottom
+        assert move.called
+    overlay.close()

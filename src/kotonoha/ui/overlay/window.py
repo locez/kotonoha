@@ -18,12 +18,14 @@ from PyQt6.QtGui import (
     QMouseEvent,
     QPainter,
     QPaintEvent,
+    QResizeEvent,
     QShowEvent,
 )
 from PyQt6.QtWidgets import (
     QApplication,
     QLabel,
     QToolButton,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -109,6 +111,9 @@ class LyricsOverlay(QWidget):
         self._input_region_timer = QTimer(self)
         self._input_region_timer.setSingleShot(True)
         self._input_region_timer.timeout.connect(self._apply_input_region)
+        self._geometry_timer: QTimer = QTimer(self)
+        self._geometry_timer.setSingleShot(True)
+        self._geometry_timer.timeout.connect(self._refresh_content_geometry)
         self._blur_timer = QTimer(self)
         self._blur_timer.setSingleShot(True)
         self._blur_timer.timeout.connect(self._apply_blur)
@@ -215,6 +220,7 @@ class LyricsOverlay(QWidget):
         self._activation_retry_timer.stop()
         self._input_region_timer.stop()
         self._blur_timer.stop()
+        self._geometry_timer.stop()
         self._control_click_timer.stop()
         self._content.stop()
         result = self._surface.close()
@@ -297,6 +303,7 @@ class LyricsOverlay(QWidget):
         self._surface.set_active_screen(screen)
         self._update_lock_icon()
         self._presentation.apply_config(config)
+        self._align_wrapped_panel()
 
         # Opacity is the panel's own fill translucency (see the presentation owner),
         # so the window itself stays fully opaque — the lyric text is always crisp and
@@ -306,6 +313,7 @@ class LyricsOverlay(QWidget):
         self._apply_window_geometry()
         self.update()
         self._schedule_blur()  # panel_style may have changed
+        self._geometry_timer.start(0)
 
     # --- geometry (fixed-size, margin-positioned panel) ---
 
@@ -350,6 +358,31 @@ class LyricsOverlay(QWidget):
         if not self._closed and not self._closing:
             self._chrome.update_track(frame.track is not None and bool(frame.track.title.strip()))
             self._content.on_frame(frame)
+            if self._window_size() != (self.width(), self.height()):
+                self._geometry_timer.start(0)
+
+    def resizeEvent(self, a0: QResizeEvent | None) -> None:
+        """Reflow content after output-driven surface size changes."""
+        super().resizeEvent(a0)
+        if not self._closed and not self._closing:
+            self._geometry_timer.start(0)
+
+    def _align_wrapped_panel(self) -> None:
+        """Keep the visible panel at the configured edge within its surface."""
+        layout = self.layout()
+        if isinstance(layout, QVBoxLayout):
+            wrapping = self._presentation.wrapping
+            layout.setStretch(0, 0 if wrapping and self._config.anchor_top else 1)
+            layout.setStretch(2, 0 if wrapping and not self._config.anchor_top else 1)
+
+    def _refresh_content_geometry(self) -> None:
+        """Coalesce content changes into one edge-preserving surface resize."""
+        if self._closed or self._closing:
+            return
+        self._presentation.refresh_width()
+        self._surface.resize_content(QGuiApplication.screens())
+        self._schedule_input_region()
+        self._schedule_blur()
 
     # --- layer shell / placement ---
 
@@ -480,6 +513,7 @@ class LyricsOverlay(QWidget):
             if a1.type() == QEvent.Type.Resize:
                 self._refresh_input_region()
                 self._schedule_blur()  # keep the blur region on the pill
+                self._geometry_timer.start(0)
         return super().eventFilter(a0, a1)
 
     # --- drag to reposition (only while unlocked) ---

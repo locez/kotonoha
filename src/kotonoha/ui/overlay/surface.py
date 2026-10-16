@@ -48,6 +48,8 @@ class OverlaySurfaceController:
         self._container_geometry = container_geometry
         self._geometry = OverlayGeometry(config, band_height)
         self._passthrough = config.passthrough
+        # Avoid retrying a rejected size through resize events or progress frames.
+        self._rejected_content_size: tuple[int, int] | None = None
         # Smooth display frames change lyric progress, not the visible pill
         # geometry. Keep the last successful region at this platform boundary so
         # those frames do not become repeated native commits.
@@ -149,6 +151,7 @@ class OverlaySurfaceController:
     def update_config(self, config: Config) -> None:
         """Use the current placement and platform settings for later operations."""
         self._config = config
+        self._rejected_content_size = None
         self._geometry.update_config(config)
         self._position.update_config(config)
 
@@ -296,6 +299,42 @@ class OverlaySurfaceController:
         self.bind_widget_screen(screen)
         if reset_position:
             self._position.layer_pos = self.compute_layer_pos(width, height, screen)
+
+    def resize_content(self, screens: Sequence[ScreenLike]) -> None:
+        """Preserve the anchored edge; roll back rejected sizes until geometry changes."""
+        screen = self.target_screen(
+            screens, configured=self.configured_screen(screens),
+            widget_screen=self._widget.screen(), primary=QApplication.primaryScreen(),
+        )
+        if screen is None:
+            return
+        width, height = self.window_size(screen)
+        if (width, height) == self._rejected_content_size:
+            return
+        self._rejected_content_size = None
+        if (width, height) == (self._widget.width(), self._widget.height()):
+            return
+        old_size = self._widget.size()
+        old_height = old_size.height()
+        position = QPoint(self._position.layer_pos)
+        if not self._config.anchor_top:
+            position.setY(position.y() + old_height - height)
+        self._widget.setFixedSize(width, height)
+        placement = self._platform.placement
+        if placement is None:
+            return
+        geometry = screen.geometry()
+        target = (
+            WindowPoint(position.x(), position.y()) if self._platform.capabilities.layer_shell
+            else WindowPoint(geometry.x() + position.x(), geometry.y() + position.y())
+        )
+        result = placement.move_to(target)
+        self._log_result("content resize placement", result)
+        if result.succeeded:
+            self._position.layer_pos = position
+        else:
+            self._rejected_content_size = (width, height)
+            self._widget.setFixedSize(old_size)
 
     def bind_widget_screen(self, screen: ScreenLike | None) -> None:
         """Bind both Qt window objects to the selected screen when possible."""
