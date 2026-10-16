@@ -16,13 +16,15 @@ from __future__ import annotations
 from typing import Any, Protocol, TypedDict, cast
 
 from PyQt6 import QtCore
-from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QRectF, QSize, Qt
+from PyQt6.QtCore import QEasingCurve, QPointF, QPropertyAnimation, QRectF, QSize, Qt
 from PyQt6.QtGui import QBrush, QColor, QFont, QFontMetrics, QLinearGradient, QPainter, QPaintEvent, QPen
 from PyQt6.QtWidgets import QSizePolicy, QWidget
 
+from ...config import PanelOverflowMode
 from ...display.layout import FontFitPolicy
 from ...display.models import LineProgress, WordProgress
 from ...lyrics.models import LyricLine
+from .text_layout import TextRow, WrappedTextLayout, measure_word_offsets
 
 UNSUNG_COLOR = QColor(255, 255, 255, 95)
 SHADOW_COLOR = QColor(0, 0, 0, 170)
@@ -111,6 +113,8 @@ class KaraokeLabel(QWidget):
         self._word_widths: list[float] = []
         self._word_offsets: list[float] = []
         self._total_w = 0.0
+        self._overflow_mode: PanelOverflowMode = PanelOverflowMode.SCROLL
+        self._wrapped: WrappedTextLayout | None = None
         self._max_width = 0  # 0 = unlimited; else cap the width and scroll long lines
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
@@ -187,42 +191,38 @@ class KaraokeLabel(QWidget):
         self._word_widths = (
             [self._fm.horizontalAdvance(w.text) for w in self._line.words] if self._line else []
         )
-        self._word_offsets = self._measure_word_offsets(text)
-
-    def _measure_word_offsets(self, text: str) -> list[float]:
-        """Return each word's x offset, measured from the text as it is drawn.
-
-        The sweep used to assume one space between every pair of words. The KRC and
-        YRC parsers build the line by concatenating word texts with no separator, so
-        on a CJK line the sweep gained a space width per word and ran ahead of the
-        characters: nine characters drifted 24px past a 108px line. Locating each
-        word in the rendered string instead is right for a separator of any width,
-        including none.
-        """
-        if self._line is None or not self._line.words:
-            return []
-        offsets: list[float] = []
-        cursor = 0
-        for word in self._line.words:
-            found = text.find(word.text, cursor) if word.text else cursor
-            if found < 0:
-                # The words and the drawn text disagree — a converted script, say.
-                # Fall back to laying them out end to end, which is what the parsers
-                # produce and is closer than assuming separators that are not there.
-                found = cursor
-            offsets.append(self._fm.horizontalAdvance(text[:found]))
-            cursor = found + len(word.text)
-        return offsets
+        self._word_offsets = measure_word_offsets(self._line, self._fm)
+        self._wrapped = None
+        if (
+            self._overflow_mode is PanelOverflowMode.WRAP
+            and self._max_width > 0
+            and self._line is not None
+            and self._line.id not in {"title", "interlude"}
+        ):
+            self._wrapped = WrappedTextLayout(self._line, self._font, self._max_width)
+            self._total_w = self._wrapped.advance
+            self._word_offsets = self._wrapped.word_offsets
+            self._word_widths = self._wrapped.word_widths
 
     def set_media_time(self, media_time: float | None) -> None:
         self._media_time = media_time
         self.update()
 
+    def set_overflow_mode(self, mode: PanelOverflowMode) -> None:
+        """Choose wrapping or scrolling; titles and interludes remain single-row."""
+        if mode is self._overflow_mode:
+            return
+        self._overflow_mode = mode
+        self._rebuild_layout()
+        self.updateGeometry()
+        self.update()
+
     def set_max_width(self, width: int) -> None:
-        """Cap the label width; longer lines scroll horizontally. 0 = unlimited."""
+        """Set the content width for scrolling or wrapping; 0 means unlimited."""
         width = max(0, width)
         if width != self._max_width:
             self._max_width = width
+            self._rebuild_layout()
             self.updateGeometry()
             self.update()
 
@@ -267,6 +267,8 @@ class KaraokeLabel(QWidget):
         return self._line.text if self._line else ""
 
     def sizeHint(self) -> QSize:
+        if self._wrapped is not None:
+            return QSize(self._max_width, int(self._wrapped.height + 6))
         width = int(self._total_w) + 8
         if self._max_width:
             width = min(width, self._max_width)
@@ -368,7 +370,17 @@ class KaraokeLabel(QWidget):
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
         painter.setFont(self._font)
 
-        total_width = self._total_w
+        if self._wrapped is not None:
+            for row in self._wrapped.rows:
+                painter.save()
+                self._paint_row(painter, row)
+                painter.restore()
+        else:
+            self._paint_row(painter, None)
+
+    def _paint_row(self, painter: QPainter, row: TextRow | None) -> None:
+        """Paint one shaped row with the shared karaoke effects."""
+        total_width = self._total_w if row is None else row.width
         avail = float(self.width())
         height = float(self.height())
 
@@ -376,8 +388,18 @@ class KaraokeLabel(QWidget):
         a = self._apply_reveal_transform(painter, avail, height)
 
         # Sweep position relative to the text start (measure with text_left = 0).
-        sweep_rel, active_rel = self._compute_sweep(0.0, total_width)
+        sweep_rel, active_rel = self._compute_sweep(0.0, self._total_w)
 
+        if row is not None:
+            sweep_rel = max(0.0, min(row.width, sweep_rel - row.offset))
+            if active_rel is not None:
+                active_rel = (
+                    max(0.0, active_rel[0] - row.offset),
+                    min(row.width, active_rel[1] - row.offset),
+                )
+            height = row.line.height() + 6.0
+            painter.translate(0.0, row.top)
+            painter.setClipRect(QRectF(0.0, 0.0, avail, height))
         fit = _FONT_FIT_POLICY.decide(total_width, avail)
         if fit.fits:
             text_left = (avail - total_width) / 2.0  # fits -> centered
@@ -399,12 +421,12 @@ class KaraokeLabel(QWidget):
         painter.save()
         painter.translate(SHADOW_OFFSET, SHADOW_OFFSET)
         painter.setPen(QPen(_scale_alpha(self._shadow_color, a)))
-        painter.drawText(rect, align, self.text)
+        self._draw_text(painter, rect, align, row)
         painter.restore()
 
         # 1) Base (unsung) text.
         painter.setPen(QPen(_scale_alpha(self._base_color, a)))
-        painter.drawText(rect, align, self.text)
+        self._draw_text(painter, rect, align, row)
 
         # 1.5) Soft accent glow behind the sung portion (grows with the sweep).
         if self._glow and sweep_x > text_left:
@@ -414,18 +436,19 @@ class KaraokeLabel(QWidget):
             painter.setPen(QPen(_scale_alpha(self._accent_sweep, a * fx["glow_alpha"])))
             radius = fx["glow_radius"]
             for dx, dy in _GLOW_OFFSETS:
-                painter.drawText(rect.translated(dx * radius, dy * radius), align, self.text)
+                self._draw_text(painter, rect.translated(dx * radius, dy * radius), align, row)
             painter.restore()
 
         # 2) Sung text, clipped to the sweep boundary, filled with the accent gradient.
         if sweep_x > text_left:
             painter.save()
             painter.setClipRect(QRectF(text_left, 0.0, sweep_x - text_left, height), Qt.ClipOperation.IntersectClip)
-            gradient = QLinearGradient(text_left, 0.0, text_left + total_width, 0.0)
+            offset = 0.0 if row is None else row.offset
+            gradient = QLinearGradient(text_left - offset, 0.0, text_left - offset + self._total_w, 0.0)
             gradient.setColorAt(0.0, _scale_alpha(self._accent_start, a))
             gradient.setColorAt(1.0, _scale_alpha(self._accent_end, a))
             painter.setPen(QPen(QBrush(gradient), 0))
-            painter.drawText(rect, align, self.text)
+            self._draw_text(painter, rect, align, row)
             painter.restore()
 
         # 3) Currently-sung word: brighten its sung sub-range with the sweep colour,
@@ -442,8 +465,16 @@ class KaraokeLabel(QWidget):
                     painter.setPen(QPen(_scale_alpha(self._accent_sweep, a * fx["glow_alpha"])))
                     radius = fx["glow_radius"]
                     for dx, dy in _GLOW_OFFSETS:
-                        painter.drawText(rect.translated(dx * radius, dy * radius), align, self.text)
+                        self._draw_text(painter, rect.translated(dx * radius, dy * radius), align, row)
                     color = self._accent_sweep.lighter(fx["pop"])
                 painter.setPen(QPen(_scale_alpha(color, a)))
-                painter.drawText(rect, align, self.text)
+                self._draw_text(painter, rect, align, row)
                 painter.restore()
+
+
+    def _draw_text(self, painter: QPainter, rect: QRectF, align: int, row: TextRow | None) -> None:
+        """Use the cached shaped line for wrapping and the existing painter for scrolling."""
+        if row is None:
+            painter.drawText(rect, align, self.text)
+        else:
+            row.line.draw(painter, QPointF(rect.left(), rect.top() + 3.0))
