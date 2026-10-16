@@ -6,7 +6,8 @@ wlr-layer-shell (GNOME/Mutter, Weston, Cinnamon). In those cases the overlay
 degrades: on X11 it is a normal top-most window (``_NET_WM_STATE_ABOVE``) that
 the WM positions; on a layer-shell-less Wayland session it is an ordinary window
 the compositor places and stacks — it cannot stay above other apps and cannot be
-positioned precisely (``self.move()`` is a no-op on Wayland).
+positioned precisely (``self.move()`` is a no-op on Wayland). The launcher may
+select Xwayland automatically for GNOME when its X11 display is available.
 
 Backdrop blur is tracked separately from layer-shell (``blur_available`` vs
 ``available``): it rides on the same library but on its own protocols, so a

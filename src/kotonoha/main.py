@@ -111,6 +111,16 @@ def entry_point() -> int:
         logger.warning("Kotonoha is already running; exiting.")
         return 0
 
+    # Mutter's Wayland compositor does not expose layer-shell. If Xwayland is
+    # available, use it for GNOME so the ordinary X11 top-most hint can work;
+    # otherwise Qt keeps its normal Wayland backend and the existing ordinary
+    # window fallback remains in effect. Respect an explicit backend selection.
+    from .platform.detect import should_prefer_xwayland
+
+    if should_prefer_xwayland(os.environ):
+        os.environ["QT_QPA_PLATFORM"] = "xcb"
+        logger.info("GNOME Wayland with Xwayland detected; starting Qt with the xcb backend")
+
     # Pin the device pixel ratio to 1 so the layer-shell surface's pixel geometry
     # (set_input_rect / set_anchor_position work in physical pixels) matches what we
     # paint. QT_AUTO_SCREEN_SCALE_FACTOR is a dead Qt5 knob under Qt6 — dropped.

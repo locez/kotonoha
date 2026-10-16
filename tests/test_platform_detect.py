@@ -5,6 +5,7 @@ from kotonoha.platform.detect import (
     find_layer_shell_library,
     overlay_mode_available,
     should_disable_layer_shell,
+    should_prefer_xwayland,
 )
 
 
@@ -51,6 +52,43 @@ def test_should_not_disable_layer_shell_on_kde_wayland():
 
 def test_should_not_disable_layer_shell_on_x11():
     assert should_disable_layer_shell("xcb", "GNOME") is False
+
+
+def test_should_prefer_xwayland_for_gnome_wayland_with_xwayland():
+    assert should_prefer_xwayland(
+        {
+            "XDG_CURRENT_DESKTOP": "ubuntu:GNOME",
+            "WAYLAND_DISPLAY": "wayland-0",
+            "DISPLAY": ":0",
+        }
+    ) is True
+
+
+def test_should_prefer_xwayland_uses_session_desktop_when_current_is_missing():
+    assert should_prefer_xwayland(
+        {
+            "XDG_SESSION_DESKTOP": "GNOME",
+            "WAYLAND_DISPLAY": "wayland-0",
+            "DISPLAY": ":0",
+        }
+    ) is True
+
+
+def test_should_prefer_xwayland_requires_xwayland():
+    assert should_prefer_xwayland(
+        {"XDG_CURRENT_DESKTOP": "GNOME", "WAYLAND_DISPLAY": "wayland-0"}
+    ) is False
+
+
+def test_should_prefer_xwayland_respects_explicit_qt_backend():
+    assert should_prefer_xwayland(
+        {
+            "XDG_CURRENT_DESKTOP": "GNOME",
+            "WAYLAND_DISPLAY": "wayland-0",
+            "DISPLAY": ":0",
+            "QT_QPA_PLATFORM": "wayland",
+        }
+    ) is False
 
 
 def test_overlay_mode_unavailable_when_layer_shell_disabled_on_wayland():

@@ -7,6 +7,7 @@ can be unit-tested without a display.
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from pathlib import Path
 
 LAYER_SHELL_LIBRARY_NAME = "libkoto-layer.so"
@@ -32,6 +33,33 @@ def niri_socket() -> str:
     so the desktop name alone misses a real niri. This variable does not.
     """
     return os.environ.get("NIRI_SOCKET", "")
+
+
+def should_prefer_xwayland(environment: Mapping[str, str]) -> bool:
+    """Return whether startup should use Xwayland for GNOME's overlay path.
+
+    Mutter does not implement wlr-layer-shell. When both Wayland and an X11
+    display are exported, starting Qt with the ``xcb`` backend gives the
+    compositor an ordinary X11 window whose top-most hint can be honored. An
+    explicit ``QT_QPA_PLATFORM`` always wins so callers and tests can select a
+    backend deliberately.
+    """
+    if environment.get("QT_QPA_PLATFORM"):
+        return False
+    desktops = {
+        part.strip().lower()
+        for value in (
+            environment.get("XDG_CURRENT_DESKTOP", ""),
+            environment.get("XDG_SESSION_DESKTOP", ""),
+        )
+        for part in value.split(":")
+        if part.strip()
+    }
+    return (
+        "gnome" in desktops
+        and bool(environment.get("WAYLAND_DISPLAY"))
+        and bool(environment.get("DISPLAY"))
+    )
 
 
 def should_disable_layer_shell(platform_name: str, current_desktop: str) -> bool:
