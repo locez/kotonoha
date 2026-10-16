@@ -73,6 +73,7 @@ class SettingsWidgets:
         self.panel = SettingsComboBox()
         self.panel_width_mode = SettingsComboBox()
         self.panel_width = QSpinBox()
+        self.panel_overflow_mode: SettingsComboBox = SettingsComboBox()
         self.panel_opacity = PanelOpacityState()
         self.opacity_active_key: OpacityKey = "opacity"
         self.opacity = QSpinBox()

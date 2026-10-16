@@ -52,6 +52,13 @@ class PanelStyle(StrEnum):
     TEXT = "text"
 
 
+class PanelOverflowMode(StrEnum):
+    """Presentation of long lyrics within a fixed-width panel."""
+
+    SCROLL = "scroll"
+    WRAP = "wrap"
+
+
 class PanelWidthMode(StrEnum):
     """Whether the overlay follows lyric width or uses a fixed width."""
 
@@ -143,6 +150,7 @@ class Config:
     frost_opacity: float = 0.6       # frosted-panel fill opacity 0.0..1.0 (0 = pure blur)
     panel_style: PanelStyle = PanelStyle.PILL
     panel_width_mode: PanelWidthMode = PanelWidthMode.FIT
+    panel_overflow_mode: PanelOverflowMode = PanelOverflowMode.SCROLL
     panel_width: int = 720           # panel width in px when panel_width_mode == "fixed"
     panel_accent_tint: bool = False  # tint the black panel toward the accent colour
     icon_name: str = "@leaf-accent"  # system-tray icon; accent-following leaf by default (see leaf_icon.py)
@@ -205,6 +213,9 @@ class Config:
             frost_opacity=_clamp_float(self.frost_opacity, 0.0, 1.0, 0.6),
             panel_style=_enum_or_default(self.panel_style, PanelStyle, PanelStyle.PILL),
             panel_width_mode=_enum_or_default(self.panel_width_mode, PanelWidthMode, PanelWidthMode.FIT),
+            panel_overflow_mode=_enum_or_default(
+                self.panel_overflow_mode, PanelOverflowMode, PanelOverflowMode.SCROLL
+            ),
             panel_width=_clamp_int(self.panel_width, 240, 2400, 720),
             panel_accent_tint=_clean_bool(self.panel_accent_tint, False),
             icon_name=_clean_icon_name(self.icon_name),
@@ -277,6 +288,7 @@ _ENUM_FIELDS = frozenset(
     {
         "panel_style",
         "panel_width_mode",
+        "panel_overflow_mode",
         "ui_language",
         "theme",
         "lyrics_script",

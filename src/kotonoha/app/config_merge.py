@@ -66,6 +66,11 @@ def merge_settings(
             else current.panel_width_mode
         ),
         panel_width=submitted.panel_width if "panel_width" in changed_fields else current.panel_width,
+        panel_overflow_mode=(
+            submitted.panel_overflow_mode
+            if "panel_overflow_mode" in changed_fields
+            else current.panel_overflow_mode
+        ),
         opacity=submitted.opacity if "opacity" in changed_fields else current.opacity,
         frost_opacity=submitted.frost_opacity if "frost_opacity" in changed_fields else current.frost_opacity,
         panel_accent_tint=(

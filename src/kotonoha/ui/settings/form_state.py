@@ -78,6 +78,7 @@ def _reset_page_values(current: Config, defaults: Config, index: int) -> Config:
             panel_style=defaults.panel_style,
             panel_width_mode=defaults.panel_width_mode,
             panel_width=defaults.panel_width,
+            panel_overflow_mode=defaults.panel_overflow_mode,
             opacity=defaults.opacity,
             frost_opacity=defaults.frost_opacity,
             panel_accent_tint=defaults.panel_accent_tint,

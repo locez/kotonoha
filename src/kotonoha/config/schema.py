@@ -8,7 +8,10 @@ SETTINGS_PAGE_FIELDS: tuple[tuple[str, ...], ...] = (
     ("ui_language", "theme", "frost_window", "settings_opacity"),
     ("icon_name", "window_icon_name"),
     ("font_family", "font_style", "font_size", "context_font_size", "translation_font_size"),
-    ("panel_style", "panel_width_mode", "panel_width", "opacity", "frost_opacity", "panel_accent_tint"),
+    (
+        "panel_style", "panel_width_mode", "panel_width", "panel_overflow_mode",
+        "opacity", "frost_opacity", "panel_accent_tint",
+    ),
     (
         "accent_start",
         "accent_end",

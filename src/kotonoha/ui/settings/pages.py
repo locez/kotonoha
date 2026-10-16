@@ -169,6 +169,13 @@ class SettingsPageBuilder:
         self._configure_spin(w.panel_width, 240, 2400, self._config.panel_width, " px")
         w.panel_width.setSingleStep(20)
         form.addRow(t("set.panel_width"), w.panel_width)
+        w.panel_overflow_mode.clear()
+        w.panel_overflow_mode.addItem(t("overflow.scroll"), "scroll")
+        w.panel_overflow_mode.addItem(t("overflow.wrap"), "wrap")
+        w.panel_overflow_mode.setCurrentIndex(
+            w.panel_overflow_mode.findData(self._config.panel_overflow_mode.value)
+        )
+        form.addRow(t("set.long_lines"), w.panel_overflow_mode)
         form.addRow(self._hint(t("set.panel_size_hint")))
         self.update_panel_width_enabled()
 
@@ -322,6 +329,7 @@ class SettingsPageBuilder:
         """Enable the width value only when fixed-width mode is selected."""
         w = self._widgets
         w.panel_width.setEnabled(str(w.panel_width_mode.currentData()) == "fixed")
+        w.panel_overflow_mode.setEnabled(str(w.panel_width_mode.currentData()) == "fixed")
 
     def opacity_key(self) -> OpacityKey:
         """Return the opacity slot represented by the selected panel style."""
