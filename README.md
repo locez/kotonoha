@@ -192,15 +192,4 @@ uv build
 - [Lyrics, cache, and manual selection](docs/SPEC-lyrics.md)
 - [External adapter protocol](plugins/README.md)
 
-## Acknowledgements and lyric data licensing
-
-Kotonoha's AMLL lyric source uses the TTML catalog and lyric files provided by
-[amll-ttml-db (AMLL TTML DataBase)](https://github.com/amll-dev/amll-ttml-db).
-Thank you to the project's maintainers and contributors for creating and
-maintaining this word-timed lyric collection.
-
-Under the project's [sharing terms](https://github.com/amll-dev/amll-ttml-db/blob/main/README.md#共享协议),
-contributors' original work is shared under
-[CC0 1.0 Universal](https://github.com/amll-dev/amll-ttml-db/blob/main/LICENSE),
-while imported data remains subject to its original providers' sharing terms.
-These upstream terms apply to the lyric data used by this integration.
+Thanks to [amll-ttml-db](https://github.com/amll-dev/amll-ttml-db) and its contributors for the word-timed lyrics.
