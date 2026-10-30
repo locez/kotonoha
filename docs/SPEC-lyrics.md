@@ -160,8 +160,11 @@ ports; it does not depend on the MPRIS facade.
 
 ## Manual search and application
 
-The overlay search button opens a modeless search window. Title, artist, and
-album are prefilled and editable. The current duration is read-only context.
+The overlay search button opens a modeless search window. Title and artist are
+prefilled and editable. Album is optional and starts blank, even when playback or
+the current lyrics supply one: release-name differences must not hide candidates
+in sources such as AMLL that filter by album. Users can enter an album to refine
+the search. The current album and duration remain visible as read-only context.
 
 The search service queries the selected providers concurrently. Each provider
 contributes at most `30` candidates, and one search exposes at most `90` results

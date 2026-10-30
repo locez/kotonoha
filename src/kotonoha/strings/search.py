@@ -87,7 +87,12 @@ SEARCH_STRINGS: Final[dict[str, dict[str, str]]] = {
     },
     "search.query_title": {"en": "Song", "zh-Hans": "歌曲", "zh-Hant": "歌曲", "ja": "曲名"},
     "search.query_artist": {"en": "Artist", "zh-Hans": "艺术家", "zh-Hant": "藝人", "ja": "アーティスト"},
-    "search.query_album": {"en": "Album", "zh-Hans": "专辑", "zh-Hant": "專輯", "ja": "アルバム"},
+    "search.query_album": {
+        "en": "Album (optional)",
+        "zh-Hans": "专辑（可选）",
+        "zh-Hant": "專輯（選填）",
+        "ja": "アルバム（任意）",
+    },
     "search.placeholder.title": {
         "en": "Song title",
         "zh-Hans": "歌曲名称",
@@ -101,10 +106,10 @@ SEARCH_STRINGS: Final[dict[str, dict[str, str]]] = {
         "ja": "アーティスト名",
     },
     "search.placeholder.album": {
-        "en": "Album name",
-        "zh-Hans": "专辑名称",
-        "zh-Hant": "專輯名稱",
-        "ja": "アルバム名",
+        "en": "Leave blank for more versions",
+        "zh-Hans": "留空可搜索更多版本",
+        "zh-Hant": "留空可搜尋更多版本",
+        "ja": "空欄で候補を広げる",
     },
     "btn.search_lyrics": {"en": "Search", "zh-Hans": "搜索", "zh-Hant": "搜尋", "ja": "検索"},
     "btn.apply_lyrics": {

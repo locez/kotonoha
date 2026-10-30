@@ -82,9 +82,9 @@ self._translator, self._confidence_colours())
         self._artist_edit = self._query_edit(
             "search.placeholder.artist", query.artist or (self._current_status.lyrics_artist or "")
         )
-        self._album_edit = self._query_edit(
-            "search.placeholder.album", query.album or (self._current_status.lyrics_album or "")
-        )
+        # Release names vary between catalogs. Only an explicitly entered album
+        # should narrow the search; the current release stays in the track header.
+        self._album_edit: ClearableLineEdit = self._query_edit("search.placeholder.album", "")
         for editor in (self._title_edit, self._artist_edit, self._album_edit):
             editor.returnPressed.connect(self._request_search)
 
@@ -314,9 +314,8 @@ self._translator, self._confidence_colours())
     def show(self) -> None:
         """Show the window and run the search it was opened to make.
 
-        The fields are already filled from the track and the lyrics in use, so
-        making the reader press Search to see that same query answered is a click
-        that asks nothing.
+        Title and artist are already filled from the track and the lyrics in use;
+        album stays optional. Run that query immediately without an extra click.
         """
         super().show()
         self._title_edit.setFocus()
