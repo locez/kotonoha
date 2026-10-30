@@ -166,13 +166,4 @@ uv build
 - [歌词、缓存和手动选词](docs/SPEC-lyrics.zh-CN.md)
 - [外部适配器协议](plugins/README.zh-CN.md)
 
-## 致谢与歌词数据许可
-
-Kotonoha 的 AMLL 歌词来源使用
-[amll-ttml-db（AMLL TTML DataBase）](https://github.com/amll-dev/amll-ttml-db)
-提供的 TTML 曲库索引和歌词文件。感谢该项目的维护者与贡献者制作、维护并分享逐词歌词。
-
-根据上游的[共享协议说明](https://github.com/amll-dev/amll-ttml-db/blob/main/README.md#共享协议)，
-提交者自主编写的部分使用
-[CC0 1.0 Universal](https://github.com/amll-dev/amll-ttml-db/blob/main/LICENSE)
-共享，外来数据部分遵循原数据提供方的共享协议。本接入使用的歌词数据适用上述上游条款。
+感谢 [amll-ttml-db](https://github.com/amll-dev/amll-ttml-db) 及其贡献者提供逐词歌词。
