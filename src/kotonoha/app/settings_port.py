@@ -95,6 +95,10 @@ class CacheManagementDialogPort(Protocol):
         """Replace visible rows with the result for ``query``."""
         ...
 
+    def set_current_status(self, status: LyricsDisplayStatus) -> None:
+        """Show the active document independently of the stored cache entries."""
+        ...
+
     def set_busy(self, busy: bool) -> None:
         """Enable or disable controls while a cache operation is running."""
         ...

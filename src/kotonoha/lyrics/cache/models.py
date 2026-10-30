@@ -25,7 +25,7 @@ class LyricsCacheQuery:
 
 
 class LyricsCacheMode(StrEnum):
-    """Identify whether a cached lyric was selected automatically or manually."""
+    """Identify automatic candidate storage or a manual choice, not display use."""
 
     AUTO = "auto"
     MANUAL = "manual"
@@ -33,7 +33,7 @@ class LyricsCacheMode(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class LyricsCacheHit:
-    """Return one validated artifact together with its persisted selection mode."""
+    """Return one validated artifact together with its persisted storage mode."""
 
     artifact: LyricsArtifact
     mode: LyricsCacheMode
@@ -49,6 +49,7 @@ class LyricsCacheEntry:
     album: str
     duration_s: float | None
     fetched_at: float
+    # Updated on storage and matching reads, even when another candidate wins.
     last_accessed: float
     mode: LyricsCacheMode = LyricsCacheMode.AUTO
 

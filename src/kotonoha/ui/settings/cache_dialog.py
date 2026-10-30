@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
 
 from ...app.intents import ClearCache, DeleteCacheEntries, SearchCache
 from ...config import Config
+from ...display.models import LyricsDisplayStatus
 from ...lyrics.cache import (
     CacheDeleteResult,
     CacheDeleteStatus,
@@ -31,9 +32,11 @@ from ...lyrics.cache import (
     LyricsCacheMode,
     LyricsCacheQuery,
 )
+from ...lyrics.models import LyricsCacheState
 from ...platform import OverlayPlatformFactory
 from ...strings import Translator
 from . import theme
+from .lyrics_status import LyricsStatusBand
 from .surface import SettingsTitleBar, ThemedSettingsDialog
 
 
@@ -44,12 +47,30 @@ class LyricsCacheTableModel(QAbstractTableModel):
         super().__init__()
         self._translator = translator
         self._entries: tuple[LyricsCacheEntry, ...] = ()
+        # Only cache-backed active documents can mark a stored row as in use.
+        self._current_cache_key: LyricsCacheKey | None = None
 
     def set_entries(self, entries: tuple[LyricsCacheEntry, ...]) -> None:
         """Replace all visible rows with one completed search result."""
         self.beginResetModel()
         self._entries = entries
         self.endResetModel()
+
+    def set_current_status(self, status: LyricsDisplayStatus) -> None:
+        """Mark the exact cached document currently supplying the display."""
+        key = None
+        if (
+            status.cache_state in (LyricsCacheState.FROM_CACHE, LyricsCacheState.MANUAL)
+            and status.lyrics_source_id is not None and status.lyrics_song_id is not None
+        ):
+            key = LyricsCacheKey(status.lyrics_source_id, status.lyrics_song_id)
+        if key == self._current_cache_key:
+            return
+        self._current_cache_key = key
+        if self._entries:
+            self.dataChanged.emit(
+                self.index(0, 0), self.index(len(self._entries) - 1, 0), [Qt.ItemDataRole.DisplayRole],
+            )
 
     def rowCount(self, parent: QModelIndex | None = None) -> int:
         """Return the number of cache rows."""
@@ -66,8 +87,11 @@ class LyricsCacheTableModel(QAbstractTableModel):
             return None
         entry = self._entries[index.row()]
         if role == Qt.ItemDataRole.DisplayRole:
+            provider = entry.key.provider
+            if entry.key == self._current_cache_key:
+                provider = f"{provider} · ✓ {self._translator.text('search.in_use')}"
             values = (
-                entry.key.provider,
+                provider,
                 entry.title,
                 entry.artist,
                 entry.album,
@@ -89,7 +113,11 @@ class LyricsCacheTableModel(QAbstractTableModel):
         role: int = Qt.ItemDataRole.DisplayRole,
     ) -> object:
         """Return translated table headers."""
-        if role != Qt.ItemDataRole.DisplayRole or orientation is not Qt.Orientation.Horizontal:
+        if orientation is not Qt.Orientation.Horizontal:
+            return None
+        if role == Qt.ItemDataRole.ToolTipRole and section == 5:
+            return self._translator.text("cache.accessed_tooltip")
+        if role != Qt.ItemDataRole.DisplayRole:
             return None
         headers = (
             "cache.column.provider",
@@ -205,6 +233,10 @@ class LyricsCacheDialog(ThemedSettingsDialog):
         subtitle.setObjectName("hint")
         subtitle.setWordWrap(True)
 
+        current_heading = QLabel(self._translator.text("cache.current_heading"))
+        current_heading.setObjectName("sectionTitle")
+        self._status_band: LyricsStatusBand = LyricsStatusBand(LyricsDisplayStatus(), self._translator, self)
+
         header_line = QWidget()
         header_line.setObjectName("navDivider")
         header_line.setFixedHeight(1)
@@ -215,6 +247,8 @@ class LyricsCacheDialog(ThemedSettingsDialog):
         layout.addWidget(self._title_bar())
         layout.addWidget(header_line)
         layout.addWidget(subtitle)
+        layout.addWidget(current_heading)
+        layout.addWidget(self._status_band)
         layout.addLayout(search_row)
         layout.addWidget(self._table, 1)
         layout.addLayout(footer)
@@ -266,6 +300,11 @@ class LyricsCacheDialog(ThemedSettingsDialog):
             else self._translator.text("cache.no_results")
         )
         self._update_action_state()
+
+    def set_current_status(self, status: LyricsDisplayStatus) -> None:
+        """Show actual display provenance and mark a row only when read from cache."""
+        self._status_band.set_status(status)
+        self._model.set_current_status(status)
 
     def set_busy(self, busy: bool) -> None:
         """Disable commands while the application-owned cache task runs."""

@@ -134,8 +134,10 @@ def match_records(
 ) -> tuple[AmllMatch, ...]:
     """Use shared automatic identity gates, or explicit manual-search keywords.
 
-    Within equal evidence, the newest submission wins. Revisions sharing a
-    platform song ID are shown once; different recordings remain separate.
+    Within equal evidence, newer submissions come first. Keep matching revisions
+    until their files have been downloaded and parsed: an unusable submission
+    must not hide a usable older one sharing its platform song ID. The source
+    deduplicates usable manual results after downloading them.
     """
     if manual:
         selected = [record for record in records if (
@@ -151,14 +153,7 @@ def match_records(
         matches = [AmllMatch(by_id[evidence.candidate.song_id], evidence.confidence) for evidence in ranked_matches(
             [record.candidate for record in records], track, fuzzy=fuzzy,
         )]
-    seen: set[AmllSongId] = set()
-    unique: list[AmllMatch] = []
-    for match in matches:
-        if seen & match.record.identities:
-            continue
-        seen.update(match.record.identities)
-        unique.append(match)
-    return tuple(unique)
+    return tuple(matches)
 
 
 __all__ = ["AmllMatch", "AmllRecord", "AmllSongId", "MAX_INDEX_BYTES", "match_records", "parse_index", "song_reference"]

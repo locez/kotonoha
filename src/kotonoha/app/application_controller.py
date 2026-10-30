@@ -80,6 +80,7 @@ class AppController:
         self._cache_management: CacheManagementController = CacheManagementController(
             components.lyrics_cache,
             components.cache_management_factory,
+            status_provider=self._display.current_lyrics_status,
         )
         self._settings_tasks: TaskSupervisor = TaskSupervisor("settings")
         self._config: Config = self._config_service.config
@@ -95,6 +96,10 @@ class AppController:
         self._overlay.lyrics_search_requested.connect(self._open_lyrics_search)
         self._overlay.position_changed.connect(self._handle_intent)
         self._overlay.track_offset_changed.connect(self._handle_intent)
+
+    def refresh_cache_status(self) -> None:
+        """Refresh an open cache window after the displayed frame changes."""
+        self._cache_management.refresh_current_status()
 
     async def start(self) -> None:
         """Start the composed providers and presentation workflow once."""

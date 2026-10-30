@@ -252,8 +252,8 @@ def test_cache_dialog_aligns_headers_with_rows_and_localizes_close_button(qapp):
         )
     )
     assert model.columnCount() == 7
-    assert model.headerData(6, Qt.Orientation.Horizontal) == "模式"
-    assert model.data(model.index(0, 6)) == "手动"
+    assert model.headerData(6, Qt.Orientation.Horizontal) == "保存方式"
+    assert model.data(model.index(0, 6)) == "手动选择"
     dialog.close()
 
 

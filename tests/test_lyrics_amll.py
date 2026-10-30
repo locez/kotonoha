@@ -196,8 +196,9 @@ async def test_invalid_or_unrelated_hints_do_not_start_network(source: AmllLyric
 def test_catalog_aliases_and_latest_revisions_use_shared_matching() -> None:
     records = parse_index(row(OLD_FILE) + row(title="歌曲", aliases=("Song",)))
     matches = match_records(records, TRACK, fuzzy=False)
-    assert len(matches) == 1 and matches[0].record.candidate.song_id == NEW_FILE
-    assert matches[0].confidence is MatchConfidence.HIGH
+    # Revisions stay eligible until parsing proves which files are usable.
+    assert [match.record.candidate.song_id for match in matches] == [NEW_FILE, OLD_FILE]
+    assert all(match.confidence is MatchConfidence.HIGH for match in matches)
     assert match_records(records, TrackMetadata("Song (Live)", "Artist"), fuzzy=False) == ()
 
 

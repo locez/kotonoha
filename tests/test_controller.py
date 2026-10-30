@@ -440,6 +440,7 @@ class _FakeCacheDialog:
         self.query: LyricsCacheQuery | None = None
         self.entries_event = asyncio.Event()
         self.errors: list[str] = []
+        self.statuses: list[LyricsDisplayStatus] = []
 
     def show(self) -> None:
         self.visible = True
@@ -458,6 +459,10 @@ class _FakeCacheDialog:
         self.query = query
         self.entries = entries
         self.entries_event.set()
+
+    def set_current_status(self, status: LyricsDisplayStatus) -> None:
+        """Record active display facts independently of stored cache entries."""
+        self.statuses.append(status)
 
     def set_busy(self, busy: bool) -> None:
         self.busy = busy
@@ -803,7 +808,7 @@ async def test_cache_management_opens_a_separate_window_and_returns_multiple_mat
 async def test_cache_management_cancels_closed_dialog_search_before_reopening():
     cache = _BlockingLyricsCache()
     factory = _CacheManagementFactory()
-    controller = CacheManagementController(cache, factory)
+    controller = CacheManagementController(cache, factory, status_provider=LyricsDisplayStatus)
     query = LyricsCacheQuery(keyword="song")
 
     controller.open(Config())

@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from typing import Protocol
 
 from ..config import Config
+from ..display.models import LyricsDisplayStatus
 from ..lyrics.cache import (
     CacheDeleteResult,
     LyricsCacheEntry,
@@ -42,10 +44,16 @@ class LyricsCacheManagementPort(Protocol):
 class CacheManagementController:
     """Own cache-manager presentation state and its cancellable async commands."""
 
-    def __init__(self, cache: LyricsCacheManagementPort, factory: CacheManagementDialogFactory) -> None:
+    def __init__(
+        self, cache: LyricsCacheManagementPort, factory: CacheManagementDialogFactory,
+        *, status_provider: Callable[[], LyricsDisplayStatus],
+    ) -> None:
         """Create a cache workflow from explicit cache and presentation ports."""
         self._cache = cache
         self._factory = factory
+        self._status_provider: Callable[[], LyricsDisplayStatus] = status_provider
+        # Active display facts are independent of the persisted candidate list.
+        self._current_status: LyricsDisplayStatus | None = None
         self._tasks = TaskSupervisor("lyrics-cache")
         self._dialog: CacheManagementDialogPort | None = None
         self._search_task: asyncio.Task[None] | None = None
@@ -69,6 +77,7 @@ class CacheManagementController:
             return
         dialog = self._dialog
         if dialog is not None:
+            self.refresh_current_status()
             dialog.raise_()
             dialog.activateWindow()
             return
@@ -76,7 +85,19 @@ class CacheManagementController:
         dialog.intent_requested.connect(self._handle_intent)
         dialog.finished.connect(self._clear_dialog)
         self._dialog = dialog
+        self._current_status = None
+        self.refresh_current_status()
         dialog.show()
+
+    def refresh_current_status(self) -> None:
+        """Update an open manager when the displayed lyric source changes."""
+        dialog = self._dialog
+        if dialog is None or self._closed:
+            return
+        status = self._status_provider()
+        if status != self._current_status:
+            self._current_status = status
+            dialog.set_current_status(status)
 
     def search(self, query: LyricsCacheQuery) -> None:
         """Schedule one fuzzy metadata query and discard stale results."""
@@ -206,6 +227,7 @@ class CacheManagementController:
         """Load one query and publish it only while it remains current."""
         entries = await self._cache.search(query)
         if self._dialog is dialog and generation == self._search_generation:
+            self.refresh_current_status()
             dialog.set_entries(query, entries)
             dialog.set_busy(False)
 

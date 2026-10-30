@@ -399,6 +399,7 @@ class ApplicationComposition:
             runtime_config=runtime_config,
         )
         controller = AppController(self._app, components)
+        state.frame_changed.connect(controller.refresh_cache_status)
         # The tray callbacks are bound to the controller after construction so the
         # graph remains explicit without giving the tray a controller dependency.
         tray.set_action_handlers(

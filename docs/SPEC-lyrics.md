@@ -82,8 +82,11 @@ account or local player API. No website-specific search endpoint is used.
 
 Index metadata is parsed into typed candidates and platform IDs before matching.
 Automatic matching reuses the shared title, alias, artist and recording-version
-rules. At equal matching evidence, recent submissions win; results sharing a
-platform ID are deduplicated. Manual search accepts title/artist/album keywords
+rules. At equal matching evidence, recent submissions are tried first. Matching
+revisions remain eligible until download and parsing establish usable lyrics:
+a missing or unsupported newer file must not hide an older matching submission.
+Manual results sharing a platform ID are deduplicated after parsing, retaining
+the first usable result. Manual search accepts title/artist/album keywords
 and includes lower-confidence choices for explicit selection. The catalog has no
 audio-duration guarantee, so duration remains unknown instead of using lyric end.
 Exact lookup accepts NetEase, QQ, Apple Music and Spotify namespaces when supplied
@@ -93,8 +96,10 @@ QQ catalog IDs are song mids, not interchangeable with numeric QQ song IDs.
 Automatic and manual lookups share a one-hour in-memory index with serialized
 refresh. Catalog reads are capped at 8 MiB and 20,000 JSONL rows with a 15-second
 HTTP timeout. TTML reads have a 2 MiB cap and an 8-second HTTP timeout. Automatic
-lookup tries up to three matched candidates within 25 seconds; manual search
-prepares at most 30 choices with four concurrent downloads within 45 seconds.
+lookup tries up to three matched submissions within 25 seconds; exact-ID lookup
+tries up to three applicable revisions within the same budget. Manual search
+downloads at most 30 submissions with four concurrent downloads within 45 seconds,
+then deduplicates usable results.
 Individual failed downloads do not discard other valid candidates. An unavailable
 catalog is a source failure, allowing other sources to answer.
 
@@ -139,14 +144,14 @@ choices rejected by matching need to be selected once again to create a binding.
 
 | Mode | Meaning |
 | --- | --- |
-| `AUTO` (`auto`) | Written by high-confidence automatic resolution and used only by its provider |
+| `AUTO` (`auto`) | A high-confidence automatic candidate, considered only by its provider; not necessarily displayed |
 | `MANUAL` (`manual`) | Confirmed by the user and checked before ordinary resolution and exact hints |
 
 The cache facade exposes these operations:
 
 | Operation | Use |
 | --- | --- |
-| `search(query)` | Fuzzy metadata search over title, artist, album, provider, and song id; ordered by recent use |
+| `search(query)` | Fuzzy metadata search over title, artist, album, provider, and song id; ordered by recent access |
 | `get(key)`, `count()` | Read one metadata record or the total count |
 | `upsert(artifact, mode)` | Create or replace a record |
 | `select(track, artifact)` | Atomically persist content and replace the playback track's manual binding |
@@ -157,6 +162,14 @@ The cache facade exposes these operations:
 The cache-management window uses metadata search and deletion only. It shares
 the `LyricsCache` instance with resolution through narrow management and write
 ports; it does not depend on the MPRIS facade.
+
+The manager labels storage mode as automatic cache or manual selection. Its
+"Last accessed" timestamp is updated on writes and matching reads, including
+candidates that do not win; it is not playback history. A separate status band
+follows the active display's provider, acquisition path, player and cache state.
+A stored row is marked in use only when the active document is cache-backed and
+both its provider and song ID match. A live document does not mark a cached copy
+as used, even if their IDs match.
 
 ## Manual search and application
 

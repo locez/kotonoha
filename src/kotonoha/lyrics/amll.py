@@ -19,7 +19,7 @@ import aiohttp
 
 from ..async_task import create_owned_task
 from ..async_worker import BlockingWorkerPort
-from .amll_catalog import MAX_INDEX_BYTES, AmllMatch, AmllRecord, match_records, parse_index, song_reference
+from .amll_catalog import MAX_INDEX_BYTES, AmllMatch, AmllRecord, AmllSongId, match_records, parse_index, song_reference
 from .artifact import LyricsArtifact
 from .hint import LyricsHint
 from .http import LyricsHttpError, LyricsSession
@@ -127,10 +127,11 @@ class AmllLyricsSource:
     async def resolve_exact(
         self, session: LyricsSession | None, track: TrackMetadata, hint: LyricsHint,
     ) -> LyricsSourceResult | None:
-        """Resolve a known platform ID against the newest applicable submission.
+        """Resolve a known platform ID against the newest usable submission.
 
         QQ metadata contains song mids. A numeric QQ ID cannot be equated to a
         mid; if it is absent, ordinary metadata matching remains available.
+        Try at most three applicable revisions within the existing timeout.
         """
         del track
         if hint.song_id is None:
@@ -143,11 +144,17 @@ class AmllLyricsSource:
         try:
             async with asyncio.timeout(25.0):
                 records = await self._catalog(session)
-                record = next((record for record in records if identity in record.identities), None)
-                if record is None:
-                    return None
-                artifact = await self._download(session, AmllMatch(record, MatchConfidence.HIGH))
-                return None if artifact is None else LyricsSourceResult.from_artifact(artifact)
+                revisions = [record for record in records if identity in record.identities]
+                failure: DownloadFailure | None = None
+                for record in revisions[:3]:
+                    artifact = await self._candidate(session, AmllMatch(record, MatchConfidence.HIGH))
+                    if isinstance(artifact, (LyricsHttpError, TimeoutError, ValueError)):
+                        failure = artifact
+                    elif artifact is not None:
+                        return LyricsSourceResult.from_artifact(artifact)
+                if failure is not None:
+                    raise failure
+                return None
         except LyricsHttpError as exc:
             raise LyricsSourceError("AMLL exact HTTP lookup failed") from exc
 
@@ -162,6 +169,7 @@ class AmllLyricsSource:
         payload = {"ttml": body.decode("utf-8-sig")}
         lines = await self._worker.run(parse_payload, payload)
         if not lines:
+            logger.debug("AMLL candidate %s has no usable timed lyrics", candidate.song_id)
             return None
         return LyricsArtifact(
             self.source_id, candidate.song_id, candidate.title, candidate.artist,
@@ -172,20 +180,29 @@ class AmllLyricsSource:
         """Prepare bounded manual choices, retaining usable results if a download fails."""
         async with asyncio.timeout(45.0):
             records = await self._catalog(session)
-            matches = await self._worker.run(match_records, records, track, fuzzy=False, manual=True)
+            matches = (await self._worker.run(match_records, records, track, fuzzy=False, manual=True))[
+                :MANUAL_SEARCH_RESULTS_PER_PROVIDER
+            ]
             gate = asyncio.Semaphore(4)
             tasks: list[asyncio.Task[LyricsArtifact | DownloadFailure | None]] = []
             try:
-                for match in matches[:MANUAL_SEARCH_RESULTS_PER_PROVIDER]:
+                for match in matches:
                     tasks.append(create_owned_task(
                         self._manual_download(session, match, gate), name="kotonoha-amll-manual-download",
                     ))
                 results = await asyncio.gather(*tasks)
-                artifacts = tuple(result for result in results if isinstance(result, LyricsArtifact))
+                # A catalog ID links revisions, but only a usable file can claim
+                # that identity. Earlier failures leave older submissions eligible.
+                seen: set[AmllSongId] = set()
+                artifacts: list[LyricsArtifact] = []
+                for match, result in zip(matches, results, strict=True):
+                    if isinstance(result, LyricsArtifact) and not seen & match.record.identities:
+                        artifacts.append(result)
+                        seen.update(match.record.identities)
                 failures = [result for result in results if isinstance(result, Exception)]
                 if failures and not artifacts:
                     raise failures[0]
-                return artifacts
+                return tuple(artifacts)
             finally:
                 for task in tasks:
                     if not task.done():
