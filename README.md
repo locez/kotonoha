@@ -155,6 +155,9 @@ entries or clearing the cache. The manager intentionally does not edit lyric con
 manual replacement is performed through the current-track search flow.
 
 Settings also controls fonts, colors, opacity, position, translation, icons, panel style, and lyric effects.
+The active-line glow adds a soft halo behind the sung portion with a feathered progress edge,
+while keeping the text sharp. Current-word highlighting brightens the word independently without
+adding an outline. Both effects offer subtle and expressive intensity settings.
 
 ## Cider HTTP API (optional)
 

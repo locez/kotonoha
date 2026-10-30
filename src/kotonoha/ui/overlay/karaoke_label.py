@@ -24,6 +24,7 @@ from ...config import PanelOverflowMode
 from ...display.layout import FontFitPolicy
 from ...display.models import LineProgress, WordProgress
 from ...lyrics.models import LyricLine
+from .text_glow import TextGlow
 from .text_layout import TextRow, WrappedTextLayout, measure_word_offsets
 
 UNSUNG_COLOR = QColor(255, 255, 255, 95)
@@ -42,20 +43,18 @@ _TRANSITIONS = ("fade", "rise", "slide", "zoom")
 _MARQUEE_SPEED_PX_S = 42.0   # travel speed
 _MARQUEE_PAUSE_S = 1.6       # hold at each end before reversing
 
-# Effect strength per intensity: glow alpha (of the accent), glow radius (px), and
+# Effect strength per intensity: glow alpha (of the accent), Gaussian sigma (px), and
 # the active-word brightening (QColor.lighter percent).
 class _EffectConfig(TypedDict):
     glow_alpha: float
-    glow_radius: float
+    glow_sigma: float
     pop: int
 
 
 _FX: dict[str, _EffectConfig] = {
-    "subtle": {"glow_alpha": 0.22, "glow_radius": 2.0, "pop": 128},
-    "expressive": {"glow_alpha": 0.42, "glow_radius": 3.0, "pop": 155},
+    "subtle": {"glow_alpha": 0.65, "glow_sigma": 2.4, "pop": 115},
+    "expressive": {"glow_alpha": 0.90, "glow_sigma": 3.6, "pop": 130},
 }
-# Unit ring of 8 directions; scaled by the glow radius to fake a cheap bloom.
-_GLOW_OFFSETS = ((1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1))
 
 class _PyqtPropertyFactory(Protocol):
     def __call__(self, type_: object, *, fget: object, fset: object) -> Any: ...
@@ -80,6 +79,8 @@ def _scaled(font: QFont, scale: float) -> QFont:
 
 
 class KaraokeLabel(QWidget):
+    """Own one lyric's layout, progress, transition, and cached glow layer."""
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._line: LyricLine | None = None
@@ -101,6 +102,8 @@ class KaraokeLabel(QWidget):
         self._shadow_color = QColor(SHADOW_COLOR)
         # Effects (set per-label by the overlay from config; off for context/plain).
         self._glow = False
+        self._text_glow: TextGlow = TextGlow(self._draw_text)
+        self._text_padding: float = 3.0  # Extra room when the glow is enabled.
         self._word_pop = False
         self._intensity = "subtle"
         self._animate = True
@@ -147,11 +150,19 @@ class KaraokeLabel(QWidget):
     def set_effects(
         self, *, glow: bool, word_pop: bool, intensity: str, animate: bool, transition: str = "rise"
     ) -> None:
+        """Configure the halo, independent word emphasis, and line transitions."""
+        padding = 9.0 if glow else 3.0
         self._glow = glow
         self._word_pop = word_pop
         self._intensity = intensity if intensity in _FX else "subtle"
         self._animate = animate
         self._transition = transition if transition in _TRANSITIONS else "rise"
+        if padding != self._text_padding:
+            self._text_padding = padding
+            self._rebuild_layout()
+            self.updateGeometry()
+        if not glow:
+            self._text_glow.clear()
         self.update()
 
     def set_scale(self, scale: float) -> None:
@@ -186,6 +197,7 @@ class KaraokeLabel(QWidget):
         self.update()
 
     def _rebuild_layout(self) -> None:
+        self._text_glow.clear()
         text = self.text
         self._total_w = self._fm.horizontalAdvance(text) if text else 0.0
         self._word_offsets = measure_word_offsets(self._line, self._fm)
@@ -208,7 +220,8 @@ class KaraokeLabel(QWidget):
             and self._line is not None
             and self._line.id not in {"title", "interlude"}
         ):
-            self._wrapped = WrappedTextLayout(self._line, self._font, self._max_width)
+            width = max(1, self._max_width - int(2 * (self._text_padding - 3.0)))
+            self._wrapped = WrappedTextLayout(self._line, self._font, width)
             self._total_w = self._wrapped.advance
             self._word_offsets = self._wrapped.word_offsets
             self._word_widths = self._wrapped.word_widths
@@ -277,11 +290,12 @@ class KaraokeLabel(QWidget):
 
     def sizeHint(self) -> QSize:
         if self._wrapped is not None:
-            return QSize(self._max_width, int(self._wrapped.height + 6))
-        width = int(self._total_w) + 8
+            extra = 2 * (self._text_padding - 3.0) * len(self._wrapped.rows)
+            return QSize(self._max_width, int(self._wrapped.height + 6 + extra))
+        width = int(self._total_w + 8 + 2 * (self._text_padding - 3.0))
         if self._max_width:
             width = min(width, self._max_width)
-        return QSize(max(1, width), self._fm.height() + 6)
+        return QSize(max(1, width), int(self._fm.height() + 2 * self._text_padding))
 
     def minimumSizeHint(self) -> QSize:
         return self.sizeHint()
@@ -380,14 +394,14 @@ class KaraokeLabel(QWidget):
         painter.setFont(self._font)
 
         if self._wrapped is not None:
-            for row in self._wrapped.rows:
+            for index, row in enumerate(self._wrapped.rows):
                 painter.save()
-                self._paint_row(painter, row)
+                self._paint_row(painter, row, index)
                 painter.restore()
         else:
             self._paint_row(painter, None)
 
-    def _paint_row(self, painter: QPainter, row: TextRow | None) -> None:
+    def _paint_row(self, painter: QPainter, row: TextRow | None, index: int = 0) -> None:
         """Paint one shaped row with the shared karaoke effects."""
         total_width = self._total_w if row is None else row.width
         avail = float(self.width())
@@ -406,8 +420,8 @@ class KaraokeLabel(QWidget):
                     max(0.0, active_rel[0] - row.offset),
                     min(row.width, active_rel[1] - row.offset),
                 )
-            height = row.line.height() + 6.0
-            painter.translate(0.0, row.top)
+            height = row.line.height() + 2 * self._text_padding
+            painter.translate(0.0, row.top + index * 2 * (self._text_padding - 3.0))
             painter.setClipRect(QRectF(0.0, 0.0, avail, height))
         fit = _FONT_FIT_POLICY.decide(total_width, avail)
         if fit.fits:
@@ -424,29 +438,25 @@ class KaraokeLabel(QWidget):
 
         sweep_x = sweep_rel + text_left
         rect = QRectF(text_left, 0.0, total_width, height)
-        align = int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         # 0) Cheap drop shadow (single offset pass) for readability.
         painter.save()
         painter.translate(SHADOW_OFFSET, SHADOW_OFFSET)
         painter.setPen(QPen(_scale_alpha(self._shadow_color, a)))
-        self._draw_text(painter, rect, align, row)
+        self._draw_text(painter, rect, row)
         painter.restore()
+
+        # Blur only the cached halo; foreground glyphs remain sharp.
+        if self._glow and sweep_x > text_left:
+            fx = _FX[self._intensity]
+            self._text_glow.paint(
+                painter, rect, row, sweep=sweep_rel, color=self._accent_sweep,
+                sigma=fx["glow_sigma"], opacity=a * fx["glow_alpha"],
+            )
 
         # 1) Base (unsung) text.
         painter.setPen(QPen(_scale_alpha(self._base_color, a)))
-        self._draw_text(painter, rect, align, row)
-
-        # 1.5) Soft accent glow behind the sung portion (grows with the sweep).
-        if self._glow and sweep_x > text_left:
-            fx = _FX[self._intensity]
-            painter.save()
-            painter.setClipRect(QRectF(text_left, 0.0, sweep_x - text_left, height), Qt.ClipOperation.IntersectClip)
-            painter.setPen(QPen(_scale_alpha(self._accent_sweep, a * fx["glow_alpha"])))
-            radius = fx["glow_radius"]
-            for dx, dy in _GLOW_OFFSETS:
-                self._draw_text(painter, rect.translated(dx * radius, dy * radius), align, row)
-            painter.restore()
+        self._draw_text(painter, rect, row)
 
         # 2) Sung text, clipped to the sweep boundary, filled with the accent gradient.
         if sweep_x > text_left:
@@ -457,11 +467,11 @@ class KaraokeLabel(QWidget):
             gradient.setColorAt(0.0, _scale_alpha(self._accent_start, a))
             gradient.setColorAt(1.0, _scale_alpha(self._accent_end, a))
             painter.setPen(QPen(QBrush(gradient), 0))
-            self._draw_text(painter, rect, align, row)
+            self._draw_text(painter, rect, row)
             painter.restore()
 
         # 3) Currently-sung word: brighten its sung sub-range with the sweep colour,
-        #    with an optional brighter "pop" core + glow to draw the eye to the beat.
+        #    with optional emphasis. Word-pop never adds a second halo/outline.
         if active_rel is not None:
             x0 = active_rel[0] + text_left
             x1 = active_rel[1] + text_left
@@ -471,19 +481,16 @@ class KaraokeLabel(QWidget):
                 color = self._accent_sweep
                 if self._word_pop:
                     fx = _FX[self._intensity]
-                    painter.setPen(QPen(_scale_alpha(self._accent_sweep, a * fx["glow_alpha"])))
-                    radius = fx["glow_radius"]
-                    for dx, dy in _GLOW_OFFSETS:
-                        self._draw_text(painter, rect.translated(dx * radius, dy * radius), align, row)
                     color = self._accent_sweep.lighter(fx["pop"])
                 painter.setPen(QPen(_scale_alpha(color, a)))
-                self._draw_text(painter, rect, align, row)
+                self._draw_text(painter, rect, row)
                 painter.restore()
 
 
-    def _draw_text(self, painter: QPainter, rect: QRectF, align: int, row: TextRow | None) -> None:
+    def _draw_text(self, painter: QPainter, rect: QRectF, row: TextRow | None) -> None:
         """Use the cached shaped line for wrapping and the existing painter for scrolling."""
         if row is None:
+            align = int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
             painter.drawText(rect, align, self.text)
         else:
-            row.line.draw(painter, QPointF(rect.left(), rect.top() + 3.0))
+            row.line.draw(painter, QPointF(rect.left(), rect.top() + self._text_padding))
