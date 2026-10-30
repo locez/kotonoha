@@ -187,7 +187,7 @@ class LocalLyricsSource:
         track: TrackMetadata,
         hint: LyricsHint,
     ) -> LyricsSourceResult | None:
-        """Read sidecar first, then embedded lyrics without blocking the event loop."""
+        """Prefer local word timing, retaining sidecar priority on a timing tie."""
         del session
         local_path = hint.local_path
         if hint.provider != self.source_id or local_path is None:
@@ -195,9 +195,12 @@ class LocalLyricsSource:
 
         def read() -> tuple[str, tuple[LyricLine, ...]]:
             sidecar = tuple(self._sidecar.read(local_path))
-            if sidecar:
+            if any(line.has_word_timing for line in sidecar):
                 return self._sidecar.source_id, sidecar
-            return self._embedded.source_id, tuple(self._embedded.read(local_path))
+            embedded = tuple(self._embedded.read(local_path))
+            if any(line.has_word_timing for line in embedded) or not sidecar:
+                return self._embedded.source_id, embedded
+            return self._sidecar.source_id, sidecar
 
         source_id, lines = await self._worker.run(read)
         if not lines:

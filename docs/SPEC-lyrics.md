@@ -43,14 +43,32 @@ The LRC parser accepts both standard line timestamps and Enhanced LRC inline
 without inline timestamps remains line-timed. A word ends at the next inline
 timestamp, or at the line end when it is the final segment.
 
+TTML is accepted from `.ttml` sidecars and embedded lyric text. The parser handles
+the Apple/AMLL lyric profile: namespaced or namespace-free `tt/body/div/p/span`,
+absolute media positions in `hh:mm:ss.fraction`, `mm:ss.fraction`, or `h/m/s/ms`
+offset notation, `begin/end` and `begin/dur`, mixed text, nested spans, `br`,
+and inherited `xml:space`. Paragraph bounds may be inferred from complete word
+spans. `ttm:role="x-translation"` becomes the line translation; romanization and
+`x-bg` backing vocals are excluded from the single lead-vocal display. It does
+not implement subtitle layout, sequential containers, frame/tick clocks or
+non-media time bases. Invalid/unsupported XML is a miss, allowing LRC fallback.
+DTD declarations are rejected before entity expansion; input, tree depth, node,
+line and word counts are bounded. Parsing never follows XML file or URL references.
+
+Current provider transports do not download raw TTML: NetEase requests YRC before
+falling back to LRC, Kugou downloads KRC before LRC, LRCLIB and QQ Music return LRC,
+and Cider/generic adapters supply normalized lines and words. Enhanced LRC word
+timing is eligible for the same preference as YRC, KRC, or TTML; a format label
+alone never establishes usable word timing.
+
 Each stable MPRIS track starts a new generation. Tasks from an older generation
 are cancelled, and stale results cannot update the active display.
 
 Automatic resolution follows this order:
 
-1. An exact-hint path restores the playback track's manual binding (or a matching legacy `MANUAL` entry), then checks the source named by the hint.
+1. An exact-hint path restores the playback track's manual binding (or a matching legacy `MANUAL` entry), then checks the source named by the hint. In best mode, a line-timed exact result can be upgraded by equally confident word lyrics from another enabled source; if none is found or other sources fail, the exact result is retained.
 2. A normal source plan restores the same manual binding before evaluating automatic sources.
-3. With `prefer_best_lyrics` enabled, candidates compete by match confidence and configured order breaks ties. With it disabled, the first valid result in configured order wins.
+3. With `prefer_best_lyrics` enabled, candidates compete by match confidence, then actual word timing, then configured order. Line-timed cache/live/network candidates do not suppress or cancel other providers that could supply words. A top-priority, word-timed HIGH result still avoids unnecessary requests. Cache entries are reused without refetching their own provider. With best mode disabled, the first valid result in configured order wins.
 4. An `AUTO` cache entry is considered only for its owning provider. A network failure is not treated as a cache miss.
 
 ## SQLite cache
@@ -133,6 +151,11 @@ override, and the new track follows the configured source policy.
 
 Sidecar and embedded lyrics are read by the local worker and are not written to
 the network cache. Their origins are `sidecar` and `embedded` respectively.
+For `song.flac`, adjacent `song.ttml` and `song.lrc` are considered, retaining the
+regular-file, size, and same-directory restrictions. Word timing wins across
+local candidates; sidecars win a tie over embedded tags, and TTML wins a sidecar
+tie over LRC. Embedded tags accept TTML or LRC and require the optional `mutagen`
+dependency. A malformed sidecar does not prevent another local format from loading.
 
 Transport, parsing, and payload failures are converted to narrow exceptions or
 typed unavailable results at provider boundaries. Cache failures raise

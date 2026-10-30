@@ -41,13 +41,26 @@ LRC 解析器同时支持普通行级时间标签和 Enhanced LRC 的 inline
 标签的输入仍然是行级歌词。每个词的结束时间取下一个 inline 标签，或在行末
 取该行的结束时间。
 
+TTML 从 `.ttml` sidecar 和内嵌歌词文本读取。解析范围为 Apple/AMLL 常见歌词形式：
+带命名空间或无命名空间的 `tt/body/div/p/span`，歌曲绝对时间位置
+`hh:mm:ss.fraction`、`mm:ss.fraction` 和带 `h/m/s/ms` 单位的时间，
+`begin/end`、`begin/dur`、混合文本、嵌套 span、`br` 和继承的 `xml:space`。
+段落时间缺失时可从完整的逐字时间推导。`ttm:role="x-translation"` 转为行翻译；
+当前单主唱时间轴不显示罗马音和 `x-bg` 和声。暂不实现字幕布局、顺序容器、帧/tick
+时间或非 media 时间基准。无效或不支持的 XML 视为 miss，允许回退到 LRC。
+在实体扩展前拒绝 DTD，并限制输入大小、树深度、节点数、行数和词数；不读取 XML 引用的文件或 URL。
+
+现有 provider 不直接下载原始 TTML：网易云优先解析 YRC，再回退 LRC；酷狗优先 KRC，
+再回退 LRC；LRCLIB 和 QQ 音乐读取 LRC；Cider/通用适配器提供规范化行和词。
+Enhanced LRC 的逐字时间与 YRC、KRC、TTML 同等参与优先选择，格式名称本身不代表有可用逐字时间。
+
 每个稳定的 MPRIS track 有独立 generation。旧 generation 的 task 会被取消，过期结果不能更新当前显示。
 
 自动解析优先级如下：
 
-1. exact hint 路径先恢复播放 track 的手动绑定（或匹配旧 `MANUAL` 记录），再查 hint 指定的 source。
+1. exact hint 路径先恢复播放 track 的手动绑定（或匹配旧 `MANUAL` 记录），再查 hint 指定的 source。最佳匹配模式下，逐行 exact 结果可以被其他已启用来源中同等匹配度的逐字歌词替换；未找到或其他来源失败时保留 exact 结果。
 2. 普通 source plan 先恢复相同的手动绑定，再评估自动来源。
-3. `prefer_best_lyrics` 开启时按匹配度竞争候选，配置顺序只打破平局；关闭时按配置顺序遇到第一个有效结果即停止。
+3. `prefer_best_lyrics` 开启时依次比较匹配度、实际逐字时间、配置顺序。缓存、实时或网络的逐行候选不能阻止或取消仍可能返回逐字歌词的来源。最高优先级的高匹配度逐字结果仍可跳过多余请求；缓存命中不会重抓其所属 provider。关闭时按配置顺序遇到第一个有效结果即停止。
 4. 普通 cache 只作为所属 provider 的 automatic cache 命中；网络异常不会伪装成 miss。
 
 ## SQLite cache
@@ -104,5 +117,9 @@ LRC 解析器同时支持普通行级时间标签和 Enhanced LRC 的 inline
 ## 本地来源和失败处理
 
 sidecar 和 embedded 在 local worker 中读取，不写入 network cache，origin 分别为 `sidecar` 和 `embedded`。
+
+`song.flac` 会读取相邻的 `song.ttml` 和 `song.lrc`，沿用普通文件、大小和同目录限制。
+本地候选优先实际逐字时间；同等精度时 sidecar 优先于内嵌标签，TTML sidecar 优先于 LRC。
+内嵌标签支持 TTML/LRC，需安装可选依赖 `mutagen`；一个 sidecar 无效不影响其他格式的读取。
 
 provider 的 transport、解析和 payload 错误在边界处转换为窄 exception 或 typed unavailable result；cache 失败必须报告 `LyricsCacheError`，不能返回虚假成功。
