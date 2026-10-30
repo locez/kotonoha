@@ -890,6 +890,7 @@ def test_composition_closes_workers_when_graph_construction_fails(qapp, monkeypa
 
     assert sorted(closed) == [
         "configuration",
+        "kotonoha-amll-catalog",
         "kotonoha-local-lyrics",
         "kotonoha-lyrics-cache",
         "track offsets",

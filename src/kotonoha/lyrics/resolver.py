@@ -104,7 +104,7 @@ class LyricsResolver:
     def start(self) -> None:
         """Reopen resolver-owned workers after a previous close.
 
-        Lookup policy remains in memory; only the cache and local-source workers
+        Lookup policy remains in memory; only the cache and source workers
         need to be reopened. The method is synchronous because no I/O occurs
         until the next lookup.
         """
@@ -199,17 +199,23 @@ class LyricsResolver:
                 track,
                 hint,
                 enabled_sources=tuple(sources),
+                prefer_best=self._prefer_best,
             )
         # asyncio.TimeoutError is the builtin TimeoutError from 3.11, which this
         # project now requires, so naming both was one exception written twice.
         except (LyricsSourceError, TimeoutError, ValueError, RuntimeError) as exc:
             logger.warning("%s exact lyrics fetch failed: %s: %s", hint.provider, type(exc).__name__, exc)
             return None
-        if exact is None or not self._prefer_best or exact.document.has_word_timing:
+        if exact is None:
+            return None
+        await self._store_result(exact)
+        if not self._prefer_best or exact.document.has_word_timing:
             return exact
         # An exact hint establishes identity, but does not guarantee word
         # timing. Search the other enabled slots without refetching the hinted id.
-        alternative = await self.resolve(session, track, [source for source in sources if source != hint.provider])
+        alternative = await self.resolve(
+            session, track, [source for source in sources if source not in {hint.provider, exact.source_id}],
+        )
         if alternative is not None and (
             _CONF_RANK[alternative.confidence], alternative.document.has_word_timing
         ) > (_CONF_RANK[exact.confidence], exact.document.has_word_timing):
@@ -292,14 +298,18 @@ class LyricsResolver:
                 logger.debug("lyrics source missed: slot=%r reason=no-timed-lines", source)
                 self._negative_until[negative_key] = time.monotonic() + self._negative_ttl
                 continue
-            if self._cache_enabled and result.cache_artifact is not None:
-                try:
-                    await self._cache.store(result.cache_artifact)
-                except LyricsCacheError as exc:
-                    logger.warning("%s lyrics cache write failed: %s", source, exc)
+            await self._store_result(result)
             _log_candidate("network", source, result)
             return result
         return None
+
+    async def _store_result(self, result: LyricsSourceResult) -> None:
+        """Persist automatic and exact artifacts without losing lyrics on cache failure."""
+        if self._cache_enabled and result.cache_artifact is not None:
+            try:
+                await self._cache.store(result.cache_artifact)
+            except LyricsCacheError as exc:
+                logger.warning("%s lyrics cache write failed: %s", result.source_id, exc)
 
     async def _resolved_source(
         self,
@@ -321,11 +331,7 @@ class LyricsResolver:
             logger.debug("lyrics source missed: slot=%r reason=no-timed-lines", source)
             self._negative_until[source, track_key] = time.monotonic() + self._negative_ttl
             return None
-        if self._cache_enabled and result.cache_artifact is not None:
-            try:
-                await self._cache.store(result.cache_artifact)
-            except LyricsCacheError as exc:
-                logger.warning("%s lyrics cache write failed: %s", source, exc)
+        await self._store_result(result)
         _log_candidate("network", source, result)
         return result
 

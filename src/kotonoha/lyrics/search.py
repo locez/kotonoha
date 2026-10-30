@@ -105,6 +105,9 @@ class LyricsVersion:
 
     format_id: str
     has_translation: bool = False
+    # Supplied when content was parsed: formats such as TTML and Enhanced LRC
+    # do not imply a fixed timing granularity from their extension alone.
+    content_timing: LyricsTiming | None = None
 
     def __post_init__(self) -> None:
         """Reject empty display metadata from an external provider adapter."""
@@ -118,6 +121,8 @@ class LyricsVersion:
         The difference a listener feels is word, line, or neither; which encoding
         carries it is this module's business, not a reader's.
         """
+        if self.content_timing is not None:
+            return self.content_timing
         if self.format_id in _WORD_TIMED:
             return LyricsTiming.WORD
         if self.format_id in _LINE_TIMED:
@@ -295,6 +300,9 @@ class LyricsSearchService:
 def _version_for(artifact: LyricsArtifact) -> LyricsVersion:
     """Derive stable version facts from provider payloads at the lyric boundary."""
     payload = artifact.payload
+    if artifact.provider == "amll":
+        timing = LyricsTiming.WORD if any(line.has_word_timing for line in artifact.lines) else LyricsTiming.LINE
+        return LyricsVersion("ttml", any(line.translation for line in artifact.lines), timing)
     if artifact.provider == "netease":
         format_id = "yrc" if payload.get("yrc", "").strip() else "lrc"
         return LyricsVersion(format_id, bool(payload.get("tlyric", "").strip()))

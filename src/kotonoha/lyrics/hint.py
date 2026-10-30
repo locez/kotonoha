@@ -11,8 +11,9 @@ from urllib.parse import unquote, urlparse
 class LyricsHint:
     """An exact lyric source a player already knows, so no matching is needed.
 
-    ``provider`` names which source resolves it. ``song_id`` carries the identifier
-    for a network provider such as netease or qqmusic; ``local_path`` carries the
+    ``provider`` names the identifier's platform; enabled sources may share its
+    identity, such as AMLL's NetEase song IDs. ``song_id`` carries the network
+    identifier for netease or qqmusic; ``local_path`` carries the
     audio file for the "local" provider. Only the field the provider uses is
     populated, and the other is None.
     """

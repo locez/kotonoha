@@ -10,7 +10,7 @@
 
 Kotonoha 是一个 Linux 桌面歌词悬浮窗。它从支持 MPRIS 的播放器读取当前歌曲和播放位置，并在半透明的 Wayland 悬浮层中显示同步歌词。
 
-Kotonoha 支持浏览器、Spotify、VLC、mpv、Cider 以及其他兼容 MPRIS 的播放器。歌词可以来自 Netease、lrclib、Kugou 或 Cider 本地 HTTP API。
+Kotonoha 支持浏览器、Spotify、VLC、mpv、Cider 以及其他兼容 MPRIS 的播放器。歌词可以来自 AMLL TTML DB、Netease、lrclib、Kugou 或 Cider 本地 HTTP API。
 
 ![Kotonoha lyrics overlay](screenshots/kotonoha-screenshot.png)
 
@@ -128,11 +128,13 @@ uv run kotonoha
 
 ## 配置
 
-从托盘打开**设置**。在**来源**页面可以调整或禁用歌词来源。默认顺序为 `netease -> lrclib -> kugou`。下方的播放来源也可以启用多个条目；当 MPRIS 不可用时，列表顺序决定使用哪个实时播放器来源。
+从托盘打开**设置**。在**来源**页面可以调整或禁用歌词来源。默认顺序为 `amll -> netease -> lrclib -> kugou`。已有配置保留原来的来源选择，可在这里勾选 **AMLL TTML DB** 来启用新来源。下方的播放来源也可以启用多个条目；当 MPRIS 不可用时，列表顺序决定使用哪个实时播放器来源。
 
 **优先最佳匹配**默认开启：依次比较歌曲匹配度、是否有可用的逐字时间信息、来源顺序。缓存、Cider 实时快照或播放器精确提示中的逐行歌词，可以被其他已启用来源中同等匹配度的逐字歌词替换。手动选择仍优先。关闭后使用严格的来源顺序回退。
 
-播放本地音频时，将 `song.ttml` 或 `song.lrc` 放在 `song.flac`（或其他音频扩展名）旁边即可。TTML 支持逐行、逐字时间和内联翻译。本地文件及内嵌歌词优先选择逐字版本；同等时间精度的 sidecar 优先 TTML。读取内嵌标签需要安装 `embedded-lyrics` extra。当前网络接入分别读取网易云 YRC/LRC、酷狗 KRC/LRC、LRCLIB LRC、QQ 音乐 LRC；Cider 提供结构化时间轴歌词，均不直接获取原始 TTML。
+[AMLL TTML DB](https://github.com/amll-dev/amll-ttml-db) 提供社区制作的 TTML，支持按歌名、歌手自动匹配和手动搜索，也能利用已知的平台歌曲 ID，不依赖特定播放器。新查询需要能访问其 GitHub 公共曲库；自动匹配成功或手动选中的歌词沿用本地缓存。收录范围取决于社区贡献，Cider 仍可补充当前 Apple Music 曲目的歌词。
+
+播放本地音频时，将 `song.ttml` 或 `song.lrc` 放在 `song.flac`（或其他音频扩展名）旁边即可。TTML 支持逐行、逐字时间和内联翻译。本地文件及内嵌歌词优先选择逐字版本；同等时间精度的 sidecar 优先 TTML。读取内嵌标签需要安装 `embedded-lyrics` extra。其他网络接入分别读取网易云 YRC/LRC、酷狗 KRC/LRC、LRCLIB LRC、QQ 音乐 LRC；Cider 提供结构化时间轴歌词。
 
 悬浮窗上的放大镜按钮会打开当前歌曲的手动搜索窗口。标题、艺术家和专辑可以编辑，当前时长以只读信息展示。搜索结果包含来源、歌曲元数据、时长、歌词格式、翻译可用性和匹配度。应用结果后会写入本地缓存并标记为 `MANUAL`；如果仍在播放同一首歌，显示歌词会立即更新。搜索窗口还会显示当前歌词来源、获取方式、播放来源和缓存状态。
 

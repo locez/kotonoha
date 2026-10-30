@@ -163,7 +163,7 @@ def test_display_sources_cleaned_and_roundtripped():
 
 def test_lyrics_sources_default() -> None:
     """The initial source order contains network providers without Cider polling."""
-    assert Config().lyrics_sources == ["netease", "lrclib", "kugou"]
+    assert Config().lyrics_sources == ["amll", "netease", "lrclib", "kugou"]
 
 
 def test_best_lyrics_matching_is_enabled_by_default():
@@ -177,8 +177,9 @@ def test_lyrics_sources_cleaned():
 
 def test_lyrics_sources_empty_falls_back() -> None:
     """Invalid source selections restore defaults without enabling Cider."""
-    assert Config(lyrics_sources=[]).clamped().lyrics_sources == ["netease", "lrclib", "kugou"]
+    assert Config(lyrics_sources=[]).clamped().lyrics_sources == ["amll", "netease", "lrclib", "kugou"]
     assert Config(lyrics_sources=["nope"]).clamped().lyrics_sources == [
+        "amll",
         "netease",
         "lrclib",
         "kugou",

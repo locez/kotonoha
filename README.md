@@ -10,7 +10,7 @@
 
 Kotonoha is a Linux desktop lyrics overlay. It reads the current track and playback position from any MPRIS player, then shows synchronized lyrics in a translucent Wayland overlay.
 
-It works with browsers, Spotify, VLC, mpv, Cider, and other MPRIS-compatible players. Lyrics can come from Netease, lrclib, Kugou, or Cider's local HTTP API.
+It works with browsers, Spotify, VLC, mpv, Cider, and other MPRIS-compatible players. Lyrics can come from AMLL TTML DB, Netease, lrclib, Kugou, or Cider's local HTTP API.
 
 ![Kotonoha lyrics overlay](screenshots/kotonoha-screenshot.png)
 
@@ -133,11 +133,13 @@ uv run kotonoha
 
 ## Configuration
 
-Open **Settings** from the tray. Under **Sources**, lyric providers can be reordered or disabled. The default order is `netease -> lrclib -> kugou`. The display sources below it can also have multiple enabled entries; their order controls which live player source wins when MPRIS is unavailable.
+Open **Settings** from the tray. Under **Sources**, lyric providers can be reordered or disabled. The default order is `amll -> netease -> lrclib -> kugou`. Existing saved selections are preserved; enable **AMLL TTML DB** there to add it to an existing configuration. The display sources below it can also have multiple enabled entries; their order controls which live player source wins when MPRIS is unavailable.
 
 **Prefer best match** is enabled by default: candidates compete by match confidence, then usable word timing, then your source order. A line-timed cache hit, Cider snapshot, or exact player hint can be upgraded by equally well-matched word lyrics from another enabled source. Manual selections remain authoritative. Disable it for strict ordered fallback.
 
-For local audio, place `song.ttml` or `song.lrc` beside `song.flac` (or another audio extension). TTML supports line and word timing plus inline translations. Local files and embedded lyric tags prefer word timing; TTML wins a sidecar format tie. Embedded tags require the `embedded-lyrics` extra. The current network integrations provide NetEase YRC/LRC, Kugou KRC/LRC, LRCLIB LRC, and QQ Music LRC; Cider supplies structured timed lyrics. They do not fetch raw TTML directly.
+[AMLL TTML DB](https://github.com/amll-dev/amll-ttml-db) supplies community-authored TTML for automatic matching and manual search by song title and artist, independently of the player. It can also use known platform song IDs. New lookups require access to its public GitHub catalog; successfully matched or manually selected lyrics use the existing local cache. Coverage depends on community submissions. Cider remains useful for lyrics supplied by its active Apple Music track.
+
+For local audio, place `song.ttml` or `song.lrc` beside `song.flac` (or another audio extension). TTML supports line and word timing plus inline translations. Local files and embedded lyric tags prefer word timing; TTML wins a sidecar format tie. Embedded tags require the `embedded-lyrics` extra. Other network integrations provide NetEase YRC/LRC, Kugou KRC/LRC, LRCLIB LRC, and QQ Music LRC; Cider supplies structured timed lyrics.
 
 The magnifying-glass button on the overlay opens manual lyric search for the current
 track. Title, artist, and album are editable; the current duration is shown as

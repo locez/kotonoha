@@ -14,6 +14,7 @@ from ..display.presentation import DisplayEngine
 from ..display.timeline import TimelineEngine
 from ..i18n import resolve_translation_language
 from ..lyrics import kugou, lrclib, netease, qqmusic
+from ..lyrics.amll import AmllLyricsSource
 from ..lyrics.cache import LyricsCache
 from ..lyrics.catalog import LyricsSourceCatalog
 from ..lyrics.http import new_lyrics_session
@@ -208,8 +209,9 @@ class ApplicationComposition:
 
         local_worker = BlockingCallRunner("kotonoha-local-lyrics")
         cache_worker = BlockingCallRunner("kotonoha-lyrics-cache")
+        amll_worker = BlockingCallRunner("kotonoha-amll-catalog")
         try:
-            controller = self._build_unchecked(local_worker, cache_worker)
+            controller = self._build_unchecked(local_worker, cache_worker, amll_worker)
         except BaseException:
             # Construction happens before AppController owns the graph, so the
             # composition root must release every worker it allocated itself.
@@ -217,6 +219,7 @@ class ApplicationComposition:
             # failure is re-raised after the resources are released.
             self._close_build_worker(local_worker, "local lyrics")
             self._close_build_worker(cache_worker, "lyrics cache")
+            self._close_build_worker(amll_worker, "AMLL catalog")
             self._close_build_worker(self._track_offset_worker, "track offsets")
             self._close_build_worker(self._config_worker, "configuration")
             raise
@@ -227,6 +230,7 @@ class ApplicationComposition:
         self,
         local_worker: BlockingWorkerPort,
         cache_worker: BlockingWorkerPort,
+        amll_worker: BlockingWorkerPort,
     ) -> AppController:
         """Construct the graph while :meth:`build` owns rollback on failure."""
 
@@ -277,7 +281,9 @@ class ApplicationComposition:
             EmbeddedLyricsSource(),
             worker=local_worker,
         )
+        amll = AmllLyricsSource(worker=amll_worker)
         lyric_sources = {
+            "amll": amll,
             "netease": NetworkLyricsSource(
                 "netease",
                 netease.fetch_artifact,
@@ -297,10 +303,12 @@ class ApplicationComposition:
             lyric_sources,
             live_source=LiveLyricsSource(ownership),
             local_source=local_source,
+            managed_sources=(amll,),
         )
         cache = LyricsCache(worker=cache_worker)
         lyrics_search: LyricsSearchService = LyricsSearchService(
             {
+                "amll": LyricsSearchProvider(amll.search_artifacts),
                 "netease": LyricsSearchProvider(netease.search_artifacts),
                 "lrclib": LyricsSearchProvider(lrclib.search_artifacts),
                 "kugou": LyricsSearchProvider(kugou.search_artifacts),
