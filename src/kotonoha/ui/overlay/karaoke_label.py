@@ -52,8 +52,8 @@ class _EffectConfig(TypedDict):
 
 
 _FX: dict[str, _EffectConfig] = {
-    "subtle": {"glow_alpha": 0.65, "glow_sigma": 2.4, "pop": 115},
-    "expressive": {"glow_alpha": 0.90, "glow_sigma": 3.6, "pop": 130},
+    "subtle": {"glow_alpha": 0.65, "glow_sigma": 3.6, "pop": 115},
+    "expressive": {"glow_alpha": 1.0, "glow_sigma": 6.0, "pop": 130},
 }
 
 class _PyqtPropertyFactory(Protocol):

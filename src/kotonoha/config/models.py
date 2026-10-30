@@ -161,6 +161,7 @@ class Config:
     lead_ms: int = 120               # advance the sweep by this many ms (compensate pipeline latency)
     show_translation: bool = True    # bilingual
     current_line_only: bool = False  # hide the previous and next context lines
+    context_lines: int = 1          # requested rows per side; the viewport clips excess rows
     translation_language: str = "auto"  # "auto" -> from system locale, else an Apple tag (zh-Hans/en/ja/...)
     lyrics_sources: list[str] = field(default_factory=lambda: list(DEFAULT_LYRICS_SOURCES))
     display_sources: list[str] = field(default_factory=lambda: list(DEFAULT_DISPLAY_SOURCES))
@@ -225,6 +226,8 @@ class Config:
             lead_ms=_clamp_int(self.lead_ms, -LEAD_MS_LIMIT, LEAD_MS_LIMIT, 120),
             show_translation=_clean_bool(self.show_translation, True),
             current_line_only=_clean_bool(self.current_line_only, False),
+            # QSpinBox uses a signed 32-bit integer; do not impose a smaller UX cap.
+            context_lines=_clamp_int(self.context_lines, 1, 2_147_483_647, 1),
             translation_language=str(self.translation_language),
             accent_start=str(self.accent_start),
             accent_end=str(self.accent_end),

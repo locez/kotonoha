@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import QGraphicsDropShadowEffect, QLabel, QWidget
 
 from ...config import Config, PanelOverflowMode, PanelWidthMode
 from ...display.layout import FontFitPolicy
+from .context_label import ContextLabel
 from .karaoke_label import KaraokeLabel
 from .style import OverlayAppearance
 
@@ -24,13 +25,14 @@ class OverlayPresentationController:
         self,
         config: Config,
         container: QWidget,
-        previous: QLabel,
+        previous: ContextLabel,
         current: KaraokeLabel,
         feedback: QLabel,
         translation: KaraokeLabel,
-        next_label: QLabel,
+        next_label: ContextLabel,
         *,
         window_size: Callable[[], tuple[int, int]],
+        screen_height: Callable[[], int],
     ) -> None:
         """Create a presentation owner around the already-built lyric widgets."""
         self._config = config
@@ -41,6 +43,7 @@ class OverlayPresentationController:
         self._translation = translation
         self._next = next_label
         self._window_size = window_size
+        self._screen_height: Callable[[], int] = screen_height
         self._appearance = OverlayAppearance()
 
     def apply_config(self, config: Config) -> None:
@@ -83,6 +86,9 @@ class OverlayPresentationController:
             effect = label.graphicsEffect()
             if isinstance(effect, QGraphicsDropShadowEffect):
                 effect.setColor(shadow)
+        for context in (self._previous, self._next):
+            context.configure(count=config.context_lines, animate=config.fx_animate)
+        self._configure_context_height()
 
         translation_font = QFont()
         translation_font.setFamilies(families)
@@ -113,7 +119,8 @@ class OverlayPresentationController:
         context = 0 if self._config.current_line_only else self._config.context_font_size
         translation = self._config.translation_font_size if self._config.show_translation else 0
         feedback = 20
-        lines = int(main * 1.6) + 2 * int(context * 1.4) + int(translation * 1.6) + feedback
+        context_height = 0 if context == 0 else self._previous.sizeHint().height()
+        lines = int(main * 1.6) + 2 * context_height + int(translation * 1.6) + feedback
         chrome = 22 + 24 + 34
         baseline = max(140, lines + chrome)
         if not self.wrapping:
@@ -140,6 +147,19 @@ class OverlayPresentationController:
         available = self._configure_panel_width()
         self._current.set_max_width(available)
         self._translation.set_max_width(available)
+        self._configure_context_height()
+
+    def _configure_context_height(self) -> None:
+        """Keep the focused lyric visible when requested context exceeds the screen."""
+        height = self._screen_height()
+        translation = self._config.translation_font_size if self._config.show_translation else 0
+        main_height = max(int(self._config.font_size * 1.6), self._current.sizeHint().height())
+        translation_height = max(int(translation * 1.6), self._translation.sizeHint().height()) if translation else 0
+        reserved = main_height + translation_height + 100
+        margin = min(self._config.margin_edge, height // 4)
+        available = max(0, (height - reserved - margin) // 2)
+        for context in (self._previous, self._next):
+            context.setMaximumHeight(available)
 
     def text_colors(self) -> tuple[QColor, QColor, str]:
         """Return lyric, shadow, and context colors for the current appearance."""

@@ -455,6 +455,7 @@ class SettingsDialog(ThemedSettingsDialog):
             lead_ms=w.lead.value(),
             show_translation=w.translation.isChecked(),
             current_line_only=w.current_line_only.isChecked(),
+            context_lines=w.context_lines.value(),
             anchor_top=bool(w.anchor.currentData()),
             margin_edge=w.margin_edge.value(),
             margin_x=w.margin_x.value(),

@@ -106,6 +106,7 @@ def merge_settings(
             if "current_line_only" in changed_fields
             else current.current_line_only
         ),
+        context_lines=submitted.context_lines if "context_lines" in changed_fields else current.context_lines,
         lyrics_script=(
             submitted.lyrics_script
             if "lyrics_script" in changed_fields

@@ -27,6 +27,7 @@ SETTINGS_PAGE_FIELDS: tuple[tuple[str, ...], ...] = (
         "lead_ms",
         "show_translation",
         "current_line_only",
+        "context_lines",
         "lyrics_script",
         "interlude_style",
         "interlude_countdown",

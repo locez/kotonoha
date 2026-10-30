@@ -55,10 +55,14 @@ def test_glow_fades_outside_both_glyph_edges_without_thickening_the_core(
     ratio = glowing.devicePixelRatio()
 
     for edge, direction in ((left, -1), (right, 1)):
-        # Sample inside the visible tail; beyond ~5 px subtle halos can round to
-        # zero alpha depending on the font rasterizer and display scale.
+        # The stronger bloom intentionally permits brighter near-stroke light;
+        # it must still fade smoothly and stay well below the opaque text core.
         tail = [glowing.pixelColor(edge + direction * round(distance * ratio), y).alpha() for distance in (1.5, 3, 4.5)]
-        assert 100 > tail[0] > tail[1] > tail[2] > 0
+        assert 170 > tail[0] > tail[1] > tail[2] > 0
+        if intensity == "expressive":
+            # A broad visible tail distinguishes the requested bloom from the
+            # previous small halo that mostly looked like heavier lettering.
+            assert glowing.pixelColor(edge + direction * round(10 * ratio), y).alpha() > 0
     # A blurred foreground would lose the solid center of each stem.
     assert glowing.pixelColor(left, y) == plain.pixelColor(left, y)
     assert glowing.pixelColor(right, y) == plain.pixelColor(right, y)

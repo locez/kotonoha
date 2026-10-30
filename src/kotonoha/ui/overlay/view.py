@@ -9,6 +9,7 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QGraphicsDropShadowEffect, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from .chrome import OverlayChromeController
+from .context_label import ContextLabel
 from .karaoke_label import KaraokeLabel
 
 
@@ -17,11 +18,11 @@ class OverlayWidgets:
     """Controls assembled for one overlay window."""
 
     container: QWidget
-    previous: QLabel
+    previous: ContextLabel
     current: KaraokeLabel
     feedback: QLabel
     translation: KaraokeLabel
-    next: QLabel
+    next: ContextLabel
 
 
 class OverlayViewBuilder:
@@ -40,11 +41,11 @@ class OverlayViewBuilder:
         layout.setSpacing(4)
         layout.addWidget(self._chrome.build(container))
 
-        previous = self._context_label()
+        previous = ContextLabel(previous=True, parent=container)
         current = KaraokeLabel(container)
         feedback = self._feedback_label()
         translation = KaraokeLabel(container)
-        next_label = self._context_label()
+        next_label = ContextLabel(previous=False, parent=container)
         for widget in (previous, current, translation, next_label, feedback):
             layout.addWidget(widget, alignment=Qt.AlignmentFlag.AlignHCenter)
         for label in (previous, feedback, next_label):

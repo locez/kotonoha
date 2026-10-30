@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QLabel, QWidget
 
 from ...config import Config
@@ -17,6 +17,7 @@ from ...display.offsets import (
 )
 from ...lyrics.models import LyricLine
 from ...strings import Translator
+from .context_label import ContextLabel
 from .karaoke_label import KaraokeLabel
 from .state import LyricsState
 
@@ -30,11 +31,11 @@ class OverlayContentController:
         self,
         state: LyricsState,
         config: Config,
-        previous: QLabel,
+        previous: ContextLabel,
         current: KaraokeLabel,
         feedback: QLabel,
         translation: KaraokeLabel,
-        next_label: QLabel,
+        next_label: ContextLabel,
         container: QWidget,
         *,
         timer_parent: QWidget,
@@ -73,12 +74,16 @@ class OverlayContentController:
         self._config = config
 
     def stop(self) -> None:
-        """Stop feedback work owned by this content controller."""
+        """Stop feedback and context transitions owned by this controller."""
         self._feedback_timer.stop()
+        self._previous.stop()
+        self._next.stop()
 
     def on_frame(self, frame: DisplayFrame) -> None:
         """Render one canonical frame and request input-region recalculation."""
+        old_frame = self._frame
         self._frame = frame
+        self._update_context(frame, old_frame)
         has_lyrics = frame.state is DisplayState.LYRICS_AVAILABLE and frame.document is not None
         if has_lyrics and frame.current is None and frame.interlude_line is not None:
             self._show_interlude(frame)
@@ -101,10 +106,6 @@ class OverlayContentController:
             self._show_empty(frame)
             self._on_input_region_refresh()
             return
-        previous = frame.previous
-        next_line = frame.next
-        self._set_context_text(self._previous, previous.text if previous else "")
-        self._set_context_text(self._next, next_line.text if next_line else "")
         word_mode = document is not None and document.has_word_timing and current.has_word_timing
         self._current.set_line(current, word_mode and self._config.karaoke)
 
@@ -166,10 +167,6 @@ class OverlayContentController:
         self._current.set_scale(INTERLUDE_SCALE)
         self._container.setVisible(True)
         self._set_track_key_from_frame(frame)
-        previous = frame.previous
-        next_line = frame.next
-        self._set_context_text(self._previous, previous.text if previous else "")
-        self._set_context_text(self._next, next_line.text if next_line else "")
         self._translation.set_line(None, False)
         self._translation.setVisible(False)
         interlude_line = frame.interlude_line
@@ -181,8 +178,8 @@ class OverlayContentController:
 
     def _show_empty(self, frame: DisplayFrame) -> None:
         self._track_key = None
-        self._previous.setText("")
-        self._next.setText("")
+        self._previous.set_lines(())
+        self._next.set_lines(())
         self._translation.set_line(None, False)
         self._translation.setVisible(False)
         self._current.set_progress(None, None)
@@ -192,15 +189,27 @@ class OverlayContentController:
         self._current.set_line(title_line, False)
         self._current.set_media_time(None)
 
-    @staticmethod
-    def _set_context_text(label: QLabel, text: str) -> None:
-        """Set context text while eliding it to the label's fixed width."""
-        width = label.maximumWidth()
-        if text and 0 < width < 16_777_215:
-            text = label.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight, width)
-        if label.text() == text:
+    def _update_context(self, frame: DisplayFrame, old: DisplayFrame) -> None:
+        """Move context only for adjacent lyric changes, never for clock ticks."""
+        if frame.document is old.document and frame.previous == old.previous and frame.next == old.next:
             return
-        label.setText(text)
+        direction = 0
+        if frame.document is old.document and old.current is not None:
+            if frame.previous == old.current:
+                direction = 1
+            elif frame.next == old.current:
+                direction = -1
+        lines = frame.document.lines if frame.document is not None else ()
+        for label, anchor, step in ((self._previous, frame.previous, -1), (self._next, frame.next, 1)):
+            if anchor is None:
+                label.set_lines(())
+                continue
+            index = next((i for i, line in enumerate(lines) if line.id == anchor.id), None)
+            if index is None:
+                context = (anchor,)
+            else:
+                context = tuple(reversed(lines[:index + 1])) if step < 0 else lines[index:]
+            label.set_lines(context, direction=direction)
 
 
 __all__ = ["OverlayContentController"]

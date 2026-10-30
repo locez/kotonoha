@@ -92,6 +92,7 @@ class SettingsWidgets:
         self.lead = QSpinBox()
         self.translation = QCheckBox()
         self.current_line_only = QCheckBox()
+        self.context_lines: QSpinBox = QSpinBox()
         self.lyrics_script = SettingsComboBox()
         self.interlude_style = SettingsComboBox()
         self.interlude_countdown = SettingsComboBox()

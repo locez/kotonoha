@@ -252,6 +252,7 @@ class LyricsOverlay(QWidget):
             self._translation,
             self._next_label,
             window_size=self._window_size,
+            screen_height=self._screen_height,
         )
         self._content = OverlayContentController(
             self._state,
@@ -348,6 +349,11 @@ class LyricsOverlay(QWidget):
     def _window_size(self) -> tuple[int, int]:
         """Return the stable surface size for the active output."""
         return self._surface.window_size(self._target_screen())
+
+    def _screen_height(self) -> int:
+        """Supply the selected output's logical viewport height to presentation."""
+        screen = self._target_screen()
+        return screen.geometry().height() if screen is not None else 720
 
     def _apply_window_geometry(self, *, reset_position: bool = True) -> None:
         """Delegate sizing and placement to the platform surface owner."""

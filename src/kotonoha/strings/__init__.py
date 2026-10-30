@@ -151,6 +151,14 @@ STRINGS: dict[str, dict[str, str]] = {
                      "ja": "正の値でハイライトを早め（遅延を補正）、負の値で遅らせます。"},
     "set.show_translation": {"en": "Show translation", "zh-Hans": "显示翻译",
                              "zh-Hant": "顯示翻譯", "ja": "翻訳を表示"},
+    "set.context_lines": {"en": "Context lines on each side", "zh-Hans": "上下文行数（每侧）",
+                          "zh-Hant": "上下文行數（每側）", "ja": "前後それぞれの行数"},
+    "set.context_lines_hint": {
+        "en": "One line per side by default. Distant lines fade and soften; scrolling follows the animation setting.",
+        "zh-Hans": "默认上下一行，可输入更多。越远越淡、越模糊；换行滚动跟随动画开关。",
+        "zh-Hant": "預設上下一行，可輸入更多。越遠越淡、越模糊；換行捲動跟隨動畫開關。",
+        "ja": "既定は前後各1行。行数は増やせます。遠い行ほど薄くぼかし、スクロールはアニメーション設定に従います。",
+    },
     "set.current_line_only": {"en": "Show current line only", "zh-Hans": "仅显示当前播放行",
                                "zh-Hant": "僅顯示目前播放行", "ja": "現在の行だけ表示"},
     "set.current_line_only_hint": {

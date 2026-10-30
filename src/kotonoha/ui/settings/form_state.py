@@ -102,6 +102,7 @@ def _reset_page_values(current: Config, defaults: Config, index: int) -> Config:
             lead_ms=defaults.lead_ms,
             show_translation=defaults.show_translation,
             current_line_only=defaults.current_line_only,
+            context_lines=defaults.context_lines,
             lyrics_script=defaults.lyrics_script,
             interlude_style=defaults.interlude_style,
             interlude_countdown=defaults.interlude_countdown,

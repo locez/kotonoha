@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from math import ceil, exp
+from math import ceil
 
 from PyQt6.QtCore import QPointF, QRectF, Qt
 from PyQt6.QtGui import QColor, QFont, QImage, QLinearGradient, QPainter
 
 from .text_layout import TextRow
+from .text_raster import blur_image
 
 
 @dataclass(frozen=True)
@@ -114,30 +115,15 @@ class TextGlow:
             painter.setFont(font)
             painter.setPen(color)
             self._draw_text(painter, QRectF(padding, padding, key.width, key.height), row)
-        return _GlowRaster(key, _gaussian_blur(image, key.sigma), padding)
-
-
-def _gaussian_blur(source: QImage, sigma: float) -> QImage:
-    """Convolve a raster in two separable passes using Qt's additive compositor.
-
-    This is a stateless image transformation. Sixteen-bit channels retain faint
-    tails while accumulating weighted samples; only the cached result uses eight
-    bits. No image dependency or per-pixel Python loop is needed.
-    """
-    ratio = source.devicePixelRatioF()
-    device_sigma = sigma * ratio
-    radius = ceil(3.0 * device_sigma)
-    weights = [exp(-0.5 * (offset / device_sigma) ** 2) for offset in range(-radius, radius + 1)]
-    total = sum(weights)
-    for horizontal in (True, False):
-        target = QImage(source.size(), source.format())
-        target.setDevicePixelRatio(ratio)
-        target.fill(Qt.GlobalColor.transparent)
-        with QPainter(target) as painter:
+        # A narrow halo keeps the light close to the strokes; the wider bloom
+        # supplies the visible falloff. Neither layer replaces the sharp text.
+        outer = blur_image(image, key.sigma)
+        bloom = outer.copy()
+        core = blur_image(image, 2.0)
+        with QPainter(bloom) as painter:
             painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
-            for offset, weight in zip(range(-radius, radius + 1), weights, strict=True):
-                painter.setOpacity(weight / total)
-                shift = offset / ratio
-                painter.drawImage(QPointF(shift, 0.0) if horizontal else QPointF(0.0, shift), source)
-        source = target
-    return source.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+            painter.setOpacity(0.65)
+            painter.drawImage(QPointF(0.0, 0.0), outer)
+            painter.setOpacity(0.85)
+            painter.drawImage(QPointF(0.0, 0.0), core)
+        return _GlowRaster(key, bloom, padding)

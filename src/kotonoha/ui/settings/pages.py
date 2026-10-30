@@ -255,6 +255,9 @@ class SettingsPageBuilder:
         w.current_line_only.setChecked(self._config.current_line_only)
         form.addRow(w.current_line_only)
         form.addRow(self._hint(t("set.current_line_only_hint")))
+        self._configure_spin(w.context_lines, 1, 2_147_483_647, self._config.context_lines, "")
+        form.addRow(t("set.context_lines"), w.context_lines)
+        form.addRow(self._hint(t("set.context_lines_hint")))
 
         w.lyrics_script.clear()
         for value, key in (
