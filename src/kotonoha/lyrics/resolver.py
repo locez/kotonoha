@@ -189,11 +189,12 @@ class LyricsResolver:
         sources: Sequence[str],
         hint: LyricsHint,
     ) -> LyricsSourceResult | None:
+        """Restore manual lyrics, then resolve a hint and seek word timing in best mode."""
         manual = await self._lookup_manual(track)
         if manual is not None:
             return self._result_from_cache(manual)
         try:
-            return await self._exact_source.resolve(
+            exact = await self._exact_source.resolve(
                 session,
                 track,
                 hint,
@@ -204,6 +205,16 @@ class LyricsResolver:
         except (LyricsSourceError, TimeoutError, ValueError, RuntimeError) as exc:
             logger.warning("%s exact lyrics fetch failed: %s: %s", hint.provider, type(exc).__name__, exc)
             return None
+        if exact is None or not self._prefer_best or exact.document.has_word_timing:
+            return exact
+        # An exact hint establishes identity, but does not guarantee word
+        # timing. Search the other enabled slots without refetching the hinted id.
+        alternative = await self.resolve(session, track, [source for source in sources if source != hint.provider])
+        if alternative is not None and (
+            _CONF_RANK[alternative.confidence], alternative.document.has_word_timing
+        ) > (_CONF_RANK[exact.confidence], exact.document.has_word_timing):
+            return alternative
+        return exact
 
     async def _resolve_once(
         self,
@@ -326,15 +337,15 @@ class LyricsResolver:
         track_key: ResolutionCacheKey,
         failures: set[str],
     ) -> LyricsSourceResult | None:
-        """Pick the best result across sources: highest confidence, then the
-        configured order. Free (no-network) candidates — live adapters and cache hits
+        """Pick by confidence, actual word timing, then configured order.
+        Free (no-network) candidates — live adapters and cache hits
         — are collected first, then network sources are fetched CONCURRENTLY,
         but only when a HIGH from that source could still beat what we already hold.
-        So a cached/cider HIGH at the top of the order costs no network, latency is
-        the slowest single needed source (not the sum), and a lower-priority result
-        never wins a confidence tie over a higher-priority one."""
+        So a cached/cider word-timed HIGH at the top costs no network, latency is
+        the slowest single needed source (not the sum). Source order breaks ties
+        only after matching confidence and timing quality are equal."""
         best: LyricsSourceResult | None = None
-        best_score: tuple[int, int] | None = None
+        best_score: tuple[int, bool, int] | None = None
         resolved: set[str] = set()  # sources already answered without a network fetch
 
         # 1) Free candidates in configured order: live adapters and cache hits.
@@ -354,15 +365,15 @@ class LyricsResolver:
                     cached = None
                 if cached is not None:
                     candidate = self._result_from_cache(cached)
-            if candidate is not None:
+            if candidate is not None and candidate.document.lines:
                 resolved.add(source)
                 _log_candidate("cache-or-live", source, candidate)
-                score = (_CONF_RANK[candidate.confidence], -index)
+                score = (_CONF_RANK[candidate.confidence], candidate.document.has_word_timing, -index)
                 if best_score is None or score > best_score:
                     best, best_score = candidate, score
 
         # 2) Fetch only the network sources that could still change the answer: a
-        #    HIGH at index i beats the current best iff (HIGH, -i) > best_score.
+        #    A word-timed HIGH at index i is that source's optimistic ceiling.
         now = time.monotonic()
         tasks: dict[str, asyncio.Task[LyricsSourceResult | None]] = {}
         try:
@@ -374,7 +385,7 @@ class LyricsResolver:
                     continue
                 if self._negative_until.get((source, track_key), 0.0) > now:
                     continue
-                if best_score is not None and (_CONF_RANK[MatchConfidence.HIGH], -index) <= best_score:
+                if best_score is not None and (_CONF_RANK[MatchConfidence.HIGH], True, -index) <= best_score:
                     continue
                 if session is None:
                     raise LyricsSourceError(f"network source {source!r} requires an HTTP session")
@@ -390,13 +401,13 @@ class LyricsResolver:
                     result = await self._resolved_source(source, track_key, pending.pop(source), failures)
                     if result is None:
                         continue
-                    score = (_CONF_RANK[result.confidence], -sources.index(source))
+                    score = (_CONF_RANK[result.confidence], result.document.has_word_timing, -sources.index(source))
                     if best_score is None or score > best_score:
                         best_score = score
                         best = result
                 if best_score is not None and pending:
-                    # Nothing still pending can beat a HIGH from an earlier-ordered source.
-                    ceiling = (_CONF_RANK[MatchConfidence.HIGH], -min(sources.index(s) for s in pending))
+                    # Only word-timed HIGH lyrics can make later slots irrelevant.
+                    ceiling = (_CONF_RANK[MatchConfidence.HIGH], True, -min(sources.index(s) for s in pending))
                     if best_score >= ceiling:
                         break
             return best

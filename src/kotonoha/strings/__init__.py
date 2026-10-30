@@ -254,12 +254,14 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "set.prefer_best_hint": {
         "en": "Query the enabled sources at the same time and keep the highest-confidence "
-              "match (ties keep your order). Enabled by default. Off = stop at the first source that has lyrics.",
-        "zh-Hans": "默认开启：同时查询已启用的来源，保留匹配度最高的一个（相同则按你的排序）。"
+              "match, preferring word timing on a tie, then your order. Enabled by default. "
+              "Off = stop at the first source that has lyrics.",
+        "zh-Hans": "默认开启：同时查询已启用的来源，优先最高匹配度；相同时优先逐字歌词，再按你的排序。"
                    "关闭则按顺序取第一个有歌词的来源。",
-        "zh-Hant": "預設開啟：同時查詢已啟用的來源，保留匹配度最高的一個（相同則按你的排序）。"
+        "zh-Hant": "預設開啟：同時查詢已啟用的來源，優先最高匹配度；相同時優先逐字歌詞，再按你的排序。"
                    "關閉則按順序取第一個有歌詞的來源。",
-        "ja": "デフォルトで有効。有効なソースを同時に照会し、最も確度の高い一致を採用（同点は指定順）。"
+        "ja": "デフォルトで有効。有効なソースを同時に照会し、最も確度の高い一致を採用。"
+              "同点なら単語単位の歌詞を優先し、次に指定順で選択。"
               "オフにすると最初に歌詞が見つかったソースで停止。",
     },
     "set.fuzzy_match": {

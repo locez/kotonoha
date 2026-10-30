@@ -135,7 +135,9 @@ uv run kotonoha
 
 Open **Settings** from the tray. Under **Sources**, lyric providers can be reordered or disabled. The default order is `netease -> lrclib -> kugou`. The display sources below it can also have multiple enabled entries; their order controls which live player source wins when MPRIS is unavailable.
 
-**Prefer best match** is enabled by default: cached results and matching Cider snapshots are considered first, then network sources compete by match quality. Disable it for strict ordered fallback.
+**Prefer best match** is enabled by default: candidates compete by match confidence, then usable word timing, then your source order. A line-timed cache hit, Cider snapshot, or exact player hint can be upgraded by equally well-matched word lyrics from another enabled source. Manual selections remain authoritative. Disable it for strict ordered fallback.
+
+For local audio, place `song.ttml` or `song.lrc` beside `song.flac` (or another audio extension). TTML supports line and word timing plus inline translations. Local files and embedded lyric tags prefer word timing; TTML wins a sidecar format tie. Embedded tags require the `embedded-lyrics` extra. The current network integrations provide NetEase YRC/LRC, Kugou KRC/LRC, LRCLIB LRC, and QQ Music LRC; Cider supplies structured timed lyrics. They do not fetch raw TTML directly.
 
 The magnifying-glass button on the overlay opens manual lyric search for the current
 track. Title, artist, and album are editable; the current duration is shown as

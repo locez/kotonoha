@@ -625,9 +625,8 @@ async def test_best_mode_same_confidence_keeps_configured_order():
     assert result.source_id == "netease"
 
 
-async def test_best_mode_cider_at_top_skips_network():
-    # A cider match at the top of the order is HIGH and unbeatable, so best mode
-    # returns it without launching any network fetch.
+async def test_best_mode_line_cider_at_top_allows_network_word_search():
+    # A line-timed HIGH may still be improved by words from another source.
     calls = []
     resolver = resolver_with_fakes(calls, prefer_best=True, cider_match=live_match())
 
@@ -636,11 +635,11 @@ async def test_best_mode_cider_at_top_skips_network():
     assert result is not None
     assert result.source_id == "cider"
     assert result.document.source_id == "apple-music"
-    assert "network:netease" not in calls
+    assert "network:netease" in calls
 
 
-async def test_best_mode_cached_hit_short_circuits_network():
-    # A cached hit on any ordered source returns before any network fetch begins.
+async def test_best_mode_line_cache_hit_allows_other_sources_to_supply_words():
+    # Retain the cache hit when no word upgrade exists, without refetching its source.
     calls = []
     resolver = resolver_with_fakes(
         calls,
@@ -653,7 +652,7 @@ async def test_best_mode_cached_hit_short_circuits_network():
     assert result is not None
     assert result.source_id == "netease"
     assert "network:netease" not in calls
-    assert "network:lrclib" not in calls
+    assert "network:lrclib" in calls
     assert result.document.origin is LyricsOrigin.CACHE
     assert result.document.cache_state is LyricsCacheState.FROM_CACHE
 

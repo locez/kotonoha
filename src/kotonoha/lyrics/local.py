@@ -9,54 +9,77 @@ from pathlib import Path
 from ..file_access import BoundedRegularFileReader
 from .lrc_parser import parse_lrc
 from .models import LyricLine
+from .ttml_parser import parse_ttml
 
 #: A sidecar is a lyric file; anything near this size is not one. The read is
 #: bounded because the path comes from a player, not from this program.
 MAX_SIDECAR_BYTES = 4 * 1024 * 1024
 
 
-def _read_regular_file(path: Path) -> bytes | None:
-    """Return complete sidecar bytes, or None if the path fails the file contract."""
-    return BoundedRegularFileReader(MAX_SIDECAR_BYTES).read(path).data
+class SidecarLyricsReader:
+    """Own adjacent-file validation and format selection through a bounded reader."""
+
+    def __init__(self, reader: BoundedRegularFileReader) -> None:
+        self._reader: BoundedRegularFileReader = reader
+
+    def read(self, audio_path: Path) -> list[LyricLine]:
+        """Prefer actual word timing, using TTML before LRC when quality ties."""
+        if not audio_path.name:
+            # file:/// has no adjacent file name; with_suffix would raise.
+            return []
+        best: list[LyricLine] = []
+        try:
+            audio_directory = audio_path.parent.resolve()
+        except OSError:
+            return []
+        for suffix in (".ttml", ".lrc"):
+            sidecar = audio_path.with_suffix(suffix)
+            try:
+                raw = None if sidecar.resolve().parent != audio_directory else self._reader.read(sidecar).data
+            except OSError:
+                continue
+            if raw is None:
+                continue
+            lines: list[LyricLine] = []
+            if suffix == ".ttml":
+                lines = parse_ttml(raw)
+            else:
+                for encoding in ("utf-8-sig", "gb18030"):
+                    try:
+                        lines = parse_lrc(raw.decode(encoding))
+                    except UnicodeDecodeError:
+                        continue
+                    if lines:
+                        break
+            if any(line.has_word_timing for line in lines):
+                return lines
+            if not best:
+                best = lines
+        return best
 
 
 def load_local_lyrics(audio_path: Path) -> list[LyricLine]:
-    """Return timed lines for a local audio file from the first source that has them.
+    """Return the best timed lyrics from adjacent files and embedded tags.
 
-    Two sources, tried in order: an LRC file sitting beside the audio, then the
+    Two sources, tried in order: TTML/LRC files sitting beside the audio, then the
     lyrics embedded in the audio's own tags. The name says which job this is,
     because a function called load_sidecar that also parses tags left every caller
     having to know that its name described half of what it did.
+    Word timing wins; sidecar lyrics win a tie. These public boundary helpers own
+    no long-lived state: each read closes its descriptors before returning.
     """
-    lines = load_sidecar_lyrics(audio_path)
-    return lines if lines else load_embedded_lyrics(audio_path)
+    sidecar = load_sidecar_lyrics(audio_path)
+    if any(line.has_word_timing for line in sidecar):
+        return sidecar
+    embedded = load_embedded_lyrics(audio_path)
+    if any(line.has_word_timing for line in embedded):
+        return embedded
+    return sidecar if sidecar else embedded
 
 
 def load_sidecar_lyrics(audio_path: Path) -> list[LyricLine]:
-    """Return timed lines from the LRC file adjacent to the audio file."""
-    if not audio_path.name:
-        # A player publishing xesam:url = "file:///" reaches here as Path("/"), and
-        # with_suffix raises ValueError on a path with no name — outside the OSError
-        # handled below. Nothing adjacent to a root can be a sidecar.
-        return []
-    sidecar = audio_path.with_suffix(".lrc")
-    audio_directory = audio_path.parent.resolve()
-
-    try:
-        raw = None if sidecar.resolve().parent != audio_directory else _read_regular_file(sidecar)
-    except OSError:
-        raw = None
-
-    if raw is None:
-        return []
-    for encoding in ("utf-8", "gb18030"):
-        try:
-            lines = parse_lrc(raw.decode(encoding))
-            if lines:
-                return lines
-        except UnicodeDecodeError:
-            continue
-    return []
+    """Read adjacent TTML/LRC files through the bounded local-file boundary."""
+    return SidecarLyricsReader(BoundedRegularFileReader(MAX_SIDECAR_BYTES)).read(audio_path)
 
 
 def load_embedded_lyrics(audio_path: Path) -> list[LyricLine]:
@@ -85,10 +108,15 @@ def load_embedded_lyrics(audio_path: Path) -> list[LyricLine]:
             audio = mutagen.File(handle)
             if audio is None or audio.tags is None:
                 return []
+            best: list[LyricLine] = []
             for text in _embedded_texts(audio.tags):
-                lines = parse_lrc(text)
-                if lines:
+                normalized = text.lstrip("\ufeff \t\r\n")
+                lines = parse_ttml(normalized) if normalized.startswith("<") else parse_lrc(normalized)
+                if any(line.has_word_timing for line in lines):
                     return lines
+                if not best:
+                    best = lines
+            return best
     except (AttributeError, KeyError, IndexError, OSError, TypeError, ValueError, mutagen.MutagenError):
         return []
     finally:
