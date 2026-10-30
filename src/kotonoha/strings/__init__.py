@@ -235,6 +235,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "zh-Hant": "選擇提供歌詞的 MPRIS 播放器。",
         "ja": "歌詞を取得する MPRIS プレーヤーを選択します。",
     },
+    "src.amll": {"en": "AMLL TTML DB", "zh-Hans": "AMLL TTML DB", "zh-Hant": "AMLL TTML DB", "ja": "AMLL TTML DB"},
     "src.netease": {"en": "Netease", "zh-Hans": "网易云", "zh-Hant": "網易雲", "ja": "网易云"},
     "src.lrclib": {"en": "lrclib", "zh-Hans": "lrclib", "zh-Hant": "lrclib", "ja": "lrclib"},
     "src.kugou": {"en": "Kugou", "zh-Hans": "酷狗", "zh-Hant": "酷狗", "ja": "酷狗（Kugou）"},

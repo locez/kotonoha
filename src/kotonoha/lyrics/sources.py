@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -18,6 +19,7 @@ from .match import MatchConfidence, TrackMetadata
 from .models import LyricLine, LyricsCacheState, LyricsDocument, LyricsOrigin
 
 PayloadParser = Callable[[Mapping[str, str]], tuple[LyricLine, ...]]
+logger = logging.getLogger(__name__)
 
 
 class LyricsSourceKind(StrEnum):
@@ -236,16 +238,32 @@ class ExactLyricsSource:
         hint: LyricsHint,
         *,
         enabled_sources: tuple[str, ...],
+        prefer_best: bool = True,
     ) -> LyricsSourceResult | None:
-        """Resolve only when the hinted source is enabled for this generation."""
+        """Try enabled adapters that understand the ID, including cross-platform catalogs.
+
+        Exact identity is retained across provider failures. In best mode word
+        timing wins; otherwise the configured first successful source wins.
+        """
         if hint.provider == self._local.source_id:
             return await self._local.resolve_exact(session, track, hint)
-        if hint.provider not in enabled_sources:
-            return None
-        source = self._sources.get(hint.provider)
-        if source is None:
-            return None
-        return await source.resolve_exact(session, track, hint)
+        best: LyricsSourceResult | None = None
+        for name in dict.fromkeys(enabled_sources):
+            source = self._sources.get(name)
+            if source is None:
+                continue
+            try:
+                result = await source.resolve_exact(session, track, hint)
+            except (LyricsSourceError, TimeoutError, ValueError) as exc:
+                logger.warning("%s exact lyrics fetch failed: %s: %s", name, type(exc).__name__, exc)
+                continue
+            if result is None or not result.document.lines:
+                continue
+            if not prefer_best or result.document.has_word_timing:
+                return result
+            if best is None:
+                best = result
+        return best
 
 
 __all__ = [

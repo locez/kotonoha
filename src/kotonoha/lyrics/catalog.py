@@ -2,10 +2,23 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from types import MappingProxyType
+from typing import Protocol
 
 from .sources import ExactLyricsSource, LocalLyricsSource, LyricsSource
+
+
+class LyricsSourceLifecycle(Protocol):
+    """Resources shared by automatic and manual lookups, owned by the catalog."""
+
+    def start(self) -> None:
+        """Reopen resources without starting work."""
+        ...
+
+    def close(self) -> None:
+        """Release resources after lookup and manual-search tasks have stopped."""
+        ...
 
 
 class LyricsSourceCatalog:
@@ -21,12 +34,14 @@ class LyricsSourceCatalog:
         *,
         live_source: LyricsSource,
         local_source: LocalLyricsSource,
+        managed_sources: Sequence[LyricsSourceLifecycle] = (),
     ) -> None:
         self._sources = dict(providers)
         self._sources[live_source.source_id] = live_source
         self._local_source = local_source
         self._exact_source = ExactLyricsSource(self._sources, self._local_source)
         self._live_source_id = live_source.source_id
+        self._managed_sources: tuple[LyricsSourceLifecycle, ...] = tuple(managed_sources)
 
     @property
     def sources(self) -> Mapping[str, LyricsSource]:
@@ -44,12 +59,16 @@ class LyricsSourceCatalog:
         return self._live_source_id
 
     def close(self) -> None:
-        """Release workers owned by local/exact source adapters."""
+        """Release local and shared provider workers after all lookup callers stop."""
         self._local_source.close()
+        for source in self._managed_sources:
+            source.close()
 
     def start(self) -> None:
-        """Reopen workers owned by local/exact source adapters."""
+        """Reopen local and shared provider workers without starting work."""
         self._local_source.start()
+        for source in self._managed_sources:
+            source.start()
 
 
 __all__ = ["LyricsSourceCatalog"]
