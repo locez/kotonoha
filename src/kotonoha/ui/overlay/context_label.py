@@ -193,7 +193,9 @@ class ContextLabel(QLabel):
                 if source is None:
                     source = self._rasterize(line.text)
                     self._sources[line.text] = source
-                sigma = 0.0 if level == 0 else 0.55 * level ** 1.15
+                # Keep the nearest row sharp. Distant rows already shrink and
+                # fade, so ease toward a small blur instead of erasing strokes.
+                sigma = 0.8 * (1.0 - 0.5 ** max(0, level - 1))
                 image = blur_image(source, sigma)
                 self._rasters[key] = image
             painter.setOpacity(min(1.0, opacity * weight))

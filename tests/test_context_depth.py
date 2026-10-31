@@ -92,7 +92,10 @@ def test_ten_rows_render_with_progressive_depth(context: ContextLabel) -> None:
         peak = max(max(row) for row in alphas)
         energy = sum(sum(row) for row in alphas)
         edges = sum(sum(abs(a - b) for a, b in zip(row, row[1:], strict=False)) for row in alphas)
-        return peak, edges / energy
+        # Compare at the same letter size: smaller glyphs have more perimeter
+        # per unit of ink even when their edges are softer. Ignore faint tails.
+        ink_height = sum(any(alpha > peak * 0.1 for alpha in row) for row in alphas)
+        return peak, edges * ink_height / energy
 
     near_peak, near_edges = contrast(first)
     far_peak, far_edges = contrast(last)

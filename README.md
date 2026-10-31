@@ -159,8 +159,9 @@ The active-line glow uses a restrained inner halo and a wider bloom behind the s
 Each foreground region is colored once to keep the glyph edges crisp. Current-word highlighting brightens the word without
 adding an outline. Both effects offer subtle and expressive intensity settings.
 **Context lines on each side** in **Settings -> Lyrics** defaults to one and accepts larger
-counts, including ten or more. Rows farther from the active lyric become smaller, dimmer,
-and more blurred. Adjacent line changes scroll smoothly when animations are enabled;
+counts, including ten or more. The nearest rows stay sharp; farther rows become smaller,
+dimmer, and gently blurred. Blur levels off with distance to preserve letter shapes.
+Adjacent line changes scroll smoothly when animations are enabled;
 jumps across multiple lines and track changes settle immediately. The viewport clips rows that exceed the
 screen space without changing the saved count. **Show current line only** hides context
 while preserving that choice.
