@@ -196,7 +196,7 @@ def test_overlay_binds_adjacent_steps_seeks_and_context_visibility(qapp: QApplic
 
 @pytest.mark.parametrize("count", [1, 3])
 def test_context_blur_changes_pixels_and_can_be_disabled(context: ContextLabel, count: int) -> None:
-    """The setting visibly changes focus, including for one row, and clears cached blur."""
+    """Maximum blur substantially softens even one context row; zero restores focus."""
     context.set_lines(_lines(0, 3, repeated_text=True))
     images: list[QImage] = []
     for strength in (0.0, 1.0, 0.0):
@@ -213,4 +213,6 @@ def test_context_blur_changes_pixels_and_can_be_disabled(context: ContextLabel, 
             for y in range(image.height()) for x in range(image.width() - 1)
         )
 
-    assert edge_contrast(blurred) < edge_contrast(sharp)
+    # A tiny pixel difference is not enough for the slider's maximum: the nearest
+    # row must lose at least half of its edge contrast, not just far rows.
+    assert edge_contrast(blurred) < 0.5 * edge_contrast(sharp)

@@ -197,9 +197,9 @@ class ContextLabel(QLabel):
                 if source is None:
                     source = self._rasterize(line.text)
                     self._sources[line.text] = source
-                # A small near-row contribution keeps the slider useful even
-                # with one row; distant blur levels off as text shrinks/fades.
-                depth_blur = 0.0 if level == 0 else 1.0 - 0.85 * 0.5 ** (level - 1)
+                # The nearest row must visibly defocus at high slider values.
+                # Start at half strength and ease toward full strength with depth.
+                depth_blur = 1.0 - 0.5 ** level
                 sigma = 3.2 * self._blur * depth_blur
                 image = blur_image(source, sigma)
                 self._rasters[key] = image
