@@ -419,13 +419,13 @@ class SettingsDialog(ThemedSettingsDialog):
                 self.staged_config.accent_sweep,
             )
         accent_start, accent_end, accent_sweep = accent_data
-        w.panel_opacity.set_value(w.opacity_active_key, w.opacity.value() / 100.0)  # save the active slider
+        w.panel_opacity.set_value(w.opacity_active_key, w.opacity.value / 100.0)  # save the active slider
         return replace(
             self.staged_config,
             ui_language=str(w.ui_language.currentData()),
             theme=str(w.theme_combo.currentData()),
             frost_window=w.frost_window.isChecked(),
-            settings_opacity=w.settings_opacity.value() / 100.0,
+            settings_opacity=w.settings_opacity.value / 100.0,
             lyrics_script=str(w.lyrics_script.currentData()),
             interlude_style=str(w.interlude_style.currentData()),
             interlude_countdown=str(w.interlude_countdown.currentData()),
@@ -454,8 +454,8 @@ class SettingsDialog(ThemedSettingsDialog):
             karaoke=w.karaoke.isChecked(),
             lead_ms=w.lead.value(),
             show_translation=w.translation.isChecked(),
-            current_line_only=w.current_line_only.isChecked(),
             context_lines=w.context_lines.value(),
+            context_blur=w.context_blur.value / 100.0,
             anchor_top=bool(w.anchor.currentData()),
             margin_edge=w.margin_edge.value(),
             margin_x=w.margin_x.value(),

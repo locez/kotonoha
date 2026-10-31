@@ -101,12 +101,8 @@ def merge_settings(
             if "show_translation" in changed_fields
             else current.show_translation
         ),
-        current_line_only=(
-            submitted.current_line_only
-            if "current_line_only" in changed_fields
-            else current.current_line_only
-        ),
         context_lines=submitted.context_lines if "context_lines" in changed_fields else current.context_lines,
+        context_blur=submitted.context_blur if "context_blur" in changed_fields else current.context_blur,
         lyrics_script=(
             submitted.lyrics_script
             if "lyrics_script" in changed_fields

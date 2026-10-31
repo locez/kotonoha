@@ -160,8 +160,8 @@ class Config:
     karaoke: bool = True             # per-word sweep when timing == "Word"
     lead_ms: int = 120               # advance the sweep by this many ms (compensate pipeline latency)
     show_translation: bool = True    # bilingual
-    current_line_only: bool = False  # hide the previous and next context lines
-    context_lines: int = 1          # requested rows per side; the viewport clips excess rows
+    context_lines: int = 1          # rows per side; 0 hides context, excess rows are clipped to the viewport
+    context_blur: float = 0.25      # context defocus strength 0.0..1.0; 0 disables blur
     translation_language: str = "auto"  # "auto" -> from system locale, else an Apple tag (zh-Hans/en/ja/...)
     lyrics_sources: list[str] = field(default_factory=lambda: list(DEFAULT_LYRICS_SOURCES))
     display_sources: list[str] = field(default_factory=lambda: list(DEFAULT_DISPLAY_SOURCES))
@@ -225,9 +225,9 @@ class Config:
             karaoke=_clean_bool(self.karaoke, True),
             lead_ms=_clamp_int(self.lead_ms, -LEAD_MS_LIMIT, LEAD_MS_LIMIT, 120),
             show_translation=_clean_bool(self.show_translation, True),
-            current_line_only=_clean_bool(self.current_line_only, False),
             # QSpinBox uses a signed 32-bit integer; do not impose a smaller UX cap.
-            context_lines=_clamp_int(self.context_lines, 1, 2_147_483_647, 1),
+            context_lines=_clamp_int(self.context_lines, 0, 2_147_483_647, 1),
+            context_blur=_clamp_float(self.context_blur, 0.0, 1.0, 0.25),
             translation_language=str(self.translation_language),
             accent_start=str(self.accent_start),
             accent_end=str(self.accent_end),
@@ -280,6 +280,11 @@ class Config:
         filtered: dict[str, Any] = {
             k: v for k, v in data.items() if isinstance(k, str) and k in known
         }
+        # Old files can contain both a count and a visibility override. Preserve
+        # the effective choice, then write only the single context-lines setting.
+        # TODO: Remove when configurations predating context_lines=0 are no longer supported.
+        if _clean_bool(data.get("current_line_only"), False):
+            filtered["context_lines"] = 0
         try:
             return cls(**filtered).clamped()
         except (TypeError, ValueError):

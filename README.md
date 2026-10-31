@@ -158,13 +158,18 @@ Settings also controls fonts, colors, opacity, position, translation, icons, pan
 The active-line glow uses a restrained inner halo and a wider bloom behind the sung portion, with a feathered progress edge.
 Each foreground region is colored once to keep the glyph edges crisp. Current-word highlighting brightens the word without
 adding an outline. Both effects offer subtle and expressive intensity settings.
-**Context lines on each side** in **Settings -> Lyrics** defaults to one and accepts larger
-counts, including ten or more. The nearest rows stay sharp; farther rows become smaller,
-dimmer, and gently blurred. Blur levels off with distance to preserve letter shapes.
-Adjacent line changes scroll smoothly when animations are enabled;
-jumps across multiple lines and track changes settle immediately. The viewport clips rows that exceed the
-screen space without changing the saved count. **Show current line only** hides context
-while preserving that choice.
+**Context lines on each side** in **Settings -> Lyrics** defaults to one. Set it to zero
+to show only the current line, or enter larger counts, including ten or more. Older
+**Show current line only** settings are automatically converted to zero context lines.
+Farther rows become smaller, dimmer, and more blurred. **Context blur** adjusts the
+strength from 0% (no blur) to 100%, with a gentle 25% default. It retains its value while
+context is hidden. Adjacent line changes scroll smoothly when animations are enabled;
+jumps across multiple lines and track changes settle immediately. The viewport clips
+rows that exceed the screen space without changing the saved count.
+
+Window opacity, panel opacity, and context blur use sliders with percentage inputs for
+precise edits. The regular and frosted panels retain independent opacity values. Click
+**Apply** to use your changes; **Reset tab** restores that page's defaults.
 
 ## Cider HTTP API (optional)
 

@@ -114,12 +114,36 @@ def test_lyrics_script_clamps_unknown_to_off():
     assert Config.from_dict({"lyrics_script": "bogus"}).lyrics_script == "off"
 
 
-def test_current_line_only_roundtrips_and_coerces(tmp_path):
+@pytest.mark.parametrize(
+    ("legacy", "count", "expected"),
+    [(True, 10, 0), (1, 3, 0), (False, 10, 10), (0, 25, 25), ("true", 3, 3)],
+)
+def test_legacy_context_visibility_migrates_once(
+    tmp_path: Path, legacy: object, count: int, expected: int,
+) -> None:
+    """Old hidden-context settings survive upgrades without persisting two controls."""
     path = tmp_path / "c.json"
-    save_config(Config(current_line_only=True), path)
-    assert load_config(path).current_line_only is True
-    assert Config.from_dict({"current_line_only": 0}).current_line_only is False
-    assert Config.from_dict({"current_line_only": 1}).current_line_only is True
+    config = Config.from_dict({"current_line_only": legacy, "context_lines": count})
+    assert config.context_lines == expected
+    save_config(config, path)
+    assert "current_line_only" not in json.loads(path.read_text(encoding="utf-8"))
+    assert load_config(path).context_lines == expected
+    assert Config.from_dict({"current_line_only": True}).context_lines == 0
+
+
+@pytest.mark.parametrize("strength", [0.0, 0.25, 0.67, 1.0])
+def test_context_blur_roundtrips(tmp_path: Path, strength: float) -> None:
+    """A chosen blur amount, including disabled blur, survives persistence."""
+    path = tmp_path / "c.json"
+    config = Config.from_dict({"context_blur": strength})
+    save_config(config, path)
+    assert load_config(path).context_blur == strength
+
+
+@pytest.mark.parametrize(("value", "expected"), [(None, 0.25), ("bad", 0.25), (-1, 0.0), (2, 1.0)])
+def test_context_blur_validates_external_values(value: object, expected: float) -> None:
+    """Malformed settings fall back; numeric strengths stay in the percentage range."""
+    assert Config.from_dict({"context_blur": value}).context_blur == expected
 
 
 def test_typography_and_panel_size_roundtrip(tmp_path):

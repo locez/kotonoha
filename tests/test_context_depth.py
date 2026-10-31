@@ -49,7 +49,7 @@ def context(qapp: QApplication) -> Iterator[ContextLabel]:
     qapp.processEvents()
 
 
-@pytest.mark.parametrize("count", [1, 3, 10, 25])
+@pytest.mark.parametrize("count", [0, 1, 3, 10, 25])
 def test_context_count_survives_settings_merge_and_persistence(tmp_path: Path, count: int) -> None:
     """Neither settings nor persistence may silently truncate a chosen count."""
     candidate = Config.from_dict({"context_lines": count})
@@ -61,18 +61,18 @@ def test_context_count_survives_settings_merge_and_persistence(tmp_path: Path, c
     assert load_config(path).context_lines == count
     assert load_config(path).margin_x == 84
     assert state.reset_page(5).context_lines == 1
-    assert Config.from_dict({"context_lines": 0}).context_lines == 1
+    assert Config.from_dict({"context_lines": -1}).context_lines == 0
 
 
-def test_settings_accept_ten_or_more_context_rows_and_preserve_hidden_choice(qapp: QApplication) -> None:
-    """The input must allow more than a few rows, including with context hidden."""
-    dialog = SettingsDialog(Config(context_lines=10, current_line_only=True))
+def test_settings_accept_zero_and_ten_or_more_context_rows(qapp: QApplication) -> None:
+    """One numeric control covers hidden context and arbitrarily many rows."""
+    dialog = SettingsDialog(Config(context_lines=10))
     try:
         assert dialog.form_widgets.context_lines.value() == 10
         dialog.form_widgets.context_lines.setValue(25)
         assert dialog.current_config().context_lines == 25
-        dialog.form_widgets.current_line_only.setChecked(False)
-        assert dialog.current_config().context_lines == 25
+        dialog.form_widgets.context_lines.setValue(0)
+        assert dialog.current_config().context_lines == 0
     finally:
         dialog.close()
 
@@ -187,8 +187,30 @@ def test_overlay_binds_adjacent_steps_seeks_and_context_visibility(qapp: QApplic
         overlay._on_frame(project_document(document, 225.0))
         assert animation.state() is QAbstractAnimation.State.Stopped
         assert overlay._next_label.text() == "Lyric 23"
-        overlay.apply_config(replace(overlay._config, current_line_only=True))
+        overlay.apply_config(replace(overlay._config, context_lines=0))
         assert overlay._prev_label.isHidden() and overlay._next_label.isHidden()
-        assert overlay._config.context_lines == 10
+        assert overlay._config.context_lines == 0
     finally:
         overlay.close()
+
+
+@pytest.mark.parametrize("count", [1, 3])
+def test_context_blur_changes_pixels_and_can_be_disabled(context: ContextLabel, count: int) -> None:
+    """The setting visibly changes focus, including for one row, and clears cached blur."""
+    context.set_lines(_lines(0, 3, repeated_text=True))
+    images: list[QImage] = []
+    for strength in (0.0, 1.0, 0.0):
+        context.configure(count=count, animate=False, blur=strength)
+        context.resize(context.sizeHint())
+        images.append(context.grab().toImage())
+    sharp, blurred, restored = images
+    assert sharp != blurred
+    assert restored == sharp
+
+    def edge_contrast(image: QImage) -> int:
+        return sum(
+            abs(image.pixelColor(x, y).alpha() - image.pixelColor(x + 1, y).alpha())
+            for y in range(image.height()) for x in range(image.width() - 1)
+        )
+
+    assert edge_contrast(blurred) < edge_contrast(sharp)

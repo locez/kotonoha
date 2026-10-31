@@ -68,6 +68,7 @@ class SettingsPageBuilder:
         w.panel_width_mode.currentIndexChanged.connect(self.update_panel_width_enabled)
         w.panel.currentIndexChanged.connect(self.on_panel_style_changed)
         w.accent.activated.connect(self.on_accent_activated)
+        w.context_lines.valueChanged.connect(self.update_context_blur_enabled)
 
     @property
     def _config(self) -> Config:
@@ -104,7 +105,9 @@ class SettingsPageBuilder:
         }.get(d.blur_reason or "")
         form.addRow(self._hint(t(reason_key) if reason_key else t("set.frost_window_hint")))
 
-        self._configure_spin(w.settings_opacity, 0, 100, round(self._config.settings_opacity * 100), " %")
+        w.settings_opacity.configure(
+            value=round(self._config.settings_opacity * 100), label=t("set.settings_opacity"),
+        )
         form.addRow(t("set.settings_opacity"), w.settings_opacity)
 
         w.restart_button.setText(t("btn.restart"))
@@ -181,7 +184,7 @@ class SettingsPageBuilder:
 
         w.panel_opacity = PanelOpacityState(self._config.opacity, self._config.frost_opacity)
         w.opacity_active_key = self.opacity_key()
-        self._configure_spin(w.opacity, 0, 100, round(w.panel_opacity.value_for(w.opacity_active_key) * 100), " %")
+        w.opacity.configure(value=round(w.panel_opacity.value_for(w.opacity_active_key) * 100), label=t("set.opacity"))
         form.addRow(t("set.opacity"), w.opacity)
         w.panel_tint.setText(t("set.panel_tint"))
         w.panel_tint.setChecked(self._config.panel_accent_tint)
@@ -251,13 +254,13 @@ class SettingsPageBuilder:
         w.translation.setText(t("set.show_translation"))
         w.translation.setChecked(self._config.show_translation)
         form.addRow(w.translation)
-        w.current_line_only.setText(t("set.current_line_only"))
-        w.current_line_only.setChecked(self._config.current_line_only)
-        form.addRow(w.current_line_only)
-        form.addRow(self._hint(t("set.current_line_only_hint")))
-        self._configure_spin(w.context_lines, 1, 2_147_483_647, self._config.context_lines, "")
+        self._configure_spin(w.context_lines, 0, 2_147_483_647, self._config.context_lines, "")
         form.addRow(t("set.context_lines"), w.context_lines)
         form.addRow(self._hint(t("set.context_lines_hint")))
+        w.context_blur.configure(value=round(self._config.context_blur * 100), label=t("set.context_blur"))
+        form.addRow(t("set.context_blur"), w.context_blur)
+        form.addRow(self._hint(t("set.context_blur_hint")))
+        self.update_context_blur_enabled()
 
         w.lyrics_script.clear()
         for value, key in (
@@ -338,12 +341,16 @@ class SettingsPageBuilder:
         """Return the opacity slot represented by the selected panel style."""
         return "frost_opacity" if str(self._widgets.panel.currentData()) == "frost" else "opacity"
 
+    def update_context_blur_enabled(self) -> None:
+        """Keep the chosen blur amount while context is hidden by a zero count."""
+        self._widgets.context_blur.setEnabled(self._widgets.context_lines.value() > 0)
+
     def on_panel_style_changed(self) -> None:
         """Preserve separate opacity values while switching panel styles."""
         w = self._widgets
-        w.panel_opacity.set_value(w.opacity_active_key, w.opacity.value() / 100.0)
+        w.panel_opacity.set_value(w.opacity_active_key, w.opacity.value / 100.0)
         w.opacity_active_key = self.opacity_key()
-        w.opacity.setValue(round(w.panel_opacity.value_for(w.opacity_active_key) * 100))
+        w.opacity.value = round(w.panel_opacity.value_for(w.opacity_active_key) * 100)
 
     def on_accent_activated(self, index: int) -> None:
         """Open the custom color picker when its combo entry is activated."""

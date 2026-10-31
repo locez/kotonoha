@@ -28,6 +28,7 @@ class ContextLabel(QLabel):
         self._lines: tuple[LyricLine, ...] = ()
         self._outgoing: tuple[LyricLine, int] | None = None
         self._count: int = 1
+        self._blur: float = 0.25
         self._animate: bool = True
         self._phase: float = 1.0
         self._direction: int = 0
@@ -45,11 +46,12 @@ class ContextLabel(QLabel):
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
-    def configure(self, *, count: int, animate: bool) -> None:
-        """Apply row count/motion settings after the label's font and colors."""
+    def configure(self, *, count: int, animate: bool, blur: float = 0.25) -> None:
+        """Apply row count, motion and 0..1 blur after the label's font and colors."""
         self.ensurePolished()
         self.stop()
-        self._count = max(1, count)
+        self._count = max(0, count)
+        self._blur = max(0.0, min(1.0, blur))
         self._animate = animate
         self._rasters.clear()
         self._sources.clear()
@@ -97,6 +99,8 @@ class ContextLabel(QLabel):
     def sizeHint(self) -> QSize:
         """Reserve the configured row count independently of song boundaries."""
         count = self._visible_count()
+        if count == 0:
+            return QSize(0, 0)
         widths = [self.fontMetrics().horizontalAdvance(line.text) for line in self._lines[:count]]
         width = max(widths, default=0) + 2 * _PADDING
         height = min(self._row_step() * count + 2 * _PADDING, self.maximumHeight())
@@ -193,9 +197,10 @@ class ContextLabel(QLabel):
                 if source is None:
                     source = self._rasterize(line.text)
                     self._sources[line.text] = source
-                # Keep the nearest row sharp. Distant rows already shrink and
-                # fade, so ease toward a small blur instead of erasing strokes.
-                sigma = 0.8 * (1.0 - 0.5 ** max(0, level - 1))
+                # A small near-row contribution keeps the slider useful even
+                # with one row; distant blur levels off as text shrinks/fades.
+                depth_blur = 0.0 if level == 0 else 1.0 - 0.85 * 0.5 ** (level - 1)
+                sigma = 3.2 * self._blur * depth_blur
                 image = blur_image(source, sigma)
                 self._rasters[key] = image
             painter.setOpacity(min(1.0, opacity * weight))

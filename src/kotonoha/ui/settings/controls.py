@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QSpinBox,
 )
 
+from .percentage import PercentageControl
 from .widgets import IconStrip, SettingsComboBox, SettingsFontComboBox
 
 IconPicker = tuple[IconStrip, dict[str, QListWidgetItem]]
@@ -53,7 +54,7 @@ class SettingsWidgets:
         self.ui_language = SettingsComboBox()
         self.theme_combo = SettingsComboBox()
         self.frost_window = QCheckBox()
-        self.settings_opacity = QSpinBox()
+        self.settings_opacity: PercentageControl = PercentageControl()
         self.restart_button = QPushButton()
 
         self.tray_icon_list = IconStrip()
@@ -76,7 +77,7 @@ class SettingsWidgets:
         self.panel_overflow_mode: SettingsComboBox = SettingsComboBox()
         self.panel_opacity = PanelOpacityState()
         self.opacity_active_key: OpacityKey = "opacity"
-        self.opacity = QSpinBox()
+        self.opacity: PercentageControl = PercentageControl()
         self.panel_tint = QCheckBox()
 
         self.accent = SettingsComboBox()
@@ -91,8 +92,8 @@ class SettingsWidgets:
         self.karaoke = QCheckBox()
         self.lead = QSpinBox()
         self.translation = QCheckBox()
-        self.current_line_only = QCheckBox()
         self.context_lines: QSpinBox = QSpinBox()
+        self.context_blur: PercentageControl = PercentageControl()
         self.lyrics_script = SettingsComboBox()
         self.interlude_style = SettingsComboBox()
         self.interlude_countdown = SettingsComboBox()

@@ -217,7 +217,7 @@ def test_effects_apply_to_current_line_only_and_paint_safely(qapp):
     qapp.processEvents()
 
 
-def test_current_line_only_hides_context_and_keeps_current_translation(qapp):
+def test_zero_context_hides_surrounding_rows_and_keeps_current_translation(qapp):
     previous = LyricLine(0, "p", 0.0, 2.0, "previous", "", ())
     current = LyricLine(1, "c", 2.0, 4.0, "current", "译文", ())
     next_line = LyricLine(2, "n", 4.0, 6.0, "next", "", ())
@@ -236,7 +236,7 @@ def test_current_line_only_hides_context_and_keeps_current_translation(qapp):
     assert overlay._next_label.text() == "next"
     assert overlay._translation.text == "译文"
 
-    overlay.apply_config(Config(current_line_only=True))
+    overlay.apply_config(Config(context_lines=0))
     assert overlay._prev_label.isHidden() is True
     assert overlay._next_label.isHidden() is True
     assert overlay._current.text == "current"

@@ -87,7 +87,7 @@ class OverlayPresentationController:
             if isinstance(effect, QGraphicsDropShadowEffect):
                 effect.setColor(shadow)
         for context in (self._previous, self._next):
-            context.configure(count=config.context_lines, animate=config.fx_animate)
+            context.configure(count=config.context_lines, animate=config.fx_animate, blur=config.context_blur)
         self._configure_context_height()
 
         translation_font = QFont()
@@ -116,7 +116,7 @@ class OverlayPresentationController:
     def band_height(self) -> int:
         """Return the stable surface height required by the configured text."""
         main = self._config.font_size
-        context = 0 if self._config.current_line_only else self._config.context_font_size
+        context = self._config.context_font_size if self._config.context_lines > 0 else 0
         translation = self._config.translation_font_size if self._config.show_translation else 0
         feedback = 20
         context_height = 0 if context == 0 else self._previous.sizeHint().height()
@@ -201,7 +201,7 @@ class OverlayPresentationController:
 
     def _update_context_visibility(self) -> None:
         """Show or hide surrounding lyric context according to the current mode."""
-        visible = not self._config.current_line_only
+        visible = self._config.context_lines > 0
         self._previous.setVisible(visible)
         self._next.setVisible(visible)
 

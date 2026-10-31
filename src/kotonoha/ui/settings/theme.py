@@ -110,6 +110,19 @@ QSpinBox:hover, QComboBox:hover, QFontComboBox:hover, QLineEdit:hover { border-c
 /* Accent focus ring — clear interactive feedback on the control you're editing. */
 QSpinBox:focus, QComboBox:focus, QFontComboBox:focus, QLineEdit:focus { border: 1px solid %ACCENT%; }
 QSpinBox:disabled, QComboBox:disabled { color: %TEXT_DIM%; }
+QSlider:horizontal { min-height: 32px; background: transparent; }
+QSlider::groove:horizontal {
+    height: 6px; margin: 0 8px; border-radius: 3px; background: %FIELD_BORDER%;
+}
+QSlider::sub-page:horizontal { background: %ACCENT%; border-radius: 3px; }
+QSlider::handle:horizontal {
+    width: 16px; margin: -6px -8px; border-radius: 9px;
+    background: %ACCENT%; border: 1px solid %ACCENT%;
+}
+QSlider::handle:horizontal:hover, QSlider::handle:horizontal:focus { border: 1px solid %TEXT_STRONG%; }
+QSlider::sub-page:horizontal:disabled, QSlider::handle:horizontal:disabled {
+    background: %FIELD_BORDER%; border-color: %FIELD_BORDER%;
+}
 /* Keep the popup item rules as a fallback for styles that parent the view under
    the combo. Standalone popup views receive the same rules explicitly in the
    dialog because a dialog stylesheet cannot match a top-level popup sibling. */

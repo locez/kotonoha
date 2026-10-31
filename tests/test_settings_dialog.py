@@ -180,11 +180,11 @@ def test_idle_player_row_has_status_and_unavailable_choice_stays_selected(qapp):
     dialog.close()
 
 
-def test_current_line_only_control_roundtrips(qapp):
-    dialog = SettingsDialog(Config(current_line_only=True))
-    assert dialog.form_widgets.current_line_only.isChecked() is True
-    dialog.form_widgets.current_line_only.setChecked(False)
-    assert dialog.current_config().current_line_only is False
+def test_context_count_control_roundtrips_from_current_line_only(qapp):
+    dialog = SettingsDialog(Config(context_lines=0))
+    assert dialog.form_widgets.context_lines.value() == 0
+    dialog.form_widgets.context_lines.setValue(3)
+    assert dialog.current_config().context_lines == 3
     dialog.close()
 
 
@@ -330,12 +330,12 @@ def test_custom_accent_slot_is_reused_not_accumulated(qapp, monkeypatch):
 
 def test_opacity_is_independent_per_panel_style(qapp):
     dialog = SettingsDialog(Config(panel_style=PanelStyle.PILL, opacity=1.0, frost_opacity=0.4))
-    assert dialog.form_widgets.opacity.value() == 100  # shows the black panel's opacity
+    assert dialog.form_widgets.opacity.value == 100  # shows the black panel's opacity
     dialog.form_widgets.panel.setCurrentIndex(dialog.form_widgets.panel.findData("frost"))
-    assert dialog.form_widgets.opacity.value() == 40  # switches to the frosted panel's opacity
-    dialog.form_widgets.opacity.setValue(70)
+    assert dialog.form_widgets.opacity.value == 40  # switches to the frosted panel's opacity
+    dialog.form_widgets.opacity.value = 70
     dialog.form_widgets.panel.setCurrentIndex(dialog.form_widgets.panel.findData("pill"))
-    assert dialog.form_widgets.opacity.value() == 100  # black opacity preserved across the switch
+    assert dialog.form_widgets.opacity.value == 100  # black opacity preserved across the switch
     cfg = dialog.current_config()
     assert cfg.opacity == 1.0
     assert cfg.frost_opacity == 0.70  # the frosted change was kept separately
@@ -715,7 +715,7 @@ def test_tray_and_window_icons_are_chosen_independently(qapp):
 
 def test_reset_tab_restores_only_current_page(qapp):
     dialog = SettingsDialog(
-        Config(font_size=90, context_font_size=80, margin_edge=999, karaoke=False, current_line_only=True)
+        Config(font_size=90, context_font_size=80, margin_edge=999, karaoke=False, context_lines=0)
     )
     dialog._nav.setCurrentRow(2)  # Text page (0 General, 1 Icon, 2 Text)
     dialog._reset_current_page()
@@ -724,19 +724,19 @@ def test_reset_tab_restores_only_current_page(qapp):
     # Text fields reset...
     assert cfg.font_size == defaults.font_size
     assert cfg.context_font_size == defaults.context_font_size
-    assert cfg.current_line_only is True  # Lyrics-page edits survive a Text-page reset.
+    assert cfg.context_lines == 0  # Lyrics-page edits survive a Text-page reset.
     # ...but other pages' edits are untouched.
     assert cfg.margin_edge == 999
     assert cfg.karaoke is False
     dialog.close()
 
 
-def test_reset_lyrics_tab_restores_current_line_only(qapp):
-    dialog = SettingsDialog(Config(current_line_only=True, margin_edge=999))
+def test_reset_lyrics_tab_restores_one_context_row(qapp):
+    dialog = SettingsDialog(Config(context_lines=0, margin_edge=999))
     dialog._nav.setCurrentRow(5)  # Lyrics page
     dialog._reset_current_page()
     cfg = dialog.current_config()
-    assert cfg.current_line_only is False
+    assert cfg.context_lines == 1
     assert cfg.margin_edge == 999  # Position-page edits survive a Lyrics-page reset.
     dialog.close()
 
@@ -807,10 +807,10 @@ def test_settings_window_opacity_applies_and_roundtrips(qapp):
     # Painted-alpha, not setWindowOpacity (which the Qt Wayland plugin ignores):
     # in the light theme the card is thinned; the window fill is thinned in paintEvent.
     dialog = SettingsDialog(Config(settings_opacity=0.8, theme=ThemeMode.LIGHT))
-    assert dialog.form_widgets.settings_opacity.value() == 80
+    assert dialog.form_widgets.settings_opacity.value == 80
     assert dialog._win_opacity == 0.8
     assert "rgba(255, 255, 255, 204)" in dialog.styleSheet()  # 0.8 * 255 card alpha
-    dialog.form_widgets.settings_opacity.setValue(70)  # not applied until OK/Apply (no live preview)
+    dialog.form_widgets.settings_opacity.value = 70  # not applied until OK/Apply (no live preview)
     assert dialog._win_opacity == 0.8  # still the opened value
     dialog._emit()  # Apply
     assert dialog._win_opacity == 0.7
@@ -824,14 +824,14 @@ def test_settings_opacity_100_is_fully_opaque_and_range_is_full(qapp):
     # "100%" window still looked see-through before), and the spin allows 0..100.
     dialog = SettingsDialog(Config(settings_opacity=1.0, theme=ThemeMode.DARK))
     dialog.resize(200, 200)
-    assert dialog.form_widgets.settings_opacity.minimum() == 0
-    assert dialog.form_widgets.settings_opacity.maximum() == 100
+    assert dialog.form_widgets.settings_opacity.slider.minimum() == 0
+    assert dialog.form_widgets.settings_opacity.slider.maximum() == 100
     # Sampled inside the window's own fill, clear of the panels and their text:
     # the centre of a small dialog lands on a label, whose pixels are opaque
     # whatever the window is set to.
     opaque = dialog.grab().toImage().pixelColor(20, 20).alpha()
     assert opaque == 255  # fully solid at 100%
-    dialog.form_widgets.settings_opacity.setValue(50)
+    dialog.form_widgets.settings_opacity.value = 50
     dialog._emit()  # applied on Apply, not live
     assert dialog.grab().toImage().pixelColor(20, 20).alpha() < 200  # clearly see-through
     dialog.close()
