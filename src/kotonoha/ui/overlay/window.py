@@ -253,6 +253,7 @@ class LyricsOverlay(QWidget):
             self._next_label,
             window_size=self._window_size,
             screen_height=self._screen_height,
+            lyric_pair=widgets.lyric_pair,
         )
         self._content = OverlayContentController(
             self._state,

@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import QGraphicsDropShadowEffect, QLabel, QSizePolicy, QVBo
 from .chrome import OverlayChromeController
 from .context_label import ContextLabel
 from .karaoke_label import KaraokeLabel
+from .lyric_pair import LyricPair
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +19,7 @@ class OverlayWidgets:
     """Controls assembled for one overlay window."""
 
     container: QWidget
+    lyric_pair: LyricPair
     previous: ContextLabel
     current: KaraokeLabel
     feedback: QLabel
@@ -37,16 +39,17 @@ class OverlayViewBuilder:
         """Create the pill, lyric labels, controls, and stable root layout."""
         container = QWidget(self._owner)
         layout = QVBoxLayout(container)
-        layout.setContentsMargins(22, 10, 22, 14)
-        layout.setSpacing(4)
+        layout.setContentsMargins(22, 10, 22, 8)
+        layout.setSpacing(2)
         layout.addWidget(self._chrome.build(container))
 
         previous = ContextLabel(previous=True, parent=container)
-        current = KaraokeLabel(container)
+        lyric_group = QWidget(container)
+        lyric_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        lyric_pair = LyricPair(lyric_group)
         feedback = self._feedback_label()
-        translation = KaraokeLabel(container)
         next_label = ContextLabel(previous=False, parent=container)
-        for widget in (previous, current, translation, next_label, feedback):
+        for widget in (previous, lyric_group, next_label, feedback):
             layout.addWidget(widget, alignment=Qt.AlignmentFlag.AlignHCenter)
         for label in (previous, feedback, next_label):
             label.setGraphicsEffect(self._text_shadow())
@@ -57,7 +60,9 @@ class OverlayViewBuilder:
         root.addStretch(1)
         root.addWidget(container, 0, Qt.AlignmentFlag.AlignHCenter)
         root.addStretch(1)
-        return OverlayWidgets(container, previous, current, feedback, translation, next_label)
+        return OverlayWidgets(
+            container, lyric_pair, previous, lyric_pair.current, feedback, lyric_pair.translation, next_label,
+        )
 
     def _context_label(self) -> QLabel:
         """Create a centered translucent label for surrounding lyric context."""

@@ -158,6 +158,9 @@ Settings also controls fonts, colors, opacity, position, translation, icons, pan
 The active-line glow uses a restrained inner halo and a wider bloom behind the sung portion, with a feathered progress edge.
 Each foreground region is colored once to keep the glyph edges crisp. Current-word highlighting brightens the word without
 adding an outline. Both effects offer subtle and expressive intensity settings.
+The active lyric and translation form a compact group, with context spacing that
+scales with the font size. The panel follows the content height, including wrapped
+lines, and reserves a small status area so sync-offset feedback does not move the lyrics.
 **Context lines on each side** in **Settings -> Lyrics** defaults to one. Set it to zero
 to show only the current line, or enter larger counts, including ten or more. Older
 **Show current line only** settings are automatically converted to zero context lines.

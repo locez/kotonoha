@@ -103,7 +103,7 @@ class ContextLabel(QLabel):
             return QSize(0, 0)
         widths = [self.fontMetrics().horizontalAdvance(line.text) for line in self._lines[:count]]
         width = max(widths, default=0) + 2 * _PADDING
-        height = min(self._row_step() * count + 2 * _PADDING, self.maximumHeight())
+        height = min(self._row_step() * count + 2 * self._vertical_padding(), self.maximumHeight())
         return QSize(min(width, self.maximumWidth()), height)
 
     def minimumSizeHint(self) -> QSize:
@@ -151,11 +151,15 @@ class ContextLabel(QLabel):
             self.update()
 
     def _row_step(self) -> int:
-        return self.fontMetrics().height() + 5
+        return self.fontMetrics().height() + max(2, round(self.font().pixelSize() * 0.25))
+
+    def _vertical_padding(self) -> int:
+        """Keep breathing room around the strip without duplicating raster padding."""
+        return max(4, round(self.font().pixelSize() * 0.25))
 
     def _visible_count(self) -> int:
         """Bound work by the viewport without changing the user's saved count."""
-        capacity = max(0, (self.maximumHeight() - 2 * _PADDING) // self._row_step())
+        capacity = max(0, (self.maximumHeight() - 2 * self._vertical_padding()) // self._row_step())
         return min(self._count, capacity)
 
     def _prune_cache(self) -> None:
@@ -174,7 +178,7 @@ class ContextLabel(QLabel):
         motion = self._direction * (1.0 - self._phase)
         depth = max(0.0, distance + 1.0 + (-motion if self._previous else motion))
         row = self._visible_count() - 1 - distance if self._previous else distance
-        center_y = _PADDING + (row + motion + 0.5) * self._row_step()
+        center_y = self._vertical_padding() + (row + motion + 0.5) * self._row_step()
         scale = max(0.60, 1.0 - 0.065 * (depth - 1.0))
         opacity = min(1.4, 0.78 ** (depth - 1.0))
         if leaving:
@@ -191,7 +195,10 @@ class ContextLabel(QLabel):
             painter.setOpacity(min(1.0, opacity))
             # Native viewport coordinates preserve Qt's glyph alignment at rest.
             painter.translate(-self.width() / 2.0, -center_y)
-            rect = QRectF(0.0, (row + motion) * self._row_step(), self.width(), self._row_step() + 2 * _PADDING)
+            rect = QRectF(
+                0.0, (row + motion) * self._row_step(),
+                self.width(), self._row_step() + 2 * self._vertical_padding(),
+            )
             self._draw_text(painter, rect, self._elided_text(line.text))
             painter.restore()
             return

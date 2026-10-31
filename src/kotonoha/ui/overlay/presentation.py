@@ -12,6 +12,7 @@ from ...config import Config, PanelOverflowMode, PanelWidthMode
 from ...display.layout import FontFitPolicy
 from .context_label import ContextLabel
 from .karaoke_label import KaraokeLabel
+from .lyric_pair import LyricPair
 from .style import OverlayAppearance
 
 PILL_RADIUS = 16
@@ -33,6 +34,7 @@ class OverlayPresentationController:
         *,
         window_size: Callable[[], tuple[int, int]],
         screen_height: Callable[[], int],
+        lyric_pair: LyricPair,
     ) -> None:
         """Create a presentation owner around the already-built lyric widgets."""
         self._config = config
@@ -45,6 +47,7 @@ class OverlayPresentationController:
         self._window_size = window_size
         self._screen_height: Callable[[], int] = screen_height
         self._appearance = OverlayAppearance()
+        self._lyric_pair: LyricPair = lyric_pair
 
     def apply_config(self, config: Config) -> None:
         """Apply appearance, typography, sizing, and visibility settings."""
@@ -88,7 +91,6 @@ class OverlayPresentationController:
                 effect.setColor(shadow)
         for context in (self._previous, self._next):
             context.configure(count=config.context_lines, animate=config.fx_animate, blur=config.context_blur)
-        self._configure_context_height()
 
         translation_font = QFont()
         translation_font.setFamilies(families)
@@ -107,32 +109,19 @@ class OverlayPresentationController:
         self._translation.set_overflow_mode(mode)
         self._translation.set_max_width(available_width)
         self._translation.setVisible(config.show_translation)
+        self._lyric_pair.configure(config.font_size, config.translation_font_size)
         self._update_context_visibility()
+        self._configure_context_height()
 
     def font_families(self) -> list[str]:
         """Return the configured family and the appearance fallback chain."""
         return self._appearance.font_families(self._config)
 
     def band_height(self) -> int:
-        """Return the stable surface height required by the configured text."""
-        main = self._config.font_size
-        context = self._config.context_font_size if self._config.context_lines > 0 else 0
-        translation = self._config.translation_font_size if self._config.show_translation else 0
-        feedback = 20
-        context_height = 0 if context == 0 else self._previous.sizeHint().height()
-        lines = int(main * 1.6) + 2 * context_height + int(translation * 1.6) + feedback
-        chrome = 22 + 24 + 34
-        baseline = max(140, lines + chrome)
-        if not self.wrapping:
-            return baseline
-        main_extra = max(0, self._current.sizeHint().height() - int(main * 1.6))
-        translation_extra = (
-            max(0, self._translation.sizeHint().height() - int(translation * 1.6))
-            if not self._translation.isHidden() else 0
-        )
+        """Measure the surface from the same layout that positions the lyric rows."""
         layout = self._container.layout()
         measured = layout.sizeHint().height() if layout is not None else 0
-        return max(baseline + main_extra + translation_extra, measured)
+        return max(80, measured)
 
     @property
     def wrapping(self) -> bool:
@@ -152,10 +141,12 @@ class OverlayPresentationController:
     def _configure_context_height(self) -> None:
         """Keep the focused lyric visible when requested context exceeds the screen."""
         height = self._screen_height()
-        translation = self._config.translation_font_size if self._config.show_translation else 0
-        main_height = max(int(self._config.font_size * 1.6), self._current.sizeHint().height())
-        translation_height = max(int(translation * 1.6), self._translation.sizeHint().height()) if translation else 0
-        reserved = main_height + translation_height + 100
+        # Derive the reserved space from the real layout, including controls,
+        # feedback and margins, before allocating the context viewports.
+        context_height = sum(
+            label.sizeHint().height() for label in (self._previous, self._next) if not label.isHidden()
+        )
+        reserved = self.band_height() - context_height
         margin = min(self._config.margin_edge, height // 4)
         available = max(0, (height - reserved - margin) // 2)
         for context in (self._previous, self._next):
