@@ -161,7 +161,7 @@ class Config:
     lead_ms: int = 120               # advance the sweep by this many ms (compensate pipeline latency)
     show_translation: bool = True    # bilingual
     context_lines: int = 1          # rows per side; 0 hides context, excess rows are clipped to the viewport
-    context_blur: float = 0.25      # context defocus strength 0.0..1.0; 0 disables blur
+    context_blur: float = 0.0       # context defocus strength 0.0..1.0; clear text by default
     translation_language: str = "auto"  # "auto" -> from system locale, else an Apple tag (zh-Hans/en/ja/...)
     lyrics_sources: list[str] = field(default_factory=lambda: list(DEFAULT_LYRICS_SOURCES))
     display_sources: list[str] = field(default_factory=lambda: list(DEFAULT_DISPLAY_SOURCES))
@@ -227,7 +227,7 @@ class Config:
             show_translation=_clean_bool(self.show_translation, True),
             # QSpinBox uses a signed 32-bit integer; do not impose a smaller UX cap.
             context_lines=_clamp_int(self.context_lines, 0, 2_147_483_647, 1),
-            context_blur=_clamp_float(self.context_blur, 0.0, 1.0, 0.25),
+            context_blur=_clamp_float(self.context_blur, 0.0, 1.0, 0.0),
             translation_language=str(self.translation_language),
             accent_start=str(self.accent_start),
             accent_end=str(self.accent_end),

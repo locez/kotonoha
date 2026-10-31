@@ -140,7 +140,7 @@ def test_context_blur_roundtrips(tmp_path: Path, strength: float) -> None:
     assert load_config(path).context_blur == strength
 
 
-@pytest.mark.parametrize(("value", "expected"), [(None, 0.25), ("bad", 0.25), (-1, 0.0), (2, 1.0)])
+@pytest.mark.parametrize(("value", "expected"), [(None, 0.0), ("bad", 0.0), (-1, 0.0), (2, 1.0)])
 def test_context_blur_validates_external_values(value: object, expected: float) -> None:
     """Malformed settings fall back; numeric strengths stay in the percentage range."""
     assert Config.from_dict({"context_blur": value}).context_blur == expected

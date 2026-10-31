@@ -161,8 +161,8 @@ adding an outline. Both effects offer subtle and expressive intensity settings.
 **Context lines on each side** in **Settings -> Lyrics** defaults to one. Set it to zero
 to show only the current line, or enter larger counts, including ten or more. Older
 **Show current line only** settings are automatically converted to zero context lines.
-Farther rows become smaller, dimmer, and more blurred. **Context blur** adjusts the
-strength from 0% (no blur) to 100%, with a gentle 25% default. It retains its value while
+Farther rows become smaller and dimmer. **Context blur** adjusts the strength from
+0% (the default, no blur) to 100%; increasing it blurs farther rows more. It retains its value while
 context is hidden. Adjacent line changes scroll smoothly when animations are enabled;
 jumps across multiple lines and track changes settle immediately. The viewport clips
 rows that exceed the screen space without changing the saved count.

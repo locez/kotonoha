@@ -79,7 +79,7 @@ def test_settings_accept_zero_and_ten_or_more_context_rows(qapp: QApplication) -
 
 def test_ten_rows_render_with_progressive_depth(context: ContextLabel) -> None:
     """More distant copies of the same text must be dimmer and less sharply edged."""
-    context.configure(count=10, animate=False)
+    context.configure(count=10, animate=False, blur=0.25)
     context.set_lines(_lines(0, 12, repeated_text=True))
     context.resize(context.sizeHint())
     image = context.grab().toImage()

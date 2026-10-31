@@ -28,7 +28,7 @@ class ContextLabel(QLabel):
         self._lines: tuple[LyricLine, ...] = ()
         self._outgoing: tuple[LyricLine, int] | None = None
         self._count: int = 1
-        self._blur: float = 0.25
+        self._blur: float = 0.0
         self._animate: bool = True
         self._phase: float = 1.0
         self._direction: int = 0
@@ -46,7 +46,7 @@ class ContextLabel(QLabel):
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
-    def configure(self, *, count: int, animate: bool, blur: float = 0.25) -> None:
+    def configure(self, *, count: int, animate: bool, blur: float = 0.0) -> None:
         """Apply row count, motion and 0..1 blur after the label's font and colors."""
         self.ensurePolished()
         self.stop()

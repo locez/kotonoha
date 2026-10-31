@@ -97,7 +97,7 @@ def test_blur_apply_and_page_reset_preserve_other_settings(qapp: QApplication) -
         dialog._reset_current_page()
         dialog._reset_current_page()
         assert dialog.form_widgets.context_blur.isEnabled()
-        assert dialog.current_config().context_blur == Config().context_blur
+        assert dialog.current_config().context_blur == 0.0
         assert dialog.current_config().context_lines == 1
         assert dialog.current_config().settings_opacity == 0.7
     finally:
