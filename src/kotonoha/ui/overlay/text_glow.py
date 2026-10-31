@@ -115,15 +115,15 @@ class TextGlow:
             painter.setFont(font)
             painter.setPen(color)
             self._draw_text(painter, QRectF(padding, padding, key.width, key.height), row)
-        # A narrow halo keeps the light close to the strokes; the wider bloom
-        # supplies the visible falloff. Neither layer replaces the sharp text.
+        # Most light belongs in the wide halo. A strong narrow blur fills glyph
+        # counters and thickens their fringes, obscuring the sharp foreground.
         outer = blur_image(image, key.sigma)
         bloom = outer.copy()
-        core = blur_image(image, 2.0)
+        core = blur_image(image, 1.25)
         with QPainter(bloom) as painter:
             painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
-            painter.setOpacity(0.65)
+            painter.setOpacity(0.20)
             painter.drawImage(QPointF(0.0, 0.0), outer)
-            painter.setOpacity(0.85)
+            painter.setOpacity(0.18)
             painter.drawImage(QPointF(0.0, 0.0), core)
         return _GlowRaster(key, bloom, padding)

@@ -6,6 +6,7 @@ import pytest
 from PyQt6.QtGui import QColor, QFont, QImage
 from PyQt6.QtWidgets import QApplication
 
+from kotonoha.config import PanelOverflowMode
 from kotonoha.display.models import LineProgress, WordProgress
 from kotonoha.lyrics.models import LyricLine, LyricWord
 from kotonoha.ui.overlay.karaoke_label import KaraokeLabel
@@ -55,10 +56,10 @@ def test_glow_fades_outside_both_glyph_edges_without_thickening_the_core(
     ratio = glowing.devicePixelRatio()
 
     for edge, direction in ((left, -1), (right, 1)):
-        # The stronger bloom intentionally permits brighter near-stroke light;
-        # it must still fade smoothly and stay well below the opaque text core.
+        # Near-stroke light must remain restrained enough to preserve clear
+        # counters and edges, while the wider bloom stays visible farther out.
         tail = [glowing.pixelColor(edge + direction * round(distance * ratio), y).alpha() for distance in (1.5, 3, 4.5)]
-        assert 170 > tail[0] > tail[1] > tail[2] > 0
+        assert 100 > tail[0] > tail[1] > tail[2] > 0
         if intensity == "expressive":
             # A broad visible tail distinguishes the requested bloom from the
             # previous small halo that mostly looked like heavier lettering.
@@ -107,3 +108,33 @@ def test_sweep_has_a_soft_halo_boundary_but_leaves_distant_unsung_text_unlit(
     label.set_progress(LineProgress("line", 0.0), WordProgress("line", (0.0,), -1) if word_timed else None)
     reset = label.grab().toImage()
     assert all(reset.pixelColor(x, y).alpha() == 0 for y in range(reset.height()) for x in range(reset.width()))
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+@pytest.mark.parametrize("word_timed", [False, True])
+@pytest.mark.parametrize("fraction", [0.15, 0.5, 1.0])
+def test_progress_colors_do_not_accumulate_glyph_edge_coverage(
+    label: KaraokeLabel, wrapped: bool, word_timed: bool, fraction: float,
+) -> None:
+    """Equal base/accent colors must look identical as line and word fills move.
+
+    Redrawing base, sung, and active-word glyphs used to increase the alpha at
+    antialiased edges; opaque glyph centers alone cannot detect this thickening.
+    """
+    font = QFont("monospace")
+    font.setPixelSize(40)
+    label.set_style(font, "#4080c0", "#4080c0", "#4080c0", QColor("#4080c0"), QColor(0, 0, 0, 0))
+    label.set_max_width(180)
+    label.set_overflow_mode(PanelOverflowMode.WRAP if wrapped else PanelOverflowMode.SCROLL)
+    text = "HHHH HHHH" if wrapped else "HHHH"
+    label.set_line(_line(text, words=word_timed), word_timed)
+    label.resize(label.sizeHint())
+    label.set_progress(LineProgress("line", 0.0), WordProgress("line", (0.0,), -1) if word_timed else None)
+    plain = label.grab().toImage().convertToFormat(QImage.Format.Format_Alpha8)
+    label.set_progress(
+        LineProgress("line", fraction),
+        WordProgress("line", (fraction,), 0 if fraction < 1.0 else -1) if word_timed else None,
+    )
+    filled = label.grab().toImage().convertToFormat(QImage.Format.Format_Alpha8)
+
+    assert filled == plain

@@ -439,10 +439,12 @@ class KaraokeLabel(QWidget):
         sweep_x = sweep_rel + text_left
         rect = QRectF(text_left, 0.0, total_width, height)
 
-        # 0) Cheap drop shadow (single offset pass) for readability.
+        # A close, lighter shadow keeps contrast without a second visible edge
+        # competing with the halo on translucent panels over bright desktops.
         painter.save()
-        painter.translate(SHADOW_OFFSET, SHADOW_OFFSET)
-        painter.setPen(QPen(_scale_alpha(self._shadow_color, a)))
+        shadow_offset = 0.75 if self._glow else SHADOW_OFFSET
+        painter.translate(shadow_offset, shadow_offset)
+        painter.setPen(QPen(_scale_alpha(self._shadow_color, a * (0.6 if self._glow else 1.0))))
         self._draw_text(painter, rect, row)
         painter.restore()
 
@@ -454,37 +456,30 @@ class KaraokeLabel(QWidget):
                 sigma=fx["glow_sigma"], opacity=a * fx["glow_alpha"],
             )
 
-        # 1) Base (unsung) text.
-        painter.setPen(QPen(_scale_alpha(self._base_color, a)))
-        self._draw_text(painter, rect, row)
-
-        # 2) Sung text, clipped to the sweep boundary, filled with the accent gradient.
-        if sweep_x > text_left:
+        # Give base, sung, and active-word colors disjoint regions. Painting the
+        # same antialiased edge two or three times makes the letters look bold
+        # and soft even when the foreground itself has never been blurred.
+        boundary = 0.0 if sweep_rel <= 0.0 else avail if sweep_rel >= total_width else sweep_x
+        active_start = boundary
+        if active_rel is not None and active_rel[1] > active_rel[0]:
+            active_start = max(0.0, min(boundary, active_rel[0] + text_left))
+        offset = 0.0 if row is None else row.offset
+        gradient = QLinearGradient(text_left - offset, 0.0, text_left - offset + self._total_w, 0.0)
+        gradient.setColorAt(0.0, _scale_alpha(self._accent_start, a))
+        gradient.setColorAt(1.0, _scale_alpha(self._accent_end, a))
+        color = self._accent_sweep.lighter(_FX[self._intensity]["pop"]) if self._word_pop else self._accent_sweep
+        for left, right, brush in (
+            (boundary, avail, QBrush(_scale_alpha(self._base_color, a))),
+            (0.0, active_start, QBrush(gradient)),
+            (active_start, boundary, QBrush(_scale_alpha(color, a))),
+        ):
+            if right <= left:
+                continue
             painter.save()
-            painter.setClipRect(QRectF(text_left, 0.0, sweep_x - text_left, height), Qt.ClipOperation.IntersectClip)
-            offset = 0.0 if row is None else row.offset
-            gradient = QLinearGradient(text_left - offset, 0.0, text_left - offset + self._total_w, 0.0)
-            gradient.setColorAt(0.0, _scale_alpha(self._accent_start, a))
-            gradient.setColorAt(1.0, _scale_alpha(self._accent_end, a))
-            painter.setPen(QPen(QBrush(gradient), 0))
+            painter.setClipRect(QRectF(left, 0.0, right - left, height), Qt.ClipOperation.IntersectClip)
+            painter.setPen(QPen(brush, 0))
             self._draw_text(painter, rect, row)
             painter.restore()
-
-        # 3) Currently-sung word: brighten its sung sub-range with the sweep colour,
-        #    with optional emphasis. Word-pop never adds a second halo/outline.
-        if active_rel is not None:
-            x0 = active_rel[0] + text_left
-            x1 = active_rel[1] + text_left
-            if x1 > x0:
-                painter.save()
-                painter.setClipRect(QRectF(x0, 0.0, x1 - x0, height), Qt.ClipOperation.IntersectClip)
-                color = self._accent_sweep
-                if self._word_pop:
-                    fx = _FX[self._intensity]
-                    color = self._accent_sweep.lighter(fx["pop"])
-                painter.setPen(QPen(_scale_alpha(color, a)))
-                self._draw_text(painter, rect, row)
-                painter.restore()
 
 
     def _draw_text(self, painter: QPainter, rect: QRectF, row: TextRow | None) -> None:

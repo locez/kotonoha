@@ -155,8 +155,8 @@ entries or clearing the cache. The manager intentionally does not edit lyric con
 manual replacement is performed through the current-track search flow.
 
 Settings also controls fonts, colors, opacity, position, translation, icons, panel style, and lyric effects.
-The active-line glow combines a bright inner halo with a wider bloom behind the sung portion and a feathered progress edge,
-while keeping the text sharp. Current-word highlighting brightens the word independently without
+The active-line glow uses a restrained inner halo and a wider bloom behind the sung portion, with a feathered progress edge.
+Each foreground region is colored once to keep the glyph edges crisp. Current-word highlighting brightens the word without
 adding an outline. Both effects offer subtle and expressive intensity settings.
 **Context lines on each side** in **Settings -> Lyrics** defaults to one and accepts larger
 counts, including ten or more. Rows farther from the active lyric become smaller, dimmer,
