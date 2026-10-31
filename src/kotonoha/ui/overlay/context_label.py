@@ -111,7 +111,7 @@ class ContextLabel(QLabel):
         return self.sizeHint()
 
     def paintEvent(self, a0: QPaintEvent | None) -> None:
-        """Blend cached blur levels while rows scroll and change apparent depth."""
+        """Draw clear glyphs or blend cached blur levels while context scrolls."""
         if not self._lines and self._outgoing is None:
             return
         ratio = self.devicePixelRatioF()
@@ -181,12 +181,23 @@ class ContextLabel(QLabel):
             opacity *= 1.0 - self._phase
         if opacity * self.palette().windowText().color().alpha() < 1.0:
             return  # The row is below one alpha step; avoid blurring invisible text.
-        low = floor(depth)
-        high = low + 1
-        fraction = depth - low
         painter.save()
         painter.translate(self.width() / 2.0, center_y)
         painter.scale(scale, scale)
+        if self._blur == 0.0:
+            # Raster resampling and blending identical focus levels can soften
+            # or dim text even without a Gaussian blur. Shape it at its final
+            # position instead, once per row, including during scrolling.
+            painter.setOpacity(min(1.0, opacity))
+            # Native viewport coordinates preserve Qt's glyph alignment at rest.
+            painter.translate(-self.width() / 2.0, -center_y)
+            rect = QRectF(0.0, (row + motion) * self._row_step(), self.width(), self._row_step() + 2 * _PADDING)
+            self._draw_text(painter, rect, self._elided_text(line.text))
+            painter.restore()
+            return
+        low = floor(depth)
+        high = low + 1
+        fraction = depth - low
         for level, weight in ((low, 1.0 - fraction), (high, fraction)):
             if weight <= 0.0:
                 continue
@@ -211,7 +222,7 @@ class ContextLabel(QLabel):
     def _rasterize(self, text: str) -> QImage:
         """Shape a visible row once; focus levels are cached lazily as needed."""
         metrics = self.fontMetrics()
-        text = metrics.elidedText(text, Qt.TextElideMode.ElideRight, max(1, self.width() - 2 * _PADDING))
+        text = self._elided_text(text)
         width = metrics.horizontalAdvance(text) + 2 * _PADDING
         height = metrics.height() + 2 * _PADDING
         image = QImage(
@@ -221,8 +232,18 @@ class ContextLabel(QLabel):
         image.setDevicePixelRatio(self._pixel_ratio)
         image.fill(Qt.GlobalColor.transparent)
         with QPainter(image) as painter:
-            painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
-            painter.setFont(self.font())
-            painter.setPen(QColor(self.palette().windowText().color()))
-            painter.drawText(QRectF(0.0, 0.0, width, height), int(Qt.AlignmentFlag.AlignCenter), text)
+            self._draw_text(painter, QRectF(0.0, 0.0, width, height), text)
         return image
+
+    def _elided_text(self, text: str) -> str:
+        """Keep the visible text stable as focus changes its scale or blur."""
+        return self.fontMetrics().elidedText(
+            text, Qt.TextElideMode.ElideRight, max(1, self.width() - 2 * _PADDING),
+        )
+
+    def _draw_text(self, painter: QPainter, rect: QRectF, text: str) -> None:
+        """Use the same font, color and alignment on the widget and blur rasters."""
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+        painter.setFont(self.font())
+        painter.setPen(QColor(self.palette().windowText().color()))
+        painter.drawText(rect, int(Qt.AlignmentFlag.AlignCenter), text)

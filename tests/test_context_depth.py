@@ -9,9 +9,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 from overlay_helpers import build_overlay
-from PyQt6.QtCore import QAbstractAnimation, QVariantAnimation
+from PyQt6.QtCore import QAbstractAnimation, QSize, Qt, QVariantAnimation
 from PyQt6.QtGui import QImage
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QLabel
 from test_overlay import project_document
 
 from kotonoha.app.config_merge import merge_settings
@@ -122,8 +122,12 @@ def test_viewport_bounds_work_without_losing_requested_count(context: ContextLab
 
 
 @pytest.mark.parametrize("direction", [-1, 1])
-def test_context_scrolls_and_repeated_frames_do_not_restart_it(context: ContextLabel, direction: int) -> None:
+@pytest.mark.parametrize("blur", [0.0, 0.25])
+def test_context_scrolls_and_repeated_frames_do_not_restart_it(
+    context: ContextLabel, direction: int, blur: float,
+) -> None:
     """A lyric step has intermediate pixels and settles on the same static layout."""
+    context.configure(count=3, animate=True, blur=blur)
     context.set_lines(_lines(4, 7))
     context.resize(context.sizeHint())
     start = context.grab().toImage()
@@ -139,7 +143,7 @@ def test_context_scrolls_and_repeated_frames_do_not_restart_it(context: ContextL
     animation.setCurrentTime(animation.duration())
     finished = context.grab().toImage()
     assert start != midway != finished
-    context.configure(count=3, animate=False)
+    context.configure(count=3, animate=False, blur=blur)
     assert context.grab().toImage() == finished
     assert animation.state() is QAbstractAnimation.State.Stopped
 
@@ -216,3 +220,29 @@ def test_context_blur_changes_pixels_and_can_be_disabled(context: ContextLabel, 
     # A tiny pixel difference is not enough for the slider's maximum: the nearest
     # row must lose at least half of its edge contrast, not just far rows.
     assert edge_contrast(blurred) < 0.5 * edge_contrast(sharp)
+
+
+@pytest.mark.parametrize("font_size", [14, 17])
+@pytest.mark.parametrize("text", ["Please crack a little smile", "愿你的前路清晰明亮"])
+def test_zero_blur_preserves_native_text_rendering(
+    context: ContextLabel, font_size: int, text: str,
+) -> None:
+    """A clear single context row must retain Qt's native glyph coverage and alignment."""
+    context.setStyleSheet(
+        f"color: rgba(255,255,255,120); font-family: 'Noto Sans CJK SC'; font-size: {font_size}px;"
+    )
+    context.configure(count=1, animate=False, blur=0.0)
+    context.set_lines((LyricLine(0, "one", 0.0, 10.0, text, "", ()),))
+    # A non-tight width catches bitmap positioning that shifts already-rendered
+    # glyphs instead of letting Qt place their outlines in the final viewport.
+    context.resize(context.sizeHint() + QSize(1, 0))
+    reference = QLabel(text)
+    reference.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+    reference.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    reference.setStyleSheet(context.styleSheet())
+    reference.resize(context.size())
+    try:
+        assert context.grab().toImage() == reference.grab().toImage()
+    finally:
+        reference.close()
+        reference.deleteLater()
