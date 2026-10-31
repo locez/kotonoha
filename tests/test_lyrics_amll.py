@@ -263,7 +263,7 @@ async def test_missing_ttml_is_a_miss_and_invalid_ttml_is_not_cached(source: Aml
 
 
 def test_amll_is_default_and_saved_source_choices_remain_explicit(tmp_path: Path) -> None:
-    assert Config().lyrics_sources == ["amll", "netease", "lrclib", "kugou"]
+    assert Config().lyrics_sources == ["amll", "netease", "kugou", "lrclib"]
     path = tmp_path / "config.json"
     for sources in (["netease", "cider"], ["amll", "kugou"]):
         save_config(Config(lyrics_sources=sources), path)

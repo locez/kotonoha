@@ -58,7 +58,7 @@ def test_cider_is_opt_in_and_preserves_saved_selection(
     if initial_data is not None:
         path.write_text(json.dumps(initial_data), encoding="utf-8")
 
-    assert load_config(path).lyrics_sources == ["amll", "netease", "lrclib", "kugou"]
+    assert load_config(path).lyrics_sources == ["amll", "netease", "kugou", "lrclib"]
 
     save_config(Config(lyrics_sources=["cider", "netease"]), path)
 

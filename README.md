@@ -133,7 +133,7 @@ uv run kotonoha
 
 ## Configuration
 
-Open **Settings** from the tray. Under **Sources**, lyric providers can be reordered or disabled. The default order is `amll -> netease -> lrclib -> kugou`. Existing saved selections are preserved; enable **AMLL TTML DB** there to add it to an existing configuration. The display sources below it can also have multiple enabled entries; their order controls which live player source wins when MPRIS is unavailable.
+Open **Settings** from the tray. Under **Sources**, lyric providers can be reordered or disabled. The default order is `amll -> netease -> kugou -> lrclib`, with all four enabled. Existing saved selections are preserved; enable **AMLL TTML DB** there to add it to an existing configuration. The display sources below it can also have multiple enabled entries; their order controls which live player source wins when MPRIS is unavailable.
 
 **Prefer best match** is enabled by default: candidates compete by match confidence, then usable word timing, then your source order. A line-timed cache hit, Cider snapshot, or exact player hint can be upgraded by equally well-matched word lyrics from another enabled source. Manual selections remain authoritative. Disable it for strict ordered fallback.
 

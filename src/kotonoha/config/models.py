@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 
 # Lyric source order breaks confidence/timing ties, or controls sequential lookup.
 # "cider" = lyrics exposed by Cider's public API.
-VALID_LYRICS_SOURCES = ("amll", "netease", "lrclib", "kugou", "qqmusic", "cider")
-DEFAULT_LYRICS_SOURCES: list[str] = ["amll", "netease", "lrclib", "kugou"]
+VALID_LYRICS_SOURCES: tuple[str, ...] = ("amll", "netease", "kugou", "lrclib", "qqmusic", "cider")
+DEFAULT_LYRICS_SOURCES: list[str] = ["amll", "netease", "kugou", "lrclib"]
 
 # Display sources provide playback facts and a candidate lyric document. They
 # are ordered by preference independently from lyric lookup providers.
