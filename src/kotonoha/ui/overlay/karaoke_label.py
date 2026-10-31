@@ -71,10 +71,13 @@ def _scale_alpha(color: QColor, factor: float) -> QColor:
 
 
 def _scaled(font: QFont, scale: float) -> QFont:
-    if scale == 1.0:
-        return font
+    """Copy typography at the display scale with brush-independent glyph coverage."""
     scaled = QFont(font)
-    scaled.setPixelSize(max(8, int(round(font.pixelSize() * scale))))
+    # Qt can use LCD masks for solid text but grayscale masks for gradient text.
+    # Use the same mask for both so the karaoke sweep cannot change glyph edges.
+    scaled.setStyleStrategy(font.styleStrategy() | QFont.StyleStrategy.NoSubpixelAntialias)
+    if scale != 1.0:
+        scaled.setPixelSize(max(8, int(round(font.pixelSize() * scale))))
     return scaled
 
 
