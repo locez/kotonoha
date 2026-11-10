@@ -14,6 +14,7 @@ from .artifact import LyricsArtifact
 from .artist_grammar import primary_artist
 from .http import LyricsHttpError, LyricsSession
 from .lrc_parser import parse_lrc
+from .lyricsfile_parser import LyricsFileError, LyricsFileParser
 from .match import Candidate, MatchEvidence, TrackMetadata, best_match, evaluate_match, query_variants
 from .models import LyricLine
 from .payload import read_json_capped
@@ -32,12 +33,23 @@ HEADERS = {"User-Agent": "kotonoha/0.1 (https://github.com/locez/kotonoha)"}
 TIMEOUT = aiohttp.ClientTimeout(total=15.0, connect=5.0)
 @dataclass(frozen=True)
 class Record:
+    """One LRCLIB response retaining both the structured and legacy lyric texts."""
+
     song_id: str
     title: str
     artist: str
     album: str
     duration_s: float | None
     synced_lyrics: str
+    lyricsfile: str = ""
+
+
+@dataclass(frozen=True)
+class _ParsedPayload:
+    """Canonical lines plus usable source encodings for caching/version display."""
+
+    lines: tuple[LyricLine, ...]
+    payload: dict[str, str]
 
 
 def _record(data: object) -> Record | None:
@@ -47,7 +59,10 @@ def _record(data: object) -> Record | None:
     if song_id is None:
         return None
     synced = data.get("syncedLyrics")
-    if not isinstance(synced, str) or not synced.strip():
+    lyricsfile = data.get("lyricsfile")
+    synced = synced if isinstance(synced, str) else ""
+    lyricsfile = lyricsfile if isinstance(lyricsfile, str) else ""
+    if not synced.strip() and not lyricsfile.strip():
         return None
     duration = data.get("duration")
     return Record(
@@ -57,6 +72,7 @@ def _record(data: object) -> Record | None:
         album=str(data.get("albumName", "")),
         duration_s=float(duration) if isinstance(duration, (int, float)) else None,
         synced_lyrics=synced,
+        lyricsfile=lyricsfile,
     )
 
 
@@ -91,7 +107,28 @@ async def search_records(session: LyricsSession, track: TrackMetadata) -> list[R
 
 
 def parse_payload(payload: Mapping[str, str]) -> tuple[LyricLine, ...]:
-    return tuple(parse_lrc(payload.get("syncedLyrics", "")))
+    """Prefer validated Lyricsfile timing, using LRC when it is unavailable.
+
+    The same stateless boundary is used for network results and cached payloads;
+    the parser owns schema validation and never changes the stored source text.
+    """
+    return _parse_payload(payload).lines
+
+
+def _parse_payload(payload: Mapping[str, str]) -> _ParsedPayload:
+    """Retain valid source text; omit rejected YAML so it cannot label an LRC fallback."""
+    raw = payload.get("lyricsfile")
+    if raw is not None and raw.strip():
+        try:
+            lines = LyricsFileParser().parse(raw)
+        except LyricsFileError as exc:
+            logger.debug("LRCLIB Lyricsfile unavailable: %s", exc)
+        else:
+            if lines:
+                return _ParsedPayload(lines, dict(payload))
+    accepted = dict(payload)
+    accepted.pop("lyricsfile", None)
+    return _ParsedPayload(tuple(parse_lrc(payload.get("syncedLyrics", ""))), accepted)
 
 
 async def search_artifacts(
@@ -191,8 +228,10 @@ def _artifact_from_records(
 def _artifact_from_record(record: Record, evidence: MatchEvidence) -> LyricsArtifact | None:
     """Build one validated artifact while retaining the search result metadata."""
     payload = {"syncedLyrics": record.synced_lyrics}
-    lines = parse_payload(payload)
-    if not lines:
+    if record.lyricsfile:
+        payload["lyricsfile"] = record.lyricsfile
+    parsed = _parse_payload(payload)
+    if not parsed.lines:
         return None
     return LyricsArtifact(
         provider="lrclib",
@@ -201,7 +240,7 @@ def _artifact_from_record(record: Record, evidence: MatchEvidence) -> LyricsArti
         artist=record.artist,
         album=record.album,
         duration_s=record.duration_s,
-        payload=payload,
-        lines=lines,
+        payload=parsed.payload,
+        lines=parsed.lines,
         confidence=evidence.confidence,
     )

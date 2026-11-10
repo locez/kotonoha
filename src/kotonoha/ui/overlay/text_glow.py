@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from math import ceil
+from math import ceil, floor
 
 from PyQt6.QtCore import QPointF, QRectF, Qt
 from PyQt6.QtGui import QColor, QFont, QImage, QLinearGradient, QPainter
@@ -59,6 +59,7 @@ class TextGlow:
         color: QColor,
         sigma: float,
         opacity: float,
+        right_to_left: bool,
     ) -> None:
         """Paint a feathered sung portion behind the foreground at device scale."""
         if sweep <= 0.0 or opacity <= 0.0:
@@ -79,10 +80,14 @@ class TextGlow:
         # this small image gives the moving edge a soft falloff without lighting
         # the rest of the line or clipping the halo at the first/last glyph.
         feather = sigma * 2.0
-        edge = raster.padding + sweep
+        edge = raster.padding + (rect.width() - sweep if right_to_left else sweep)
         left = max(0, int(-origin.x() * ratio))
         complete = sweep >= rect.width()
-        right = raster.image.width() if complete else min(raster.image.width(), ceil((edge + feather) * ratio))
+        if right_to_left and not complete:
+            left = max(left, floor((edge - feather) * ratio))
+        right = raster.image.width()
+        if not right_to_left and not complete:
+            right = min(right, ceil((edge + feather) * ratio))
         right = min(right, ceil((painter.viewport().width() - origin.x()) * ratio))
         if right <= left:
             return
@@ -90,8 +95,8 @@ class TextGlow:
         visible.setDevicePixelRatio(ratio)
         if not complete:
             mask = QLinearGradient(edge - feather - left / ratio, 0.0, edge + feather - left / ratio, 0.0)
-            mask.setColorAt(0.0, QColor(0, 0, 0, 255))
-            mask.setColorAt(1.0, QColor(0, 0, 0, 0))
+            mask.setColorAt(0.0, QColor(0, 0, 0, 0 if right_to_left else 255))
+            mask.setColorAt(1.0, QColor(0, 0, 0, 255 if right_to_left else 0))
             with QPainter(visible) as mask_painter:
                 mask_painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
                 mask_painter.fillRect(QRectF(0.0, 0.0, visible.width() / ratio, visible.height() / ratio), mask)

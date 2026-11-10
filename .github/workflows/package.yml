@@ -95,6 +95,7 @@ jobs:
             python3-pyqt6 \
             python3-pyqt6.qtsvg \
             python3-qasync \
+            python3-yaml \
             qt6-base-dev \
             qt6-base-private-dev \
             qt6-wayland-dev \
@@ -217,6 +218,7 @@ jobs:
             python3-devel \
             python3-scikit-build-core \
             python3-pyqt6 \
+            python3-pyyaml \
             qt6-qtbase-devel \
             qt6-qtbase-private-devel \
             qt6-qtwayland-devel \

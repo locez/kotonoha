@@ -54,6 +54,7 @@ in
       python3Packages.dbus-fast
       python3Packages.mutagen
       python3Packages.pyqt6
+      python3Packages.pyyaml
       python3Packages.qasync
     ];
 
@@ -81,6 +82,7 @@ in
     pythonImportsCheck = [
       "kotonoha"
       "kotonoha.platform.native"
+      "kotonoha.lyrics.lyricsfile_parser"
       "PyQt6.QtCore"
       "PyQt6.QtSvg"
     ];

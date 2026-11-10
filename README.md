@@ -139,7 +139,7 @@ Open **Settings** from the tray. Under **Sources**, lyric providers can be reord
 
 [AMLL TTML DB](https://github.com/amll-dev/amll-ttml-db) supplies community-authored TTML for automatic matching and manual search by song title and artist, independently of the player. It can also use known platform song IDs. New lookups require access to its public GitHub catalog; successfully matched or manually selected lyrics use the existing local cache. Coverage depends on community submissions. Cider remains useful for lyrics supplied by its active Apple Music track.
 
-For local audio, place `song.ttml` or `song.lrc` beside `song.flac` (or another audio extension). TTML supports line and word timing plus inline translations. Local files and embedded lyric tags prefer word timing; TTML wins a sidecar format tie. Embedded tags require the `embedded-lyrics` extra. Other network integrations provide NetEase YRC/LRC, Kugou KRC/LRC, LRCLIB LRC, and QQ Music LRC; Cider supplies structured timed lyrics.
+For local audio, place `song.ttml` or `song.lrc` beside `song.flac` (or another audio extension). TTML supports line and word timing plus inline translations. Local files and embedded lyric tags prefer word timing; TTML wins a sidecar format tie. Embedded tags require the `embedded-lyrics` extra. Other network integrations provide NetEase YRC/LRC, Kugou KRC/LRC, LRCLIB Lyricsfile/LRC, and QQ Music LRC; Cider supplies structured timed lyrics.
 
 The magnifying-glass button on the overlay opens manual lyric search for the current
 track. Title, artist, and album are editable; the current duration is shown as
@@ -158,6 +158,14 @@ Settings also controls fonts, colors, opacity, position, translation, icons, pan
 The active-line glow uses a restrained inner halo and a wider bloom behind the sung portion, with a feathered progress edge.
 Each foreground region is colored once to keep the glyph edges crisp. Current-word highlighting brightens the word without
 adding an outline. Both effects offer subtle and expressive intensity settings.
+Karaoke sweeps follow each line's first strong text direction automatically: Arabic,
+Persian, and Hebrew lines fill from right to left, including word highlighting, glow,
+scrolling, and wrapped rows. Leading numbers or punctuation do not determine direction.
+Mixed text keeps Qt's normal letter shaping and bidirectional layout; the continuous
+sweep follows the base direction of the line.
+LRCLIB's Lyricsfile 1.0 YAML supplies word timing when available, with LRC as an
+alternative if the structured document is unavailable or invalid. Existing LRC-only
+cache entries remain readable; search again or clear the corresponding entry to fetch word timing.
 The active lyric and translation form a compact group, with context spacing that
 scales with the font size. The panel follows the content height, including wrapped
 lines, and reserves a small status area so sync-offset feedback does not move the lyrics.

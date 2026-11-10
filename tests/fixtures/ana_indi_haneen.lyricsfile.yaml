@@ -1,0 +1,496 @@
+version: '1.0'
+metadata:
+  title: Ana Indi Haneen
+  artist: Fairuz
+  album: Wahdon
+  duration_ms: 356000
+  instrumental: false
+  language: ar
+lines:
+- text: أنا عندي حنين ما بعرف لمين
+  start_ms: 60530
+  end_ms: 66149
+  words:
+  - text: 'أنا '
+    start_ms: 60530
+  - text: 'عندي '
+    start_ms: 61140
+  - text: 'حنين '
+    start_ms: 61580
+  - text: 'ما '
+    start_ms: 61860
+  - text: 'بعرف '
+    start_ms: 62330
+  - text: لمين
+    start_ms: 64610
+- text: ليليي بيخطفني من بين السهرانين
+  start_ms: 66980
+  end_ms: 73122
+  words:
+  - text: 'ليليي '
+    start_ms: 66980
+  - text: 'بيخطفني '
+    start_ms: 68460
+  - text: 'من '
+    start_ms: 70370
+  - text: 'بين '
+    start_ms: 71140
+  - text: السهرانين
+    start_ms: 71340
+- text: أنا عندي حنين ما بعرف لمين
+  start_ms: 75760
+  end_ms: 78683
+  words:
+  - text: 'أنا '
+    start_ms: 75760
+  - text: 'عندي '
+    start_ms: 75870
+  - text: 'حنين '
+    start_ms: 76700
+  - text: 'ما '
+    start_ms: 76820
+  - text: 'بعرف '
+    start_ms: 76970
+  - text: لمين
+    start_ms: 77600
+- text: ليليي بيخطفني من بين السهرانين
+  start_ms: 82120
+  end_ms: 88165
+  words:
+  - text: 'ليليي '
+    start_ms: 82120
+  - text: 'بيخطفني '
+    start_ms: 82990
+  - text: 'من '
+    start_ms: 85340
+  - text: 'بين '
+    start_ms: 85630
+  - text: السهرانين
+    start_ms: 85990
+- text: بيصير يمشيني لبعيد يوديني
+  start_ms: 89470
+  end_ms: 96381
+  words:
+  - text: 'بيصير '
+    start_ms: 89470
+  - text: 'يمشيني '
+    start_ms: 91090
+  - text: 'لبعيد '
+    start_ms: 94010
+  - text: يوديني
+    start_ms: 95830
+- text: تا أعرف لمين و ما بعرف لمين
+  start_ms: 96820
+  end_ms: 102604
+  words:
+  - text: 'تا '
+    start_ms: 96820
+  - text: 'أعرف '
+    start_ms: 97460
+  - text: 'لمين '
+    start_ms: 98510
+  - text: 'و '
+    start_ms: 100260
+  - text: 'ما '
+    start_ms: 100500
+  - text: 'بعرف '
+    start_ms: 100750
+  - text: لمين
+    start_ms: 102100
+- text: عديت الأسامي و محيت الأسامي
+  start_ms: 149360
+  end_ms: 155314
+  words:
+  - text: 'عديت '
+    start_ms: 149360
+  - text: 'الأسامي '
+    start_ms: 150800
+  - text: 'و '
+    start_ms: 153070
+  - text: 'محيت '
+    start_ms: 153270
+  - text: الأسامي
+    start_ms: 154320
+- text: و نامي يا عينيي إذا راح فيكي تنامي
+  start_ms: 156400
+  end_ms: 162246
+  words:
+  - text: 'و '
+    start_ms: 156400
+  - text: 'نامي '
+    start_ms: 156670
+  - text: 'يا '
+    start_ms: 157270
+  - text: 'عينيي '
+    start_ms: 157830
+  - text: 'إذا '
+    start_ms: 160050
+  - text: 'راح '
+    start_ms: 160480
+  - text: 'فيكي '
+    start_ms: 161020
+  - text: تنامي
+    start_ms: 161330
+- text: عديت الأسامي و محيت الأسامي
+  start_ms: 164070
+  end_ms: 170033
+  words:
+  - text: 'عديت '
+    start_ms: 164070
+  - text: 'الأسامي '
+    start_ms: 164800
+  - text: 'و '
+    start_ms: 168000
+  - text: 'محيت '
+    start_ms: 168210
+  - text: الأسامي
+    start_ms: 169110
+- text: و نامي يا عينيي إذا راح فيكي تنامي
+  start_ms: 171430
+  end_ms: 177193
+  words:
+  - text: 'و '
+    start_ms: 171430
+  - text: 'نامي '
+    start_ms: 171560
+  - text: 'يا '
+    start_ms: 172250
+  - text: 'عينيي '
+    start_ms: 172480
+  - text: 'إذا '
+    start_ms: 173130
+  - text: 'راح '
+    start_ms: 175780
+  - text: 'فيكي '
+    start_ms: 175980
+  - text: تنامي
+    start_ms: 176500
+- text: و بعدو هالحنين من خلف الحنين
+  start_ms: 179060
+  end_ms: 185230
+  words:
+  - text: 'و '
+    start_ms: 179060
+  - text: 'بعدو '
+    start_ms: 179250
+  - text: 'هالحنين '
+    start_ms: 180320
+  - text: 'من '
+    start_ms: 182630
+  - text: 'خلف '
+    start_ms: 183050
+  - text: الحنين
+    start_ms: 184170
+- text: بالدمع يغرقني و بأسامي المنسيين
+  start_ms: 186360
+  end_ms: 192310
+  words:
+  - text: 'بالدمع '
+    start_ms: 186360
+  - text: 'يغرقني '
+    start_ms: 187769
+  - text: 'و '
+    start_ms: 189718
+  - text: 'بأسامي '
+    start_ms: 189863
+  - text: المنسيين
+    start_ms: 190789
+- text: تا أعرف لمين و ما بعرف لمين
+  start_ms: 192310
+  end_ms: 198873
+  words:
+  - text: 'تا '
+    start_ms: 192310
+  - text: 'أعرف '
+    start_ms: 192380
+  - text: 'لمين '
+    start_ms: 193360
+  - text: 'و '
+    start_ms: 194030
+  - text: 'ما '
+    start_ms: 195990
+  - text: 'بعرف '
+    start_ms: 196180
+  - text: لمين
+    start_ms: 197530
+- text: أنا عندي حنين ما بعرف لمين
+  start_ms: 200790
+  end_ms: 206902
+  words:
+  - text: 'أنا '
+    start_ms: 200790
+  - text: 'عندي '
+    start_ms: 200950
+  - text: 'حنين '
+    start_ms: 202000
+  - text: 'ما '
+    start_ms: 204170
+  - text: 'بعرف '
+    start_ms: 204940
+  - text: لمين
+    start_ms: 205740
+- text: ليليي بيخطفني من بين السهرانين
+  start_ms: 208130
+  end_ms: 214111
+  words:
+  - text: 'ليليي '
+    start_ms: 208130
+  - text: 'بيخطفني '
+    start_ms: 209410
+  - text: 'من '
+    start_ms: 211650
+  - text: 'بين '
+    start_ms: 212010
+  - text: السهرانين
+    start_ms: 212550
+- text: بيصير يمشيني لبعيد يوديني
+  start_ms: 215620
+  end_ms: 221433
+  words:
+  - text: 'بيصير '
+    start_ms: 215620
+  - text: 'يمشيني '
+    start_ms: 216520
+  - text: 'لبعيد '
+    start_ms: 219070
+  - text: يوديني
+    start_ms: 220900
+- text: تا أعرف لمين و ما بعرف لمين لمين
+  start_ms: 222770
+  end_ms: 229645
+  words:
+  - text: 'تا '
+    start_ms: 222770
+  - text: 'أعرف '
+    start_ms: 222960
+  - text: 'لمين '
+    start_ms: 224180
+  - text: 'و '
+    start_ms: 226270
+  - text: 'ما '
+    start_ms: 226410
+  - text: 'بعرف '
+    start_ms: 226910
+  - text: 'لمين '
+    start_ms: 227560
+  - text: لمين
+    start_ms: 228950
+- text: أنا خوفي يا حبي لتكون بعدك حبي
+  start_ms: 272620
+  end_ms: 278754
+  words:
+  - text: 'أنا '
+    start_ms: 272620
+  - text: 'خوفي '
+    start_ms: 273180
+  - text: 'يا '
+    start_ms: 273710
+  - text: 'حبي '
+    start_ms: 274330
+  - text: 'لتكون '
+    start_ms: 276480
+  - text: 'بعدك '
+    start_ms: 277230
+  - text: حبي
+    start_ms: 278350
+- text: و متهيألي نسيتك و أنتا مخبى بقلبي بقلبي
+  start_ms: 279930
+  end_ms: 287415
+  words:
+  - text: 'و '
+    start_ms: 279930
+  - text: 'متهيألي '
+    start_ms: 279940
+  - text: 'نسيتك '
+    start_ms: 281830
+  - text: 'و '
+    start_ms: 283480
+  - text: 'أنتا '
+    start_ms: 284240
+  - text: 'مخبى '
+    start_ms: 284540
+  - text: 'بقلبي '
+    start_ms: 284830
+  - text: بقلبي
+    start_ms: 286160
+- text: أنا خوفي يا حبي لتكون بعدك حبي
+  start_ms: 287540
+  end_ms: 292652
+  words:
+  - text: 'أنا '
+    start_ms: 287540
+  - text: 'خوفي '
+    start_ms: 287630
+  - text: 'يا '
+    start_ms: 288230
+  - text: 'حبي '
+    start_ms: 289060
+  - text: 'لتكون '
+    start_ms: 290500
+  - text: 'بعدك '
+    start_ms: 291300
+  - text: حبي
+    start_ms: 292100
+- text: و متهيألي نسيتك و أنتا مخبى بقلبي
+  start_ms: 294740
+  end_ms: 301464
+  words:
+  - text: 'و '
+    start_ms: 294740
+  - text: 'متهيألي '
+    start_ms: 295020
+  - text: 'نسيتك '
+    start_ms: 296900
+  - text: 'و '
+    start_ms: 298200
+  - text: 'أنتا '
+    start_ms: 298420
+  - text: 'مخبى '
+    start_ms: 299370
+  - text: بقلبي
+    start_ms: 300880
+- text: و بتودي الحنين ليليي الحنين
+  start_ms: 302190
+  end_ms: 307785
+  words:
+  - text: 'و '
+    start_ms: 302190
+  - text: 'بتودي '
+    start_ms: 302410
+  - text: 'الحنين '
+    start_ms: 303530
+  - text: 'ليليي '
+    start_ms: 305080
+  - text: الحنين
+    start_ms: 306660
+- text: يشلحني بالمنفى بعيونك الحلوين
+  start_ms: 309290
+  end_ms: 315148
+  words:
+  - text: 'يشلحني '
+    start_ms: 309290
+  - text: 'بالمنفى '
+    start_ms: 310530
+  - text: 'بعيونك '
+    start_ms: 312440
+  - text: الحلوين
+    start_ms: 313980
+- text: تا أعرف لمين و ما بعرف لمين
+  start_ms: 316590
+  end_ms: 322598
+  words:
+  - text: 'تا '
+    start_ms: 316590
+  - text: 'أعرف '
+    start_ms: 316950
+  - text: 'لمين '
+    start_ms: 317300
+  - text: 'و '
+    start_ms: 319990
+  - text: 'ما '
+    start_ms: 320130
+  - text: 'بعرف '
+    start_ms: 320250
+  - text: لمين
+    start_ms: 321720
+- text: أنا عندي حنين ما بعرف لمين
+  start_ms: 323760
+  end_ms: 329442
+  words:
+  - text: 'أنا '
+    start_ms: 323760
+  - text: 'عندي '
+    start_ms: 324170
+  - text: 'حنين '
+    start_ms: 324990
+  - text: 'ما '
+    start_ms: 327070
+  - text: 'بعرف '
+    start_ms: 327250
+  - text: لمين
+    start_ms: 328840
+- text: ليليي بيخطفني من بين السهرانين
+  start_ms: 331260
+  end_ms: 336831
+  words:
+  - text: 'ليليي '
+    start_ms: 331260
+  - text: 'بيخطفني '
+    start_ms: 332190
+  - text: 'من '
+    start_ms: 334690
+  - text: 'بين '
+    start_ms: 335080
+  - text: السهرانين
+    start_ms: 335440
+- text: بيصير يمشيني لبعيد يوديني
+  start_ms: 338430
+  end_ms: 344059
+  words:
+  - text: 'بيصير '
+    start_ms: 338430
+  - text: 'يمشيني '
+    start_ms: 339450
+  - text: 'لبعيد '
+    start_ms: 342050
+  - text: يوديني
+    start_ms: 343580
+- text: تا أعرف لمين و ما بعرف لمين
+  start_ms: 345140
+  end_ms: 351240
+  words:
+  - text: 'تا '
+    start_ms: 345140
+  - text: 'أعرف '
+    start_ms: 345615
+  - text: 'لمين '
+    start_ms: 346111
+  - text: 'و '
+    start_ms: 348518
+  - text: 'ما '
+    start_ms: 348835
+  - text: 'بعرف '
+    start_ms: 349360
+  - text: لمين
+    start_ms: 350519
+plain: |-
+  انا عندي حنين ما بعرف لمين
+  الليلة بيخظفني من بين السهرانين
+  انا عندي حنين ما بعرف لمين
+  الليلة بيخطفني من بين السهرانين
+  بصير يمشيني لبعيد يوديني
+  تا اعرف لمين
+  وما بعرف لمين
+  اه اه اه
+
+  عديت الأسامي ومحيت الأسامي
+  ونامي يا عينيي إزا رح فيكي تنامي
+  عديت الأسامي و محيت الأسامي
+  ونامي يا عينيي إزا رح فيكي تنامي
+  و بعده هالحنين من خلف الحنين
+  بالدمع يغرقني و بأسامي المنسيين
+  تا اعرف لمين
+  وما بعرف لمين
+
+  انا عندي حنين ما بعرف لمين
+  الليلية بيخظفني من بين السهرانين
+  بصير يمشيني لبعيد يوديني
+  تا اعرف لمين
+  وما بعرف لمين لمين
+  اه اه اه
+
+  انا خوفي يا حبي لتكون بعدك حبي
+  و متهيالي نسيتك و انتا مخبا بقلبي بقلبي
+  انا خوفي يا حبي لتكون بعدك حبي
+  و متهيالي نسيتك و انتا مخبا بقلبي
+
+  و بتودي الحنين ليلي الحنين
+  يشلحني بالمنفا بعيونك الحلوين
+  تا اعرف لمين
+  و ما بعرف لمين
+
+  انا عندي حنين ما بعرف لمين
+  الليلة بيخظفني من بين السهرانين
+  بصير يمشيني لبعيد يوديني
+  تا اعرف لمين
+  و ما بعرف لمين

@@ -57,10 +57,26 @@ DTD declarations are rejected before entity expansion; input, tree depth, node,
 line and word counts are bounded. Parsing never follows XML file or URL references.
 
 AMLL downloads raw TTML. NetEase requests YRC before falling back to LRC,
-Kugou downloads KRC before LRC, LRCLIB and QQ Music return LRC,
+Kugou downloads KRC before LRC, LRCLIB prefers Lyricsfile YAML over LRC, QQ Music returns LRC,
 and Cider/generic adapters supply normalized lines and words. Enhanced LRC word
 timing is eligible for the same preference as YRC, KRC, or TTML; a format label
 alone never establishes usable word timing.
+
+LRCLIB's `lyricsfile` field follows the [Lyricsfile 1.0 draft](https://github.com/tranxuanthang/lyricsfile/blob/main/SPECIFICATION.md).
+The parser accepts integer millisecond line/word timestamps and preserves word text,
+including spaces. Missing word ends use the next word start or the line end. Missing
+line ends use complete word ends, the next later line, track duration, or five seconds
+after the last start. Explicit ends and overlaps are preserved; words must remain
+ordered, fit their explicit line bounds, and reconstruct the line text. The original
+YAML is cached without inferred values. Unknown versions, nonzero `offset_ms` (whose
+semantics the draft leaves unresolved), and invalid content fall back to `syncedLyrics`.
+Rejected YAML is omitted from new cache artifacts so version details identify the
+usable encoding. Search timing labels always reflect the parsed lines, for every source.
+Safe YAML loading rejects duplicate keys, aliases, and non-core types; byte size,
+depth, node count, line count, and word count are bounded. Plain-only documents do
+not acquire invented timestamps. Existing LRC-only cache records are still valid;
+refresh them through manual search or delete the corresponding cache entry to fetch
+newly available word timing.
 
 Each stable MPRIS track starts a new generation. Tasks from an older generation
 are cancelled, and stale results cannot update the active display.

@@ -113,8 +113,9 @@ def test_sweep_has_a_soft_halo_boundary_but_leaves_distant_unsung_text_unlit(
 @pytest.mark.parametrize("wrapped", [False, True])
 @pytest.mark.parametrize("word_timed", [False, True])
 @pytest.mark.parametrize("fraction", [0.15, 0.5, 1.0])
+@pytest.mark.parametrize("text", ["HHHH", "مرحبا", "مرحبا hello 123"])
 def test_progress_colors_do_not_accumulate_glyph_edge_coverage(
-    label: KaraokeLabel, wrapped: bool, word_timed: bool, fraction: float,
+    label: KaraokeLabel, wrapped: bool, word_timed: bool, fraction: float, text: str,
 ) -> None:
     """Equal base/accent colors must look identical as line and word fills move.
 
@@ -124,9 +125,11 @@ def test_progress_colors_do_not_accumulate_glyph_edge_coverage(
     font = QFont("monospace")
     font.setPixelSize(40)
     label.set_style(font, "#4080c0", "#4080c0", "#4080c0", QColor("#4080c0"), QColor(0, 0, 0, 0))
-    label.set_max_width(180)
+    # Compare glyph coverage at a fixed position; scrolling a long mixed-script
+    # line legitimately changes which pixels are visible as progress advances.
+    label.set_max_width(180 if wrapped else 0)
     label.set_overflow_mode(PanelOverflowMode.WRAP if wrapped else PanelOverflowMode.SCROLL)
-    text = "HHHH HHHH" if wrapped else "HHHH"
+    text = f"{text} {text}" if wrapped else text
     label.set_line(_line(text, words=word_timed), word_timed)
     label.resize(label.sizeHint())
     label.set_progress(LineProgress("line", 0.0), WordProgress("line", (0.0,), -1) if word_timed else None)

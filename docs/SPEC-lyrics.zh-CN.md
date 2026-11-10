@@ -51,8 +51,19 @@ TTML 从 AMLL TTML DB、`.ttml` sidecar 和内嵌歌词文本读取。解析范�
 在实体扩展前拒绝 DTD，并限制输入大小、树深度、节点数、行数和词数；不读取 XML 引用的文件或 URL。
 
 AMLL 直接下载原始 TTML；网易云优先解析 YRC，再回退 LRC；酷狗优先 KRC，
-再回退 LRC；LRCLIB 和 QQ 音乐读取 LRC；Cider/通用适配器提供规范化行和词。
+再回退 LRC；LRCLIB 优先读取 Lyricsfile YAML，再回退 LRC；QQ 音乐读取 LRC；Cider/通用适配器提供规范化行和词。
 Enhanced LRC 的逐字时间与 YRC、KRC、TTML 同等参与优先选择，格式名称本身不代表有可用逐字时间。
+
+LRCLIB 的 `lyricsfile` 字段遵循 [Lyricsfile 1.0 草案](https://github.com/tranxuanthang/lyricsfile/blob/main/SPECIFICATION.md)。
+行和词的时间使用整数毫秒，保留词尾空格。缺省词结束时间取下一个词的开始或行末；
+缺省行结束时间依次使用完整词结束时间、下一较晚行的开始、歌曲时长，或最后开始时间后五秒。
+显式结束时间和重叠时间保持不变；词必须有序、位于显式行时间范围内，且拼接后等于行文本。
+缓存保留原始 YAML，不写回推断值。未知版本、语义尚未确定的非零 `offset_ms` 或无效内容
+回退到 `syncedLyrics`。不支持或无效的 YAML 不进入新缓存条目，避免把 LRC 回退结果标成 Lyricsfile；
+各来源的搜索结果均按解析后的实际时间精度标记逐字或逐行。
+安全 YAML 解析拒绝重复键、别名和非核心类型，并限制输入大小、深度、节点数、行数和词数。
+只有 `plain` 的内容不生成时间戳。旧的纯 LRC 缓存仍然有效；
+通过手动搜索刷新或删除对应条目后，才会重新获取新增的逐字数据。
 
 每个稳定的 MPRIS track 有独立 generation。旧 generation 的 task 会被取消，过期结果不能更新当前显示。
 

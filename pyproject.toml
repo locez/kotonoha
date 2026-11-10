@@ -39,6 +39,7 @@ dependencies = [
   "qasync",
   "aiohttp",
   "dbus-fast",
+  "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]

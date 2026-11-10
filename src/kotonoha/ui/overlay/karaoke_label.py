@@ -1,4 +1,4 @@
-"""A single lyric line rendered with a left-to-right karaoke sweep.
+"""A single lyric line with a karaoke sweep following its reading direction.
 
 The "sung" portion is filled with a pink gradient and the rest stays a dim
 white; the word currently being sung is brightened with the accent-sweep colour.
@@ -25,7 +25,7 @@ from ...display.layout import FontFitPolicy
 from ...display.models import LineProgress, WordProgress
 from ...lyrics.models import LyricLine
 from .text_glow import TextGlow
-from .text_layout import TextRow, WrappedTextLayout, measure_word_offsets
+from .text_layout import TextRow, WrappedTextLayout, is_right_to_left, measure_word_offsets, scaled_font
 
 UNSUNG_COLOR = QColor(255, 255, 255, 95)
 SHADOW_COLOR = QColor(0, 0, 0, 170)
@@ -70,17 +70,6 @@ def _scale_alpha(color: QColor, factor: float) -> QColor:
     return out
 
 
-def _scaled(font: QFont, scale: float) -> QFont:
-    """Copy typography at the display scale with brush-independent glyph coverage."""
-    scaled = QFont(font)
-    # Qt can use LCD masks for solid text but grayscale masks for gradient text.
-    # Use the same mask for both so the karaoke sweep cannot change glyph edges.
-    scaled.setStyleStrategy(font.styleStrategy() | QFont.StyleStrategy.NoSubpixelAntialias)
-    if scale != 1.0:
-        scaled.setPixelSize(max(8, int(round(font.pixelSize() * scale))))
-    return scaled
-
-
 class KaraokeLabel(QWidget):
     """Own one lyric's layout, progress, transition, and cached glow layer."""
 
@@ -119,6 +108,7 @@ class KaraokeLabel(QWidget):
         self._word_widths: list[float] = []
         self._word_offsets: list[float] = []
         self._total_w = 0.0
+        self._right_to_left: bool = False  # Per lyric, independent of the UI language.
         self._overflow_mode: PanelOverflowMode = PanelOverflowMode.SCROLL
         self._wrapped: WrappedTextLayout | None = None
         self._max_width = 0  # 0 = unlimited; else cap the width and scroll long lines
@@ -137,7 +127,7 @@ class KaraokeLabel(QWidget):
         shadow_color: QColor | None = None,
     ) -> None:
         self._base_font = font
-        self._font = _scaled(font, self._scale)
+        self._font = scaled_font(font, self._scale)
         self._accent_start = QColor(accent_start)
         self._accent_end = QColor(accent_end)
         self._accent_sweep = QColor(accent_sweep)
@@ -173,7 +163,7 @@ class KaraokeLabel(QWidget):
         if abs(scale - self._scale) < 0.001:
             return
         self._scale = scale
-        self._font = _scaled(self._base_font, scale)
+        self._font = scaled_font(self._base_font, scale)
         self._fm = QFontMetrics(self._font)
         self._rebuild_layout()
         self.updateGeometry()
@@ -202,6 +192,7 @@ class KaraokeLabel(QWidget):
     def _rebuild_layout(self) -> None:
         self._text_glow.clear()
         text = self.text
+        self._right_to_left = is_right_to_left(text)
         self._total_w = self._fm.horizontalAdvance(text) if text else 0.0
         self._word_offsets = measure_word_offsets(self._line, self._fm)
         if self._line and self._word_offsets:
@@ -308,7 +299,8 @@ class KaraokeLabel(QWidget):
     def _compute_sweep(self, text_left: float, total_width: float) -> tuple[float, tuple[float, float] | None]:
         """Return (sweep_x, active_word_range).
 
-        ``sweep_x`` is the absolute x up to which the line is sung. When a word
+        Coordinates advance from the reading start, before RTL mirroring of
+        paint regions. ``sweep_x`` is the distance up to which the line is sung. When a word
         is mid-sing, ``active_word_range`` is the (x0, x1) sub-range of that word
         already sung, to be brightened with the accent-sweep colour. Uses cached
         word widths (no per-frame text measurement).
@@ -440,7 +432,10 @@ class KaraokeLabel(QWidget):
             painter.setClipRect(QRectF(0.0, 0.0, avail, height))
 
         sweep_x = sweep_rel + text_left
-        rect = QRectF(text_left, 0.0, total_width, height)
+        # Mirror geometry only: Qt keeps the glyphs and embedded numeric/Latin
+        # runs correctly shaped. Reading coordinates also make scrolling start
+        # at the right edge of an overflowing RTL lyric or title.
+        rect = QRectF(avail - text_left - total_width if self._right_to_left else text_left, 0.0, total_width, height)
 
         # A close, lighter shadow keeps contrast without a second visible edge
         # competing with the halo on translucent panels over bright desktops.
@@ -456,7 +451,7 @@ class KaraokeLabel(QWidget):
             fx = _FX[self._intensity]
             self._text_glow.paint(
                 painter, rect, row, sweep=sweep_rel, color=self._accent_sweep,
-                sigma=fx["glow_sigma"], opacity=a * fx["glow_alpha"],
+                sigma=fx["glow_sigma"], opacity=a * fx["glow_alpha"], right_to_left=self._right_to_left,
             )
 
         # Give base, sung, and active-word colors disjoint regions. Painting the
@@ -467,7 +462,10 @@ class KaraokeLabel(QWidget):
         if active_rel is not None and active_rel[1] > active_rel[0]:
             active_start = max(0.0, min(boundary, active_rel[0] + text_left))
         offset = 0.0 if row is None else row.offset
-        gradient = QLinearGradient(text_left - offset, 0.0, text_left - offset + self._total_w, 0.0)
+        start, end = text_left - offset, text_left - offset + self._total_w
+        gradient = QLinearGradient(avail - start, 0.0, avail - end, 0.0) if self._right_to_left else (
+            QLinearGradient(start, 0.0, end, 0.0)
+        )
         gradient.setColorAt(0.0, _scale_alpha(self._accent_start, a))
         gradient.setColorAt(1.0, _scale_alpha(self._accent_end, a))
         color = self._accent_sweep.lighter(_FX[self._intensity]["pop"]) if self._word_pop else self._accent_sweep
@@ -478,6 +476,8 @@ class KaraokeLabel(QWidget):
         ):
             if right <= left:
                 continue
+            if self._right_to_left:
+                left, right = avail - right, avail - left
             painter.save()
             painter.setClipRect(QRectF(left, 0.0, right - left, height), Qt.ClipOperation.IntersectClip)
             painter.setPen(QPen(brush, 0))
@@ -488,7 +488,10 @@ class KaraokeLabel(QWidget):
     def _draw_text(self, painter: QPainter, rect: QRectF, row: TextRow | None) -> None:
         """Use the cached shaped line for wrapping and the existing painter for scrolling."""
         if row is None:
-            align = int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            painter.setLayoutDirection(Qt.LayoutDirection.RightToLeft if self._right_to_left else (
+                Qt.LayoutDirection.LeftToRight
+            ))
+            align = int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignAbsolute | Qt.AlignmentFlag.AlignVCenter)
             painter.drawText(rect, align, self.text)
         else:
             row.line.draw(painter, QPointF(rect.left(), rect.top() + self._text_padding))

@@ -6,7 +6,7 @@ import asyncio
 import logging
 import math
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Protocol
 
@@ -140,7 +140,11 @@ class LyricsSearchResult:
     @classmethod
     def from_artifact(cls, artifact: LyricsArtifact) -> LyricsSearchResult:
         """Build a selection result from a validated provider artifact."""
-        return cls(artifact, _version_for(artifact))
+        timing = (
+            LyricsTiming.WORD if any(line.has_word_timing for line in artifact.lines)
+            else LyricsTiming.LINE if artifact.lines else LyricsTiming.NONE
+        )
+        return cls(artifact, replace(_version_for(artifact), content_timing=timing))
 
     @property
     def source_key(self) -> str:
@@ -301,15 +305,14 @@ def _version_for(artifact: LyricsArtifact) -> LyricsVersion:
     """Derive stable version facts from provider payloads at the lyric boundary."""
     payload = artifact.payload
     if artifact.provider == "amll":
-        timing = LyricsTiming.WORD if any(line.has_word_timing for line in artifact.lines) else LyricsTiming.LINE
-        return LyricsVersion("ttml", any(line.translation for line in artifact.lines), timing)
+        return LyricsVersion("ttml", any(line.translation for line in artifact.lines))
     if artifact.provider == "netease":
         format_id = "yrc" if payload.get("yrc", "").strip() else "lrc"
         return LyricsVersion(format_id, bool(payload.get("tlyric", "").strip()))
     if artifact.provider == "kugou":
         return LyricsVersion("krc" if payload.get("krc", "").strip() else "lrc")
     if artifact.provider == "lrclib":
-        return LyricsVersion("lrc")
+        return LyricsVersion("lyricsfile" if payload.get("lyricsfile", "").strip() else "lrc")
     return LyricsVersion("lyrics")
 
 

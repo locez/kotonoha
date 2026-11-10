@@ -26,6 +26,7 @@ Requires:       python3
 Requires:       python3-pyqt6
 Requires:       python3-aiohttp
 Requires:       python3-dbus-fast
+Requires:       python3-pyyaml
 Requires:       layer-shell-qt
 Requires:       cmake
 Requires:       gcc-c++
