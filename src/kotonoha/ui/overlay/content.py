@@ -20,6 +20,7 @@ from ...strings import Translator
 from .context_label import ContextLabel
 from .karaoke_label import KaraokeLabel
 from .state import LyricsState
+from .text_layout import is_right_to_left
 
 INTERLUDE_SCALE = 0.62
 
@@ -173,7 +174,10 @@ class OverlayContentController:
         if interlude_line is None:
             return
         self._interlude_active = True
-        self._current.set_line(interlude_line, False)
+        # Resolve from the timeline, so seeks and track changes need no playback history.
+        direction_line = frame.previous if frame.previous is not None else frame.next
+        right_to_left = direction_line is not None and is_right_to_left(direction_line.text)
+        self._current.set_line(interlude_line, False, right_to_left=right_to_left)
         self._current.set_progress(frame.line_progress, None)
 
     def _show_empty(self, frame: DisplayFrame) -> None:

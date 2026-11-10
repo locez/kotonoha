@@ -169,14 +169,18 @@ class KaraokeLabel(QWidget):
         self.updateGeometry()
         self.update()
 
-    def set_line(self, line: LyricLine | None, word_mode: bool) -> None:
+    def set_line(self, line: LyricLine | None, word_mode: bool, *, right_to_left: bool | None = None) -> None:
+        """Bind a lyric, optionally supplying a reading direction for a marker."""
+        if right_to_left is None:
+            right_to_left = is_right_to_left(line.text) if line is not None else False
         prev_id = self._line.id if self._line else None
         new_id = line.id if line else None
         requested_word_mode = word_mode and line is not None and line.has_word_timing
-        if line == self._line and requested_word_mode == self._word_mode:
+        if line == self._line and requested_word_mode == self._word_mode and right_to_left == self._right_to_left:
             return
         self._line = line
         self._word_mode = requested_word_mode
+        self._right_to_left = right_to_left
         self._rebuild_layout()
         if new_id is not None and new_id != prev_id:
             self._start_reveal()
@@ -192,7 +196,6 @@ class KaraokeLabel(QWidget):
     def _rebuild_layout(self) -> None:
         self._text_glow.clear()
         text = self.text
-        self._right_to_left = is_right_to_left(text)
         self._total_w = self._fm.horizontalAdvance(text) if text else 0.0
         self._word_offsets = measure_word_offsets(self._line, self._fm)
         if self._line and self._word_offsets:
@@ -215,7 +218,7 @@ class KaraokeLabel(QWidget):
             and self._line.id not in {"title", "interlude"}
         ):
             width = max(1, self._max_width - int(2 * (self._text_padding - 3.0)))
-            self._wrapped = WrappedTextLayout(self._line, self._font, width)
+            self._wrapped = WrappedTextLayout(self._line, self._font, width, right_to_left=self._right_to_left)
             self._total_w = self._wrapped.advance
             self._word_offsets = self._wrapped.word_offsets
             self._word_widths = self._wrapped.word_widths

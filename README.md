@@ -163,6 +163,8 @@ Persian, and Hebrew lines fill from right to left, including word highlighting, 
 scrolling, and wrapped rows. Leading numbers or punctuation do not determine direction.
 Mixed text keeps Qt's normal letter shaping and bidirectional layout; the continuous
 sweep follows the base direction of the line.
+Interlude dots follow the preceding lyric's direction; before the first lyric,
+they follow the upcoming line. This also applies when seeking within multilingual songs.
 LRCLIB's Lyricsfile 1.0 YAML supplies word timing when available, with LRC as an
 alternative if the structured document is unavailable or invalid. Existing LRC-only
 cache entries remain readable; search again or clear the corresponding entry to fetch word timing.

@@ -57,10 +57,10 @@ class TextRow:
 class WrappedTextLayout:
     """Own shaped rows and map timed words onto their cumulative visual advance."""
 
-    def __init__(self, lyric: LyricLine, font: QFont, width: int) -> None:
+    def __init__(self, lyric: LyricLine, font: QFont, width: int, *, right_to_left: bool | None = None) -> None:
         """Shape one lyric at a bounded width, retaining the Qt layout owner."""
         self.layout: QTextLayout = QTextLayout(lyric.text, font)
-        self.right_to_left: bool = is_right_to_left(lyric.text)
+        self.right_to_left: bool = is_right_to_left(lyric.text) if right_to_left is None else right_to_left
         option = QTextOption()
         option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
         option.setTextDirection(

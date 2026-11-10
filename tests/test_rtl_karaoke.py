@@ -1,16 +1,23 @@
 """Reading-direction contracts exercised through the rendered lyric widget."""
 
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import pytest
 from PyQt6.QtGui import QColor, QFont, QFontMetrics, QImage
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QLabel, QWidget
 
-from kotonoha.config import PanelOverflowMode
-from kotonoha.display.models import LineProgress, WordProgress
-from kotonoha.lyrics.models import LyricLine, LyricWord
+from kotonoha.config import Config, PanelOverflowMode
+from kotonoha.display.models import DisplayOptions, InterludeCountdown, LineProgress, ResolutionState, WordProgress
+from kotonoha.display.offsets import EMPTY_TRACK_OFFSETS
+from kotonoha.display.presentation import DisplayEngine
+from kotonoha.lyrics.models import LyricLine, LyricsDocument, LyricWord, TimingKind
+from kotonoha.playback.models import PlaybackObservation, PlaybackStatus, TrackIdentity
+from kotonoha.strings import Translator
+from kotonoha.ui.overlay.content import OverlayContentController
+from kotonoha.ui.overlay.context_label import ContextLabel
 from kotonoha.ui.overlay.karaoke_label import KaraokeLabel
+from kotonoha.ui.overlay.state import LyricsState
 from kotonoha.ui.overlay.text_layout import WrappedTextLayout, measure_word_offsets
 
 
@@ -160,3 +167,89 @@ def test_wrapped_arabic_word_distances_increase_in_reading_order(qapp: QApplicat
     row = layout.rows[0]
     expected = [row.width - row.line.cursorToX(index)[0] for index in range(len(text))]
     assert measure_word_offsets(lyric(text, words), QFontMetrics(font)) == pytest.approx(expected, abs=1.0)
+
+
+@pytest.fixture
+def content(qapp: QApplication, label: KaraokeLabel) -> Iterator[OverlayContentController]:
+    """Bind real frames to the tested label without requiring a compositor."""
+    container = QWidget()
+    previous = ContextLabel(previous=True, parent=container)
+    following = ContextLabel(previous=False, parent=container)
+    # Direction must work even when the surrounding lyrics are hidden.
+    for context in (previous, following):
+        context.configure(count=0, animate=False)
+    controller = OverlayContentController(
+        LyricsState(container), Config(), previous, label, QLabel(container),
+        KaraokeLabel(container), following, container, timer_parent=container,
+        on_input_region_refresh=container.update, on_offset_changed=lambda _key, _offset: None,
+        track_offsets=EMPTY_TRACK_OFFSETS, translator=Translator("en"),
+    )
+    yield controller
+    controller.stop()
+    container.close()
+    container.deleteLater()
+    qapp.processEvents()
+
+
+@pytest.fixture
+def mixed_document() -> LyricsDocument:
+    """Alternate Arabic and English verses, separated by twenty-second breaks."""
+    texts = ("مرحبا عالم", "مرحبا عالم", "hello world", "hello world", "مرحبا عالم", "مرحبا عالم")
+    starts = (20.0, 25.0, 50.0, 55.0, 80.0, 85.0)
+    lines = tuple(
+        LyricLine(i, str(i), start, start + 5.0, text, "")
+        for i, (start, text) in enumerate(zip(starts, texts, strict=True))
+    )
+    return LyricsDocument("test", song_id="mixed", timing=TimingKind.LINE, duration_s=110.0, lines=lines)
+
+
+def _show_position(
+    content: OverlayContentController, document: LyricsDocument, position: float, options: DisplayOptions,
+) -> None:
+    """Exercise time-based context selection, including seeks and track changes."""
+    track = TrackIdentity("test", "player", stable_id=document.song_id, title="Song")
+    playback = PlaybackObservation("test", "player", track, PlaybackStatus.PLAYING, position, 110.0, 0.0)
+    frame = DisplayEngine(options).project_observation(playback, document, ResolutionState.AVAILABLE)
+    content.on_frame(frame)
+
+
+def _check_sweep_side(label: KaraokeLabel, *, rtl: bool) -> None:
+    """Observe the actual accent pixels, independent of the widget's direction flag."""
+    label.resize(label.sizeHint())
+    image = label.grab().toImage()
+    pixels = sung_pixels(image)
+    assert pixels
+    assert all((x > image.width() / 2) if rtl else (x < image.width() / 2) for x, _ in pixels)
+
+
+@pytest.mark.parametrize("countdown", tuple(InterludeCountdown))
+@pytest.mark.parametrize("glow", [False, True])
+def test_interlude_direction_follows_the_previous_verse_through_seeks(
+    content: OverlayContentController, label: KaraokeLabel, mixed_document: LyricsDocument,
+    countdown: InterludeCountdown, glow: bool,
+) -> None:
+    """Neutral markers follow nearby lyrics, regardless of playback history or countdown text."""
+    label.set_effects(glow=glow, word_pop=False, intensity="subtle", animate=False)
+    options = DisplayOptions(interlude_countdown=countdown)
+    # Enter a break directly, seek to the other language and back, then visit
+    # the intro, outro and sung lines. A marker's override must not leak into lyrics.
+    for position, rtl in ((35, True), (65, False), (35, True), (5, True), (95, True), (51, False), (81, True)):
+        _show_position(content, mixed_document, position, options)
+        _check_sweep_side(label, rtl=rtl)
+
+
+def test_identical_interlude_marker_changes_direction_with_the_track(
+    content: OverlayContentController, label: KaraokeLabel, mixed_document: LyricsDocument,
+) -> None:
+    """The same dots and timestamps cannot retain another track's reading direction."""
+    english = replace(
+        mixed_document, song_id="english",
+        lines=tuple(replace(line, text="hello world") for line in mixed_document.lines),
+    )
+    for document, rtl in ((mixed_document, True), (english, False), (mixed_document, True)):
+        _show_position(content, document, 35.0, DisplayOptions())
+        assert label.text == "●\u2003●\u2003●"
+        _check_sweep_side(label, rtl=rtl)
+        # Width changes rebuild geometry during the same interlude.
+        label.set_max_width(200 if rtl else 250)
+        _check_sweep_side(label, rtl=rtl)
