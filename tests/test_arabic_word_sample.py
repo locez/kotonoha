@@ -104,14 +104,20 @@ def test_sample_emphasizes_the_timed_word_in_native_reading_order(
                 right, _ = row.cursorToX(first)
                 left, _ = row.cursorToX(last)
                 origin = (label.width() - row.horizontalAdvance()) / 2
+                ink = QRectF()
+                for run in row.glyphRuns(first, last - first):
+                    for glyph, point in zip(run.glyphIndexes(), run.positions(), strict=True):
+                        ink = ink.united(run.rawFont().boundingRect(glyph).translated(point))
                 # Integer font metrics used by the single-row painter round at
                 # most one pixel. Keep that tolerance outside the glyph region.
+                # Accents can extend above a font's nominal ascent (DejaVu's
+                # hamza does); use glyph ink bounds for the wrapped row's y span.
                 # QPainter vertically centers an unwrapped line; QTextLayout
                 # places wrapped rows from the top. Only wrapped y positions
                 # decide whether a word accidentally lights a different row.
                 bounds.append(QRectF(
-                    origin + left - 1, top - 1 if wrapped else 0,
-                    right - left + 2, row.height() + 2 if wrapped else label.height(),
+                    origin + left - 1, top + ink.top() - 1 if wrapped else 0,
+                    right - left + 2, ink.height() + 2 if wrapped else label.height(),
                 ))
             top += row.height()
 

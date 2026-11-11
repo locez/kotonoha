@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from unicodedata import bidirectional
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QFontMetrics, QTextLayout, QTextLine, QTextOption
+from PyQt6.QtGui import QFont, QTextLayout, QTextLine, QTextOption
 
 from ...lyrics.models import LyricLine
 
@@ -107,7 +107,7 @@ class WrappedTextLayout:
         return self.advance
 
 
-def measure_word_offsets(line: LyricLine | None, metrics: QFontMetrics) -> list[float]:
+def measure_word_offsets(line: LyricLine | None, font: QFont) -> list[float]:
     """Return each word's advance from the reading start in the shaped text.
 
     The sweep used to assume one space between every pair of words. The KRC and
@@ -120,6 +120,23 @@ def measure_word_offsets(line: LyricLine | None, metrics: QFontMetrics) -> list[
     if line is None or not line.words:
         return []
     text = line.text
+    # Prefix advances include a whole ligature even when the prefix ends inside
+    # it (Arabic lam-alef, Latin ffi). Cursor positions divide the shaped glyph
+    # between its characters. The layout only owns this pure geometry calculation.
+    right_to_left = is_right_to_left(text)
+    layout = QTextLayout(text, font)
+    option = QTextOption()
+    option.setTextDirection(Qt.LayoutDirection.RightToLeft if right_to_left else Qt.LayoutDirection.LeftToRight)
+    option.setWrapMode(QTextOption.WrapMode.NoWrap)
+    layout.setTextOption(option)
+    layout.beginLayout()
+    row = layout.createLine()
+    if row.isValid():
+        row.setNumColumns(len(text.encode("utf-16-le")) // 2)
+    layout.endLayout()
+    if not row.isValid():
+        return [0.0 for _ in line.words]
+    width = row.horizontalAdvance()
     offsets: list[float] = []
     cursor = 0
     for word in line.words:
@@ -129,9 +146,9 @@ def measure_word_offsets(line: LyricLine | None, metrics: QFontMetrics) -> list[
             # Fall back to laying them out end to end, which is what the parsers
             # produce and is closer than assuming separators that are not there.
             found = cursor
-        # Shape the whole string while measuring its UTF-16 prefix. Shaping a
-        # sliced prefix would detach Arabic letters from their joining context.
+        # Qt cursor offsets use UTF-16; Python indices use Unicode code points.
         qt_index = len(text[:found].encode("utf-16-le")) // 2
-        offsets.append(metrics.horizontalAdvance(text, qt_index))
+        x, _ = row.cursorToX(qt_index)
+        offsets.append(max(0.0, min(width, width - x if right_to_left else x)))
         cursor = found + len(word.text)
     return offsets

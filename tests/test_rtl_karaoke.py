@@ -4,7 +4,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, replace
 
 import pytest
-from PyQt6.QtGui import QColor, QFont, QFontMetrics, QImage
+from PyQt6.QtGui import QColor, QFont, QImage
 from PyQt6.QtWidgets import QApplication, QLabel, QWidget
 
 from kotonoha.config import Config, PanelOverflowMode
@@ -151,9 +151,13 @@ def test_direction_is_recomputed_when_replacing_a_line(label: KaraokeLabel) -> N
         assert all((x > image.width() / 2) if rtl else (x < image.width() / 2) for x, _ in pixels)
 
 
-def test_wrapped_arabic_word_distances_increase_in_reading_order(qapp: QApplication) -> None:
-    """Qt's decreasing RTL x coordinates must not become zero-width timed words."""
-    text = "سلام"
+@pytest.mark.parametrize("case", (
+    DirectionCase("سلام", True), DirectionCase("لا", True), DirectionCase("لل", True),
+    DirectionCase("office", False), DirectionCase("hello", False),
+), ids=lambda case: case.text)
+def test_word_distances_follow_shaped_cursor_positions(qapp: QApplication, case: DirectionCase) -> None:
+    """RTL coordinates and ligatures must not become zero-width timed letters."""
+    text = case.text
     font = QFont("DejaVu Sans")
     font.setPixelSize(36)
     words = tuple(LyricWord(float(i), float(i + 1), char) for i, char in enumerate(text))
@@ -165,8 +169,11 @@ def test_wrapped_arabic_word_distances_increase_in_reading_order(qapp: QApplicat
     # Scrolling must measure characters in their full joining context too;
     # independently shaping each sliced prefix changes Arabic glyph advances.
     row = layout.rows[0]
-    expected = [row.width - row.line.cursorToX(index)[0] for index in range(len(text))]
-    assert measure_word_offsets(lyric(text, words), QFontMetrics(font)) == pytest.approx(expected, abs=1.0)
+    expected = [
+        row.width - row.line.cursorToX(index)[0] if case.rtl else row.line.cursorToX(index)[0]
+        for index in range(len(text))
+    ]
+    assert measure_word_offsets(lyric(text, words), font) == pytest.approx(expected, abs=1.0)
 
 
 @pytest.fixture

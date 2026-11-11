@@ -197,7 +197,7 @@ class KaraokeLabel(QWidget):
         self._text_glow.clear()
         text = self.text
         self._total_w = self._fm.horizontalAdvance(text) if text else 0.0
-        self._word_offsets = measure_word_offsets(self._line, self._fm)
+        self._word_offsets = measure_word_offsets(self._line, self._font)
         if self._line and self._word_offsets:
             # Independent glyph advances can differ by one pixel because of
             # shaping/rounding; adjacent offsets preserve the rendered extent.
