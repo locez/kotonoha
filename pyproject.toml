@@ -17,7 +17,7 @@ wheel.exclude = ["**/*.cpp", "**/*.sh", "**/protocols/*.xml"]
 
 [project]
 name = "kotonoha"
-version = "0.3.1"
+version = "0.3.2"
 description = "Linux desktop lyrics overlay bridge using PyQt6 and external player adapters."
 readme = "README.md"
 authors = [
