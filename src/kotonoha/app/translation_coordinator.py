@@ -7,7 +7,7 @@ import logging
 from dataclasses import dataclass
 from typing import Protocol
 
-from ..config import Config, TranslationProvider
+from ..config import Config
 from ..i18n import resolve_lyrics_translation_language
 from ..lyrics.models import LyricsDocument
 from ..secrets import SecretStore, SecretStoreError, translation_secret_key
@@ -27,11 +27,11 @@ class TranslationSecretSnapshot:
 
     available: bool = True
     reason: str | None = None
-    saved_providers: frozenset[str] = frozenset()
+    saved_services: frozenset[str] = frozenset()
 
-    def has_key(self, provider: str) -> bool:
-        """Return whether a key is currently saved for ``provider``."""
-        return provider in self.saved_providers
+    def has_key(self, service_id: str) -> bool:
+        """Return whether a key is currently saved for ``service_id``."""
+        return service_id in self.saved_services
 
 
 class TranslationDocumentTarget(Protocol):
@@ -58,10 +58,8 @@ def translation_config_from_app(config: Config) -> TranslationConfig:
     """Project validated application config into immutable translation settings."""
     return TranslationConfig(
         policy=config.translation_policy,
-        provider=config.translation_provider,
         target_language=resolve_lyrics_translation_language(config.translation_language),
-        base_url=config.translation_base_url,
-        model=config.translation_model,
+        services=tuple(config.translation_services),
         prompt=config.translation_prompt,
         cache_enabled=config.cache_enabled,
     )
@@ -112,7 +110,7 @@ class LyricsTranslationCoordinator:
             self._secrets.close()
 
     def apply_config(self, config: Config) -> None:
-        """Update translation policy/provider and re-evaluate the active track."""
+        """Update translation policy/services and re-evaluate the active track."""
         updated = translation_config_from_app(config)
         if updated == self._service.config:
             return
@@ -139,40 +137,40 @@ class LyricsTranslationCoordinator:
         task.add_done_callback(self._translation_finished)
 
     async def secret_snapshot(self) -> TranslationSecretSnapshot:
-        """Probe keyring status and which providers currently have saved keys."""
+        """Probe keyring status and which configured services currently have saved keys."""
         availability = await self._secrets.availability()
         saved: set[str] = set()
-        for provider in TranslationProvider:
+        for service in self._service.config.services:
             try:
-                value = await self._secrets.get_secret(translation_secret_key(provider.value))
+                value = await self._secrets.get_secret(translation_secret_key(service.id))
             except SecretStoreError as exc:
-                logger.debug("Could not inspect saved key for %s: %s", provider.value, exc)
+                logger.debug("Could not inspect saved key for %s: %s", service.id, exc)
                 continue
             if value:
-                saved.add(provider.value)
+                saved.add(service.id)
         return TranslationSecretSnapshot(
             available=availability.available,
             reason=availability.reason,
-            saved_providers=frozenset(saved),
+            saved_services=frozenset(saved),
         )
 
-    def save_api_key(self, provider: TranslationProvider, api_key: str) -> None:
-        """Persist one provider API key asynchronously and retry active lyrics."""
+    def save_api_key(self, service_id: str, api_key: str) -> None:
+        """Persist one service API key asynchronously and retry active lyrics."""
         if self._closed:
             return
         task = self._tasks.create(
-            self._save_api_key_async(provider, api_key),
-            name=f"kotonoha-save-secret-{provider.value}",
+            self._save_api_key_async(service_id, api_key),
+            name=f"kotonoha-save-secret-{service_id}",
         )
         task.add_done_callback(self._command_finished)
 
-    def delete_api_key(self, provider: TranslationProvider) -> None:
-        """Delete one provider API key asynchronously from the system keyring."""
+    def delete_api_key(self, service_id: str) -> None:
+        """Delete one service API key asynchronously from the system keyring."""
         if self._closed:
             return
         task = self._tasks.create(
-            self._delete_api_key_async(provider),
-            name=f"kotonoha-delete-secret-{provider.value}",
+            self._delete_api_key_async(service_id),
+            name=f"kotonoha-delete-secret-{service_id}",
         )
         task.add_done_callback(self._command_finished)
 
@@ -208,15 +206,17 @@ class LyricsTranslationCoordinator:
             return
         self._target.apply_translated_document(document, translated)
 
-    async def _save_api_key_async(self, provider: TranslationProvider, api_key: str) -> None:
-        await self._secrets.set_secret(translation_secret_key(provider.value), api_key)
-        self._service.clear_backoff()
-        if self._started and self._service.config.provider is provider:
+    async def _save_api_key_async(self, service_id: str, api_key: str) -> None:
+        await self._secrets.set_secret(translation_secret_key(service_id), api_key)
+        self._service.clear_backoff(service_id)
+        if self._started and any(
+            service.enabled and service.id == service_id for service in self._service.config.services
+        ):
             self.on_source_document(self._target.current_source_document())
 
-    async def _delete_api_key_async(self, provider: TranslationProvider) -> None:
-        await self._secrets.delete_secret(translation_secret_key(provider.value))
-        self._service.clear_backoff()
+    async def _delete_api_key_async(self, service_id: str) -> None:
+        await self._secrets.delete_secret(translation_secret_key(service_id))
+        self._service.clear_backoff(service_id)
 
     async def _clear_cache_async(self) -> None:
         await self._service.clear_cache()

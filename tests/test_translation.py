@@ -13,7 +13,14 @@ from pathlib import Path
 import pytest
 
 from kotonoha.async_worker import BlockingCallRunner
-from kotonoha.config import Config, TranslationPolicy, TranslationProvider, load_config, save_config
+from kotonoha.config import (
+    Config,
+    TranslationPolicy,
+    TranslationProvider,
+    TranslationServiceConfig,
+    load_config,
+    save_config,
+)
 from kotonoha.i18n import (
     normalize_translation_language,
     resolve_lyrics_translation_language,
@@ -343,17 +350,32 @@ async def test_deepl_routes_free_and_pro_keys_and_chunks_over_50_lines() -> None
 
 async def test_deepl_maps_auth_rate_limit_and_mismatched_counts() -> None:
     for status, expected_kind in ((403, TranslationErrorKind.AUTH), (456, TranslationErrorKind.RATE_LIMIT)):
-        session = _FakeHttpSession([(status, {})])
+        session = _FakeHttpSession([(status, {"message": f"detail {status}"})])
         with pytest.raises(TranslationError) as exc_info:
-            await DeepLTranslator(session).translate(
+            await DeepLTranslator(session, transient_retry_delay_s=0.0).translate(
                 TranslationRequest(lines=("Hello",), target_language="pt-PT"),
                 api_key="key:fx",
             )
         assert exc_info.value.kind is expected_kind
+        assert f"detail {status}" in str(exc_info.value)
+
+    # Transient HTTP 503 retries once automatically and succeeds on recovery.
+    flaky_session = _FakeHttpSession(
+        [
+            (503, {"message": "Temporarily unavailable"}),
+            (200, {"translations": [{"text": "Olá"}]}),
+        ]
+    )
+    recovered = await DeepLTranslator(flaky_session, transient_retry_delay_s=0.0).translate(
+        TranslationRequest(lines=("Hello",), target_language="pt-PT"),
+        api_key="key:fx",
+    )
+    assert len(flaky_session.posts) == 2
+    assert recovered.translations == ("Olá",)
 
     mismatch_session = _FakeHttpSession([(200, {"translations": [{"text": "Only one"}]})])
     with pytest.raises(TranslationError) as exc_info:
-        await DeepLTranslator(mismatch_session).translate(
+        await DeepLTranslator(mismatch_session, transient_retry_delay_s=0.0).translate(
             TranslationRequest(lines=("One", "Two"), target_language="pt-PT"),
             api_key="key:fx",
         )
@@ -401,6 +423,81 @@ async def test_openai_compatible_parses_fenced_json_and_retries_without_response
     assert "Use concise poetic European Portuguese." in messages[0]["content"]
     assert '"translations"' in messages[0]["content"]
     assert result.translations == ("Olá mundo", "Boa noite")
+
+
+async def test_openai_compatible_retries_503_once_and_surfaces_upstream_error_detail() -> None:
+    # Single transient 503 recovers on retry.
+    recovering_session = _FakeHttpSession(
+        [
+            (503, [{"error": {"code": 503, "message": "Model overloaded"}}]),
+            (200, {"choices": [{"message": {"content": '{"translations": {"0": "Olá"}}'}}]}),
+        ]
+    )
+    recovering = OpenAICompatibleTranslator(
+        recovering_session,
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        model="gemini-3.5-flash-lite",
+        transient_retry_delay_s=0.0,
+    )
+    result = await recovering.translate(TranslationRequest(lines=("Hello",), target_language="pt-PT"), api_key="k")
+    assert len(recovering_session.posts) == 2
+    assert result.translations == ("Olá",)
+
+    # Repeated 503 surfaces the truncated upstream Gemini error message in TranslationError.
+    failing_session = _FakeHttpSession(
+        [
+            (503, [{"error": {"code": 503, "message": "The model is currently experiencing high demand"}}]),
+            (503, [{"error": {"code": 503, "message": "The model is currently experiencing high demand"}}]),
+        ]
+    )
+    failing = OpenAICompatibleTranslator(
+        failing_session,
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        model="gemini-3.5-flash-lite",
+        transient_retry_delay_s=0.0,
+    )
+    with pytest.raises(TranslationError) as exc_info:
+        await failing.translate(TranslationRequest(lines=("Hello",), target_language="pt-PT"), api_key="k")
+    assert len(failing_session.posts) == 2
+    assert exc_info.value.kind is TranslationErrorKind.NETWORK
+    assert exc_info.value.retryable is True
+    assert "high demand" in str(exc_info.value)
+
+
+def test_translation_timeouts_enforce_fast_connect_and_fallback_budget() -> None:
+    from kotonoha.lyrics.http import _aiohttp_timeout
+    from kotonoha.translation.deepl import DEFAULT_DEEPL_TIMEOUT_S
+    from kotonoha.translation.openai_compatible import DEFAULT_OPENAI_TIMEOUT_S, FALLBACK_OPENAI_TIMEOUT_S
+    from kotonoha.translation.service import default_translator_factory
+
+    normal_timeout = _aiohttp_timeout(15.0)
+    assert normal_timeout is not None
+    assert normal_timeout.total == 15.0
+    assert normal_timeout.sock_connect == 5.0
+
+    short_timeout = _aiohttp_timeout(2.0)
+    assert short_timeout is not None
+    assert short_timeout.sock_connect == 2.0
+
+    session = _FakeHttpSession([])
+    openai_svc = TranslationServiceConfig(
+        id="gemini",
+        name="Gemini",
+        provider=TranslationProvider.OPENAI_COMPATIBLE,
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        model="gemini-3.5-flash-lite",
+    )
+    deepl_svc = TranslationServiceConfig(id="deepl", name="DeepL", provider=TranslationProvider.DEEPL)
+
+    with_fallback = default_translator_factory(session, openai_svc, "", has_fallback=True)
+    sole_service = default_translator_factory(session, openai_svc, "", has_fallback=False)
+    deepl_translator = default_translator_factory(session, deepl_svc, "", has_fallback=False)
+    assert isinstance(with_fallback, OpenAICompatibleTranslator)
+    assert isinstance(sole_service, OpenAICompatibleTranslator)
+    assert isinstance(deepl_translator, DeepLTranslator)
+    assert with_fallback.timeout_s == FALLBACK_OPENAI_TIMEOUT_S == 15.0
+    assert sole_service.timeout_s == DEFAULT_OPENAI_TIMEOUT_S == 25.0
+    assert deepl_translator.timeout_s == DEFAULT_DEEPL_TIMEOUT_S == 15.0
 
 
 async def test_openai_compatible_allows_keyless_localhost_and_rejects_incomplete_output() -> None:
@@ -576,14 +673,21 @@ async def test_service_caches_deduplicates_inflight_and_preserves_word_timing(tm
     service = LyricsTranslationService(
         config=TranslationConfig(
             policy=TranslationPolicy.REPLACE,
-            provider=TranslationProvider.DEEPL,
             target_language="pt-PT",
+            services=(
+                TranslationServiceConfig(
+                    id="deepl",
+                    name="DeepL API",
+                    provider=TranslationProvider.DEEPL,
+                    enabled=True,
+                ),
+            ),
             cache_enabled=True,
         ),
         cache=cache,
         secrets=secrets,
         session_factory=lambda: _FakeHttpSession([]),
-        translator_factory=lambda _session, _cfg: _CountingTranslator(),
+        translator_factory=lambda _session, _svc, _prompt, _fb: _CountingTranslator(),
     )
     await service.start()
     try:
@@ -609,16 +713,137 @@ async def test_service_caches_deduplicates_inflight_and_preserves_word_timing(tm
         cache.close()
 
 
+async def test_service_falls_back_in_priority_order_with_per_service_cooldown(tmp_path: Path) -> None:
+    worker = BlockingCallRunner("test-translation-fallback")
+    cache = TranslationCache(tmp_path / "lyrics.sqlite3", worker=worker)
+    secrets = _InMemorySecrets(
+        {
+            translation_secret_key("gemini"): "gem-key",
+            translation_secret_key("deepl"): "deepl-key:fx",
+        }
+    )
+    now = 100.0
+    gemini_down = True
+    attempts: list[str] = []
+
+    class _RoutingTranslator:
+        def __init__(self, service_id: str) -> None:
+            self._service_id = service_id
+
+        async def translate(self, request: TranslationRequest, *, api_key: str) -> TranslationResult:
+            attempts.append(self._service_id)
+            if self._service_id == "gemini":
+                assert api_key == "gem-key"
+                if gemini_down:
+                    raise TranslationError(
+                        "Translation API server error (HTTP 503: high demand)",
+                        kind=TranslationErrorKind.NETWORK,
+                        retryable=True,
+                    )
+                return TranslationResult(
+                    translations=tuple(f"GEM:{line}" for line in request.lines),
+                    provider="openai-compatible",
+                    model="gemini-3.5-flash-lite",
+                )
+            assert api_key == "deepl-key:fx"
+            return TranslationResult(
+                translations=tuple(f"DEEPL:{line}" for line in request.lines),
+                provider="deepl",
+                model="deepl-free",
+            )
+
+    service = LyricsTranslationService(
+        config=TranslationConfig(
+            policy=TranslationPolicy.REPLACE,
+            target_language="pt-PT",
+            services=(
+                TranslationServiceConfig(
+                    id="gemini",
+                    name="Gemini",
+                    provider=TranslationProvider.OPENAI_COMPATIBLE,
+                    enabled=True,
+                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                    model="gemini-3.5-flash-lite",
+                ),
+                TranslationServiceConfig(
+                    id="deepl",
+                    name="DeepL",
+                    provider=TranslationProvider.DEEPL,
+                    enabled=True,
+                ),
+            ),
+            cache_enabled=True,
+        ),
+        cache=cache,
+        secrets=secrets,
+        session_factory=lambda: _FakeHttpSession([]),
+        translator_factory=lambda _session, svc, _prompt, _fb: _RoutingTranslator(svc.id),
+        negative_ttl_s=60.0,
+        clock=lambda: now,
+    )
+    await service.start()
+    try:
+        # Song 1: Gemini 503 -> falls back immediately to DeepL.
+        doc1 = LyricsDocument(
+            "amll",
+            song_id="s1",
+            timing=TimingKind.LINE,
+            lines=(LyricLine(0, "L0", 0.0, 3.0, "First song line", ""),),
+        )
+        translated1 = await service.translate_document(doc1)
+        assert translated1 is not None
+        assert translated1.lines[0].translation == "DEEPL:First song line"
+        assert attempts == ["gemini", "deepl"]
+
+        # Song 2 (10s later): Gemini is in per-service cooldown -> skipped immediately (0 calls) -> DeepL directly!
+        now = 110.0
+        doc2 = LyricsDocument(
+            "amll",
+            song_id="s2",
+            timing=TimingKind.LINE,
+            lines=(LyricLine(0, "L0", 0.0, 3.0, "Second song line", ""),),
+        )
+        translated2 = await service.translate_document(doc2)
+        assert translated2 is not None
+        assert translated2.lines[0].translation == "DEEPL:Second song line"
+        assert attempts == ["gemini", "deepl", "deepl"]
+
+        # Song 3 (after cooldown expires & Gemini recovers): Gemini runs first again and succeeds!
+        now = 170.0
+        gemini_down = False
+        doc3 = LyricsDocument(
+            "amll",
+            song_id="s3",
+            timing=TimingKind.LINE,
+            lines=(LyricLine(0, "L0", 0.0, 3.0, "Third song line", ""),),
+        )
+        translated3 = await service.translate_document(doc3)
+        assert translated3 is not None
+        assert translated3.lines[0].translation == "GEM:Third song line"
+        assert attempts == ["gemini", "deepl", "deepl", "gemini"]
+    finally:
+        await service.stop()
+        cache.close()
+
+
 async def test_service_respects_missing_only_policy_and_config_roundtrip(tmp_path: Path) -> None:
     worker = BlockingCallRunner("test-translation-policy")
     cache = TranslationCache(tmp_path / "lyrics.sqlite3", worker=worker)
+    deepl_only = (
+        TranslationServiceConfig(
+            id="deepl",
+            name="DeepL API",
+            provider=TranslationProvider.DEEPL,
+            enabled=True,
+        ),
+    )
 
     # Target pt-PT with Chinese provider translation: missing-only MUST translate to pt-PT!
     service_pt = LyricsTranslationService(
         config=TranslationConfig(
             policy=TranslationPolicy.MISSING_ONLY,
-            provider=TranslationProvider.DEEPL,
             target_language="pt-PT",
+            services=deepl_only,
         ),
         cache=cache,
         secrets=_InMemorySecrets(),
@@ -639,8 +864,8 @@ async def test_service_respects_missing_only_policy_and_config_roundtrip(tmp_pat
     service_zh = LyricsTranslationService(
         config=TranslationConfig(
             policy=TranslationPolicy.MISSING_ONLY,
-            provider=TranslationProvider.DEEPL,
             target_language="zh-Hans",
+            services=deepl_only,
         ),
         cache=cache,
         secrets=_InMemorySecrets(),
@@ -653,8 +878,8 @@ async def test_service_respects_missing_only_policy_and_config_roundtrip(tmp_pat
     service_zh_hant = LyricsTranslationService(
         config=TranslationConfig(
             policy=TranslationPolicy.MISSING_ONLY,
-            provider=TranslationProvider.DEEPL,
             target_language="zh-Hant",
+            services=deepl_only,
         ),
         cache=cache,
         secrets=_InMemorySecrets(),
@@ -680,15 +905,49 @@ async def test_service_respects_missing_only_policy_and_config_roundtrip(tmp_pat
     cfg = Config(
         translation_language="pt-PT",
         translation_policy=TranslationPolicy.REPLACE,
-        translation_provider=TranslationProvider.DEEPL,
-        translation_base_url="https://api.deepseek.com/v1",
-        translation_model="deepseek-flash",
+        translation_services=[
+            TranslationServiceConfig(
+                id="custom",
+                name="Custom A",
+                provider=TranslationProvider.OPENAI_COMPATIBLE,
+                enabled=True,
+                base_url="https://api.example.com/v1",
+                model="model-a",
+            ),
+            TranslationServiceConfig(
+                id="custom-2",
+                name="Custom B",
+                provider=TranslationProvider.OPENAI_COMPATIBLE,
+                enabled=True,
+                base_url="https://backup.example.com/v1",
+                model="model-b",
+            ),
+            TranslationServiceConfig(
+                id="deepl",
+                name="DeepL API",
+                provider=TranslationProvider.DEEPL,
+                enabled=False,
+            ),
+        ],
     )
     save_config(cfg, path)
     loaded = load_config(path)
     assert loaded.translation_language == "pt-PT"
     assert loaded.translation_policy is TranslationPolicy.REPLACE
-    assert loaded.translation_provider is TranslationProvider.DEEPL
-    assert loaded.translation_base_url == "https://api.deepseek.com/v1"
-    assert loaded.translation_model == "deepseek-flash"
+    assert [svc.id for svc in loaded.translation_services] == ["custom", "custom-2", "deepl"]
+    assert loaded.translation_services[1].model == "model-b"
     assert "api_key" not in path.read_text(encoding="utf-8")
+
+    # Legacy single-provider config.json migrates cleanly preserving keyring service id.
+    migrated = Config.from_dict(
+        {
+            "translation_policy": "missing-only",
+            "translation_provider": "deepl",
+            "translation_base_url": "https://api.deepseek.com/v1",
+            "translation_model": "deepseek-flash",
+        }
+    )
+    assert migrated.translation_services[0].id == "deepl"
+    assert migrated.translation_services[0].enabled is True
+    assert migrated.translation_services[1].id == "openai-compatible"
+    assert migrated.translation_services[1].model == "deepseek-flash"

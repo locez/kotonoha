@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Sequence
+import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
 
-from ..config.models import TranslationPolicy, TranslationProvider
+from ..config.translation import (
+    DEFAULT_TRANSLATION_SERVICES,
+    TranslationPolicy,
+    TranslationServiceConfig,
+)
+from ..lyrics.http import LyricsHttpError, LyricsResponse
 from .language_detect import (
     detect_primary_language,
     existing_translation_matches_target,
@@ -16,6 +22,9 @@ from .language_detect import (
 )
 
 CONTENT_HASH_VERSION = "v1"
+DEFAULT_TRANSIENT_RETRY_DELAY_S = 0.6
+_ERROR_SUMMARY_MAX_BYTES = 4096
+_ERROR_SUMMARY_MAX_CHARS = 180
 
 
 class TranslationErrorKind(StrEnum):
@@ -49,10 +58,8 @@ class TranslationConfig:
     """Immutable runtime settings consumed by the lyrics translation service."""
 
     policy: TranslationPolicy = TranslationPolicy.OFF
-    provider: TranslationProvider = TranslationProvider.OPENAI_COMPATIBLE
     target_language: str = "en"
-    base_url: str = ""
-    model: str = ""
+    services: tuple[TranslationServiceConfig, ...] = DEFAULT_TRANSLATION_SERVICES
     prompt: str = ""
     cache_enabled: bool = True
 
@@ -191,8 +198,59 @@ def reconstruct_lines(
     return tuple(output)
 
 
+async def read_error_summary(response: LyricsResponse, *, max_bytes: int = _ERROR_SUMMARY_MAX_BYTES) -> str:
+    """Read a bounded, single-line summary from an HTTP error response body."""
+    chunks: list[bytes] = []
+    remaining = max(1, max_bytes)
+    try:
+        while remaining > 0:
+            chunk = await response.content.read(remaining)
+            if not chunk:
+                break
+            chunks.append(chunk[:remaining])
+            remaining -= len(chunk)
+    except (LyricsHttpError, OSError, TimeoutError):
+        return ""
+    raw = b"".join(chunks).decode("utf-8", errors="replace").strip()
+    if not raw:
+        return ""
+    detail = _extract_error_message(raw) or raw
+    single_line = " ".join(detail.split())
+    if len(single_line) > _ERROR_SUMMARY_MAX_CHARS:
+        return single_line[: _ERROR_SUMMARY_MAX_CHARS - 1].rstrip() + "…"
+    return single_line
+
+
+def _extract_error_message(raw: str) -> str:
+    try:
+        decoded: object = json.loads(raw)
+    except json.JSONDecodeError:
+        return ""
+    if isinstance(decoded, Sequence) and not isinstance(decoded, (str, bytes)) and decoded:
+        decoded = decoded[0]
+    if not isinstance(decoded, Mapping):
+        return ""
+    error_obj = decoded.get("error")
+    if isinstance(error_obj, Mapping):
+        message = error_obj.get("message")
+        if isinstance(message, str) and message.strip():
+            return message.strip()
+    elif isinstance(error_obj, str) and error_obj.strip():
+        return error_obj.strip()
+    message = decoded.get("message")
+    if isinstance(message, str) and message.strip():
+        return message.strip()
+    return ""
+
+
+def format_http_error(prefix: str, status: int, detail: str) -> str:
+    """Format an HTTP status error with an optional truncated upstream detail."""
+    return f"{prefix} (HTTP {status}: {detail})" if detail else f"{prefix} (HTTP {status})"
+
+
 __all__ = [
     "CONTENT_HASH_VERSION",
+    "DEFAULT_TRANSIENT_RETRY_DELAY_S",
     "TranslationCacheDeleteResult",
     "TranslationCacheDeleteStatus",
     "TranslationCacheEntry",
@@ -209,6 +267,8 @@ __all__ = [
     "deduplicate_lines",
     "detect_primary_language",
     "existing_translation_matches_target",
+    "format_http_error",
     "looks_like_target_language",
+    "read_error_summary",
     "reconstruct_lines",
 ]

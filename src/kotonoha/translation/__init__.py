@@ -34,10 +34,12 @@ from .models import (
     detect_primary_language,
     existing_translation_matches_target,
     looks_like_target_language,
+    read_error_summary,
     reconstruct_lines,
 )
 from .openai_compatible import (
     DEFAULT_OPENAI_TIMEOUT_S,
+    DEFAULT_TRANSIENT_RETRY_DELAY_S,
     OpenAICompatibleTranslator,
     chat_completions_endpoint,
 )
@@ -63,6 +65,7 @@ __all__ = [
     "DEFAULT_MAX_TRANSLATION_ENTRIES",
     "DEFAULT_NEGATIVE_TTL_S",
     "DEFAULT_OPENAI_TIMEOUT_S",
+    "DEFAULT_TRANSIENT_RETRY_DELAY_S",
     "DeepLTranslator",
     "LyricsTranslationService",
     "OPENAI_PRESETS",
@@ -98,6 +101,7 @@ __all__ = [
     "map_deepl_target_lang",
     "match_preset_id",
     "preset_by_id",
+    "read_error_summary",
     "reconstruct_lines",
     "validate_base_url",
 ]

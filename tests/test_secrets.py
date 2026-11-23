@@ -53,6 +53,17 @@ async def test_keyring_secret_store_roundtrips_and_deletes_idempotently(monkeypa
         assert await store.get_secret(key) is None
         # Deleting an already-absent secret must succeed quietly.
         await store.delete_secret(key)
+
+        # Multiple custom services keep independent keyring slots without collision.
+        custom_a = translation_secret_key("custom")
+        custom_b = translation_secret_key("custom-2")
+        await store.set_secret(custom_a, "key-a")
+        await store.set_secret(custom_b, "key-b")
+        assert await store.get_secret(custom_a) == "key-a"
+        assert await store.get_secret(custom_b) == "key-b"
+        await store.delete_secret(custom_a)
+        assert await store.get_secret(custom_a) is None
+        assert await store.get_secret(custom_b) == "key-b"
     finally:
         store.close()
 
@@ -63,7 +74,11 @@ async def test_keyring_unavailable_reports_reason_and_uses_env_fallback(monkeypa
 
     store = KeyringSecretStore(
         worker=BlockingCallRunner("test-secrets-fail"),
-        environ={"KOTONOHA_DEEPL_API_KEY": "env-key:fx"},
+        environ={
+            "KOTONOHA_DEEPL_API_KEY": "env-key:fx",
+            "KOTONOHA_GEMINI_API_KEY": "gemini-env-key",
+            "KOTONOHA_OPENAI_API_KEY": "openai-env-key",
+        },
     )
     try:
         availability = await store.availability()
@@ -71,6 +86,9 @@ async def test_keyring_unavailable_reports_reason_and_uses_env_fallback(monkeypa
         assert availability.reason == "no-backend"
 
         assert await store.get_secret(translation_secret_key("deepl")) == "env-key:fx"
+        assert await store.get_secret(translation_secret_key("deepl-2")) == "env-key:fx"
+        assert await store.get_secret(translation_secret_key("gemini")) == "gemini-env-key"
+        assert await store.get_secret(translation_secret_key("custom-2")) == "openai-env-key"
         with pytest.raises(SecretStoreError):
             await store.set_secret(translation_secret_key("deepl"), "cannot-store")
     finally:

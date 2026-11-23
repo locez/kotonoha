@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ...config import ACCENT_PRESETS, LEAD_MS_LIMIT, Config
+from ...config import ACCENT_PRESETS, LEAD_MS_LIMIT, Config, TranslationServiceConfig
 from ...strings import UI_LANGUAGES, Translator
 from .controls import OpacityKey, PanelOpacityState, SettingsWidgets
 from .icons import SettingsIconPageBuilder
@@ -43,7 +43,6 @@ class SettingsPageBuilder:
         *,
         on_clear_cache: Callable[[], None],
         on_manage_cache: Callable[[], None],
-        on_clear_translation_key: Callable[[], None],
         on_manage_translation_cache: Callable[[], None],
         on_clear_translation_cache: Callable[[], None],
         translator: Translator,
@@ -61,7 +60,6 @@ class SettingsPageBuilder:
         self._translation = SettingsTranslationSectionBuilder(
             dialog,
             widgets,
-            on_clear_translation_key=on_clear_translation_key,
             on_manage_translation_cache=on_manage_translation_cache,
             on_clear_translation_cache=on_clear_translation_cache,
             translator=translator,
@@ -333,6 +331,22 @@ class SettingsPageBuilder:
     def refresh_translation_secret_status(self) -> None:
         """Refresh keyring status indicators after a key save or delete."""
         self._translation.refresh_secret_status()
+
+    def translation_services(self) -> list[TranslationServiceConfig]:
+        """Return prioritized translation services staged in the Lyrics tab."""
+        return self._translation.current_services()
+
+    def take_pending_translation_secret_changes(self) -> tuple[dict[str, str], frozenset[str]]:
+        """Consume per-service API key saves and deletes staged via service editor dialogs."""
+        return self._translation.take_pending_secret_changes()
+
+    def retheme_translation_editor(self, config: Config) -> None:
+        """Retheme any open translation-service editor child dialog."""
+        self._translation.retheme_editor(config)
+
+    def close_translation_editor(self) -> None:
+        """Close any open translation-service editor child dialog."""
+        self._translation.close_editor()
 
     def set_custom_accent(self, triple: tuple[str, str, str]) -> None:
         """Show a picked accent in the reusable custom combo entry."""

@@ -192,7 +192,7 @@ def new_lyrics_session() -> AioHttpLyricsSession:
     """Create the bounded, cookie-isolated session shared by lyric workflows."""
     return AioHttpLyricsSession(
         aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=20.0, connect=5.0),
+            timeout=aiohttp.ClientTimeout(total=20.0, connect=5.0, sock_connect=5.0),
             cookie_jar=aiohttp.DummyCookieJar(),
         )
     )
@@ -202,8 +202,9 @@ def _aiohttp_timeout(value: object | None) -> aiohttp.ClientTimeout | None:
     """Accept only timeout values supported by the concrete HTTP adapter."""
     if value is None or isinstance(value, aiohttp.ClientTimeout):
         return value
-    if isinstance(value, (int, float)):
-        return aiohttp.ClientTimeout(total=float(value))
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        total = float(value)
+        return aiohttp.ClientTimeout(total=total, sock_connect=min(5.0, total))
     raise TypeError("unsupported lyric HTTP timeout")
 
 

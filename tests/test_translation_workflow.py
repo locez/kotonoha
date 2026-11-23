@@ -9,6 +9,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication, QLineEdit
 
 from kotonoha.app.display_coordinator import DisplayCoordinator
@@ -29,7 +30,7 @@ from kotonoha.app.translation_coordinator import (
     translation_config_from_app,
 )
 from kotonoha.async_worker import BlockingCallRunner
-from kotonoha.config import Config, TranslationPolicy, TranslationProvider
+from kotonoha.config import Config, TranslationPolicy, TranslationProvider, TranslationServiceConfig
 from kotonoha.display.models import ResolutionState
 from kotonoha.display.presentation import DisplayEngine
 from kotonoha.display.timeline import TimelineEngine
@@ -137,14 +138,21 @@ async def test_display_coordinator_enriches_asynchronously_and_drops_stale_track
     config = Config(
         translation_language="pt-PT",
         translation_policy=TranslationPolicy.REPLACE,
-        translation_provider=TranslationProvider.DEEPL,
+        translation_services=[
+            TranslationServiceConfig(
+                id="deepl",
+                name="DeepL API",
+                provider=TranslationProvider.DEEPL,
+                enabled=True,
+            ),
+        ],
     )
     service = LyricsTranslationService(
         config=translation_config_from_app(config),
         cache=cache,
         secrets=secrets,
         session_factory=_NoopSession,
-        translator_factory=lambda _session, _cfg: _GatedTranslator(),
+        translator_factory=lambda _session, _svc, _prompt, _fb: _GatedTranslator(),
     )
     coordinator = LyricsTranslationCoordinator(service=service, secrets=secrets, target=display)
     display.set_document_listener(coordinator.on_source_document)
@@ -193,12 +201,11 @@ async def test_display_coordinator_enriches_asynchronously_and_drops_stale_track
 
 
 def test_settings_translation_controls_presets_and_keyring_intents(qapp) -> None:
-    secrets = TranslationSecretSnapshot(available=True, saved_providers=frozenset({"deepl"}))
+    secrets = TranslationSecretSnapshot(available=True, saved_services=frozenset({"deepl"}))
     dialog = SettingsDialog(
         Config(
             translation_language="pt-PT",
             translation_policy=TranslationPolicy.REPLACE,
-            translation_provider=TranslationProvider.OPENAI_COMPATIBLE,
         ),
         translation_secrets=secrets,
     )
@@ -207,56 +214,65 @@ def test_settings_translation_controls_presets_and_keyring_intents(qapp) -> None
     w = dialog.form_widgets
 
     assert w.translation_language.currentData() == "pt-PT"
-    assert w.translation_api_key.echoMode() == QLineEdit.EchoMode.Password
-    assert w.translation_preset.currentData() == "gemini"
-    assert w.translation_preset.isHidden() is False
-    assert w.translation_base_url.isHidden() is False
-    assert w.translation_model.isHidden() is False
+    assert w.translation_services_list.count() == 2
+    assert w.translation_services_list.isHidden() is False
     assert w.translation_prompt.isHidden() is False
-    assert w.translation_api_key.isHidden() is False
-    assert ":fx" not in w.translation_key_status.text()
-    assert w.clear_translation_key.isHidden() is True  # only deepl is saved initially
+    assert w.translation_key_status.isHidden() is True  # hidden when keyring is available
 
     w.translation_prompt.setPlainText("Translate with poetic rhythm.")
     assert dialog.current_config().translation_prompt == "Translate with poetic rhythm."
 
-    # Selecting DeepSeek preset updates URL and model.
-    w.translation_preset.setCurrentIndex(w.translation_preset.findData("deepseek"))
-    assert w.translation_base_url.text() == "https://api.deepseek.com/v1"
-    assert w.translation_model.text() == "deepseek-flash"
+    # Add two distinct Custom OpenAI-compatible services with separate keyring keys.
+    for url, model, name, key in (
+        ("https://custom-a.example/v1", "model-a", "Custom A", "sk-custom-a"),
+        ("https://custom-b.example/v1", "model-b", "Custom B", "sk-custom-b"),
+    ):
+        w.add_translation_service.click()
+        editor = dialog._page_builder._translation._editor_dialog
+        assert editor is not None
+        assert editor._api_key.echoMode() == QLineEdit.EchoMode.Password
+        editor._preset.setCurrentIndex(editor._preset.findData("custom"))
+        editor._name.setText(name)
+        editor._base_url.setText(url)
+        editor._model.setText(model)
+        editor._api_key.setText(key)
+        editor._on_save()
 
-    # Selecting local Ollama hides the API key input.
-    w.translation_preset.setCurrentIndex(w.translation_preset.findData("ollama"))
-    assert w.translation_base_url.text() == "http://localhost:11434/v1"
-    assert w.translation_api_key.isHidden() is True
+    services = dialog.current_config().translation_services
+    assert [svc.id for svc in services] == ["gemini", "deepl", "custom", "custom-2"]
+    assert services[2].base_url == "https://custom-a.example/v1"
+    assert services[3].base_url == "https://custom-b.example/v1"
 
-    # Switching back to DeepSeek restores API key input and emits SaveTranslationApiKey on Apply.
-    w.translation_preset.setCurrentIndex(w.translation_preset.findData("deepseek"))
-    assert w.translation_api_key.isHidden() is False
-    w.translation_api_key.setText("sk-secret-value")
+    # Reorder via list drag/move: move DeepL (row 1) to priority #1 and enable it.
+    deepl_item = w.translation_services_list.takeItem(1)
+    assert deepl_item is not None
+    deepl_item.setCheckState(Qt.CheckState.Checked)
+    w.translation_services_list.insertItem(0, deepl_item)
+    w.translation_services_list.setCurrentRow(0)
+    assert [svc.id for svc in dialog.current_config().translation_services] == [
+        "deepl",
+        "gemini",
+        "custom",
+        "custom-2",
+    ]
+    assert dialog.current_config().translation_services[0].enabled is True
+
+    # Apply emits ApplyConfig plus separate SaveTranslationApiKey intents per custom service.
     dialog._emit()
     assert any(isinstance(intent, ApplyConfig) for intent in intents)
-    saved = [intent for intent in intents if isinstance(intent, SaveTranslationApiKey)]
-    assert len(saved) == 1
-    assert saved[0].provider is TranslationProvider.OPENAI_COMPATIBLE
-    assert saved[0].api_key == "sk-secret-value"
-    assert "sk-secret-value" not in repr(saved[0])
-    assert w.translation_api_key.text() == ""
-    assert w.clear_translation_key.isHidden() is False
+    saved_keys = {
+        intent.service_id: intent.api_key
+        for intent in intents
+        if isinstance(intent, SaveTranslationApiKey)
+    }
+    assert saved_keys == {"custom": "sk-custom-a", "custom-2": "sk-custom-b"}
+    assert all("sk-custom" not in repr(intent) for intent in intents if isinstance(intent, SaveTranslationApiKey))
 
-    # Switching to DeepL hides OpenAI-only rows (preset / base URL / model / prompt) and keeps key controls.
-    w.translation_provider.setCurrentIndex(w.translation_provider.findData("deepl"))
-    assert w.translation_preset.isHidden() is True
-    assert w.translation_base_url.isHidden() is True
-    assert w.translation_model.isHidden() is True
-    assert w.translation_prompt.isHidden() is True
-    assert w.translation_api_key.isHidden() is False
-    assert w.clear_translation_key.isHidden() is False
-
-    w.clear_translation_key.click()
-    assert intents[-1] == DeleteTranslationApiKey(TranslationProvider.DEEPL)
-    assert w.clear_translation_key.isHidden() is True
-    assert ":fx" in w.translation_key_status.text()
+    # Removing a service with a saved key deletes its keyring entry on Apply.
+    w.translation_services_list.setCurrentRow(0)  # deepl
+    w.remove_translation_service.click()
+    dialog._emit()
+    assert DeleteTranslationApiKey("deepl") in intents
 
     w.manage_translation_cache.click()
     assert intents[-1] == OpenTranslationCacheManagement()
@@ -264,16 +280,14 @@ def test_settings_translation_controls_presets_and_keyring_intents(qapp) -> None
     w.clear_translation_cache.click()
     assert intents[-1] == ClearTranslationCache()
 
-    # Turning online translation OFF hides target language and all service configuration rows.
+    # Turning online translation OFF hides target language, services panel, and prompt.
     w.translation_policy.setCurrentIndex(w.translation_policy.findData("off"))
+    services_panel = dialog._page_builder._translation._services_panel
+    assert services_panel is not None
     assert w.translation_policy.isHidden() is False
     assert w.translation_language.isHidden() is True
-    assert w.translation_provider.isHidden() is True
-    assert w.translation_preset.isHidden() is True
-    assert w.translation_base_url.isHidden() is True
-    assert w.translation_model.isHidden() is True
-    assert w.translation_api_key.isHidden() is True
-    assert w.translation_key_status.isHidden() is True
+    assert services_panel.isHidden() is True
+    assert w.translation_prompt.isHidden() is True
 
     # Unchecking Show translation hides the online translation policy row too.
     w.translation.setChecked(False)
@@ -286,20 +300,22 @@ def test_settings_disables_api_key_input_when_keyring_is_unavailable(qapp) -> No
         Config(translation_policy=TranslationPolicy.REPLACE),
         translation_secrets=TranslationSecretSnapshot(available=False, reason="no-backend"),
     )
-    assert dialog.form_widgets.translation_api_key.isEnabled() is False
+    assert dialog.form_widgets.translation_key_status.isHidden() is False
     assert "no-backend" in dialog.form_widgets.translation_key_status.text()
+    dialog.form_widgets.edit_translation_service.click()
+    editor = dialog._page_builder._translation._editor_dialog
+    assert editor is not None
+    assert editor._api_key.isEnabled() is False
+    assert "no-backend" in editor._key_status.text()
     dialog.close()
 
 
 def test_lyrics_translation_page_fits_viewport_width_without_clipping(qapp) -> None:
     dialog = SettingsDialog(
-        Config(
-            translation_policy=TranslationPolicy.MISSING_ONLY,
-            translation_provider=TranslationProvider.OPENAI_COMPATIBLE,
-        ),
+        Config(translation_policy=TranslationPolicy.MISSING_ONLY),
         translation_secrets=TranslationSecretSnapshot(
             available=True,
-            saved_providers=frozenset({"openai-compatible"}),
+            saved_services=frozenset({"gemini", "deepl"}),
         ),
     )
     dialog.show()
@@ -310,6 +326,7 @@ def test_lyrics_translation_page_fits_viewport_width_without_clipping(qapp) -> N
     page = scroll.widget()
     assert viewport is not None and page is not None
     assert page.width() <= viewport.width()
+    assert dialog.form_widgets.translation_services_list.geometry().right() <= page.rect().right()
     assert dialog.form_widgets.translation_prompt.geometry().right() <= page.rect().right()
     dialog.close()
 

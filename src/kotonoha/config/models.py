@@ -15,6 +15,14 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from .schema import SETTINGS_CONFIG_FIELDS
+from .translation import (
+    DEFAULT_TRANSLATION_PROMPT,
+    TranslationPolicy,
+    TranslationServiceConfig,
+    clean_translation_services,
+    default_translation_services,
+    migrate_legacy_translation_services,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,28 +49,6 @@ ACCENT_PRESETS: tuple[tuple[str, str, str, str], ...] = (
 )
 
 DEFAULT_ICON_NAME = "default"
-DEFAULT_TRANSLATION_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
-DEFAULT_TRANSLATION_MODEL = "gemini-3.5-flash-lite"
-DEFAULT_TRANSLATION_PROMPT = (
-    "Preserve poetic tone, nuance, idioms, and natural expressions used in the target language. "
-    "Keep each translated line concise for a desktop lyrics overlay. "
-    "If a line is already in the target language or is pure vocalization/punctuation, keep it natural as-is."
-)
-
-
-class TranslationPolicy(StrEnum):
-    """When API translation is invoked for a displayed lyric document."""
-
-    OFF = "off"
-    MISSING_ONLY = "missing-only"
-    REPLACE = "replace"
-
-
-class TranslationProvider(StrEnum):
-    """Supported API translation backends."""
-
-    OPENAI_COMPATIBLE = "openai-compatible"
-    DEEPL = "deepl"
 
 
 class PanelStyle(StrEnum):
@@ -186,9 +172,7 @@ class Config:
     context_blur: float = 0.0       # context defocus strength 0.0..1.0; clear text by default
     translation_language: str = "auto"  # "auto" -> from system locale, else a BCP-47 tag (zh-Hans/pt-PT/en/...)
     translation_policy: TranslationPolicy = TranslationPolicy.OFF
-    translation_provider: TranslationProvider = TranslationProvider.OPENAI_COMPATIBLE
-    translation_base_url: str = DEFAULT_TRANSLATION_BASE_URL
-    translation_model: str = DEFAULT_TRANSLATION_MODEL
+    translation_services: list[TranslationServiceConfig] = field(default_factory=default_translation_services)
     translation_prompt: str = DEFAULT_TRANSLATION_PROMPT
     lyrics_sources: list[str] = field(default_factory=lambda: list(DEFAULT_LYRICS_SOURCES))
     display_sources: list[str] = field(default_factory=lambda: list(DEFAULT_DISPLAY_SOURCES))
@@ -257,11 +241,7 @@ class Config:
             context_blur=_clamp_float(self.context_blur, 0.0, 1.0, 0.0),
             translation_language=_clean_translation_language(self.translation_language),
             translation_policy=_enum_or_default(self.translation_policy, TranslationPolicy, TranslationPolicy.OFF),
-            translation_provider=_enum_or_default(
-                self.translation_provider, TranslationProvider, TranslationProvider.OPENAI_COMPATIBLE
-            ),
-            translation_base_url=_clean_string(self.translation_base_url, DEFAULT_TRANSLATION_BASE_URL),
-            translation_model=_clean_string(self.translation_model, DEFAULT_TRANSLATION_MODEL),
+            translation_services=clean_translation_services(self.translation_services),
             translation_prompt=_clean_nonempty_string(self.translation_prompt, DEFAULT_TRANSLATION_PROMPT),
             accent_start=str(self.accent_start),
             accent_end=str(self.accent_end),
@@ -301,6 +281,7 @@ class Config:
             value = data[key]
             if isinstance(value, StrEnum):
                 data[key] = value.value
+        data["translation_services"] = [service.to_dict() for service in self.translation_services]
         return data
 
     @classmethod
@@ -319,6 +300,9 @@ class Config:
         # TODO: Remove when configurations predating context_lines=0 are no longer supported.
         if _clean_bool(data.get("current_line_only"), False):
             filtered["context_lines"] = 0
+        migrated_services = migrate_legacy_translation_services(data)
+        if migrated_services is not None:
+            filtered["translation_services"] = migrated_services
         try:
             return cls(**filtered).clamped()
         except (TypeError, ValueError):
@@ -339,7 +323,6 @@ _ENUM_FIELDS = frozenset(
         "fx_transition",
         "fx_intensity",
         "translation_policy",
-        "translation_provider",
     }
 )
 
@@ -420,13 +403,6 @@ def _clean_translation_language(value: object) -> str:
         return "auto"
     cleaned = value.strip()
     return cleaned if cleaned else "auto"
-
-
-def _clean_string(value: object, default: str) -> str:
-    """Return a trimmed string, falling back to ``default`` when absent or non-string."""
-    if not isinstance(value, str):
-        return default
-    return value.strip()
 
 
 def _clean_nonempty_string(value: object, default: str) -> str:

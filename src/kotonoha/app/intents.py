@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TypeAlias
 
-from ..config import Config, TranslationProvider
+from ..config import Config
 from ..config.schema import SETTINGS_CONFIG_FIELDS
 from ..display.offsets import TrackOffsetKey
 from ..lyrics.cache import LyricsCacheKey, LyricsCacheQuery
@@ -72,17 +72,17 @@ class UpdateTranslationCacheEntry:
 
 @dataclass(frozen=True, slots=True)
 class SaveTranslationApiKey:
-    """Persist one provider API key into the system keyring."""
+    """Persist one translation service API key into the system keyring."""
 
-    provider: TranslationProvider
+    service_id: str
     api_key: str = field(repr=False)
 
 
 @dataclass(frozen=True, slots=True)
 class DeleteTranslationApiKey:
-    """Remove one provider API key from the system keyring."""
+    """Remove one translation service API key from the system keyring."""
 
-    provider: TranslationProvider
+    service_id: str
 
 
 @dataclass(frozen=True, slots=True)

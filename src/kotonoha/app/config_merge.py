@@ -111,20 +111,10 @@ def merge_settings(
             if "translation_policy" in changed_fields
             else current.translation_policy
         ),
-        translation_provider=(
-            submitted.translation_provider
-            if "translation_provider" in changed_fields
-            else current.translation_provider
-        ),
-        translation_base_url=(
-            submitted.translation_base_url
-            if "translation_base_url" in changed_fields
-            else current.translation_base_url
-        ),
-        translation_model=(
-            submitted.translation_model
-            if "translation_model" in changed_fields
-            else current.translation_model
+        translation_services=(
+            submitted.translation_services
+            if "translation_services" in changed_fields
+            else current.translation_services
         ),
         translation_prompt=(
             submitted.translation_prompt

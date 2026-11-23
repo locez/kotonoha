@@ -1,4 +1,4 @@
-"""Async lyrics translation service with cache, deduplication, and backoff."""
+"""Async lyrics translation service with cache, deduplication, and ordered fallback."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from collections.abc import Callable
 from typing import TypeAlias
 
 from ..async_task import create_owned_task, wait_for_owned
-from ..config.models import TranslationPolicy, TranslationProvider
+from ..config.translation import TranslationPolicy, TranslationProvider, TranslationServiceConfig
 from ..lyrics.http import LyricsSession
 from ..lyrics.models import LyricsDocument
 from ..lyrics.translation import TranslationMerger
@@ -30,29 +30,41 @@ from .models import (
     looks_like_target_language,
     reconstruct_lines,
 )
-from .openai_compatible import OpenAICompatibleTranslator
+from .openai_compatible import (
+    DEFAULT_OPENAI_TIMEOUT_S,
+    FALLBACK_OPENAI_TIMEOUT_S,
+    OpenAICompatibleTranslator,
+)
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_NEGATIVE_TTL_S = 60.0
-TranslatorFactory: TypeAlias = Callable[[LyricsSession, TranslationConfig], TranslatorPort]
-_InflightKey: TypeAlias = tuple[str, str, TranslationProvider, str, str]
+TranslatorFactory: TypeAlias = Callable[[LyricsSession, TranslationServiceConfig, str, bool], TranslatorPort]
+_ServiceSignature: TypeAlias = tuple[str, TranslationProvider, str, str]
+_InflightKey: TypeAlias = tuple[str, str, tuple[_ServiceSignature, ...]]
+_CooldownKey: TypeAlias = tuple[str, str]
 
 
-def default_translator_factory(session: LyricsSession, config: TranslationConfig) -> TranslatorPort:
-    """Create the concrete HTTP translator for one configured provider."""
-    if config.provider is TranslationProvider.DEEPL:
+def default_translator_factory(
+    session: LyricsSession,
+    service: TranslationServiceConfig,
+    prompt: str,
+    has_fallback: bool = False,
+) -> TranslatorPort:
+    """Create the concrete HTTP translator for one configured service entry."""
+    if service.provider is TranslationProvider.DEEPL:
         return DeepLTranslator(session)
     return OpenAICompatibleTranslator(
         session,
-        base_url=config.base_url,
-        model=config.model,
-        style_prompt=config.prompt,
+        base_url=service.base_url,
+        model=service.model,
+        style_prompt=prompt,
+        timeout_s=FALLBACK_OPENAI_TIMEOUT_S if has_fallback else DEFAULT_OPENAI_TIMEOUT_S,
     )
 
 
 class LyricsTranslationService:
-    """Coordinate cache lookup, line deduplication, secret retrieval, and API calls."""
+    """Coordinate cache lookup, line deduplication, ordered fallback, and per-service cooldown."""
 
     def __init__(
         self,
@@ -75,7 +87,7 @@ class LyricsTranslationService:
         self._merger = TranslationMerger()
         self._session: LyricsSession | None = None
         self._inflight: dict[_InflightKey, asyncio.Task[TranslationResult | None]] = {}
-        self._negative_until: dict[_InflightKey, float] = {}
+        self._service_cooldown_until: dict[_CooldownKey, float] = {}
 
     @property
     def config(self) -> TranslationConfig:
@@ -100,18 +112,25 @@ class LyricsTranslationService:
             raise asyncio.CancelledError
 
     def configure(self, config: TranslationConfig) -> None:
-        """Replace translation settings and clear transient failure backoff."""
+        """Replace translation settings and clear per-service cooldowns."""
         self._config = config
-        self._negative_until.clear()
+        self._service_cooldown_until.clear()
 
-    def clear_backoff(self) -> None:
-        """Reset negative cache entries (for example after an API key update)."""
-        self._negative_until.clear()
+    def clear_backoff(self, service_id: str | None = None) -> None:
+        """Reset cooldown entries for one service or all services."""
+        if service_id is None:
+            self._service_cooldown_until.clear()
+            return
+        for key in tuple(self._service_cooldown_until):
+            if key[0] == service_id:
+                self._service_cooldown_until.pop(key, None)
 
     def should_translate(self, document: LyricsDocument) -> bool:
         """Decide whether ``document`` qualifies for API translation under active policy."""
         config = self._config
         if config.policy is TranslationPolicy.OFF:
+            return False
+        if not any(service.enabled for service in config.services):
             return False
         if not document.lines:
             return False
@@ -167,20 +186,23 @@ class LyricsTranslationService:
                 if cached is not None:
                     return self._merger.merge_by_index(document, cached.translations)
 
-        key: _InflightKey = (
-            digest,
-            target_language,
-            config.provider,
-            config.base_url,
-            config.model,
-        )
-        if self._negative_until.get(key, 0.0) > self._clock():
+        enabled_services = tuple(service for service in config.services if service.enabled)
+        now = self._clock()
+        if not any(
+            self._service_cooldown_until.get((service.id, target_language), 0.0) <= now
+            for service in enabled_services
+        ):
             return None
 
+        signature = tuple(
+            (service.id, service.provider, service.base_url, service.model)
+            for service in enabled_services
+        )
+        key: _InflightKey = (digest, target_language, signature)
         task = self._inflight.get(key)
         if task is None:
             task = create_owned_task(
-                self._translate_uncached(document, texts, digest, config, key),
+                self._translate_uncached(document, texts, digest, config, enabled_services),
                 name="kotonoha-lyrics-translate",
             )
             self._inflight[key] = task
@@ -195,8 +217,8 @@ class LyricsTranslationService:
         return self._merger.merge_by_index(document, result.translations)
 
     async def clear_cache(self) -> None:
-        """Clear persisted translations and reset in-memory backoff."""
-        self._negative_until.clear()
+        """Clear persisted translations and reset per-service cooldowns."""
+        self._service_cooldown_until.clear()
         await self._cache.clear()
 
     async def _translate_uncached(
@@ -205,7 +227,7 @@ class LyricsTranslationService:
         texts: tuple[str, ...],
         digest: str,
         config: TranslationConfig,
-        key: _InflightKey,
+        enabled_services: tuple[TranslationServiceConfig, ...],
     ) -> TranslationResult | None:
         session = self._session
         if session is None:
@@ -216,64 +238,96 @@ class LyricsTranslationService:
         if not unique_lines:
             return None
 
-        secret_key = translation_secret_key(config.provider.value)
-        try:
-            api_key = (await self._secrets.get_secret(secret_key)) or ""
-        except SecretStoreError as exc:
-            logger.warning("Could not read translation API key: %s", exc)
-            self._negative_until[key] = self._clock() + self._negative_ttl_s
-            return None
-
-        translator = self._translator_factory(session, config)
         request = TranslationRequest(
             lines=unique_lines,
             target_language=config.target_language,
             title=document.title or "",
             artist=document.artist or "",
         )
-        try:
-            raw_result = await translator.translate(request, api_key=api_key)
-        except TranslationError as exc:
-            logger.warning(
-                "Lyrics translation failed (%s/%s): %s",
-                config.provider.value,
-                exc.kind.value,
-                exc,
-            )
-            if exc.retryable or exc.kind in {
-                TranslationErrorKind.AUTH,
-                TranslationErrorKind.CONFIG,
-                TranslationErrorKind.UNSUPPORTED_LANGUAGE,
-            }:
-                self._negative_until[key] = self._clock() + self._negative_ttl_s
-            return None
 
-        try:
-            aligned = reconstruct_lines(raw_result.translations, mapping)
-        except ValueError as exc:
-            logger.warning("Lyrics translation alignment failed: %s", exc)
-            return None
-
-        result = TranslationResult(
-            translations=aligned,
-            provider=raw_result.provider,
-            model=raw_result.model,
-            from_cache=False,
-        )
-        if config.cache_enabled:
-            try:
-                await self._cache.store(
-                    digest,
-                    config.target_language,
-                    result,
-                    source_lines=texts,
-                    timestamps=tuple(line.start for line in document.lines),
-                    title=document.title or "",
-                    artist=document.artist or "",
+        for index, service in enumerate(enabled_services):
+            cooldown_key: _CooldownKey = (service.id, config.target_language)
+            now = self._clock()
+            if self._service_cooldown_until.get(cooldown_key, 0.0) > now:
+                logger.debug(
+                    "Skipping translation service %r (%s): in cooldown",
+                    service.id,
+                    service.name,
                 )
-            except TranslationCacheError as exc:
-                logger.warning("Translation cache write failed: %s", exc)
-        return result
+                continue
+
+            has_fallback = index + 1 < len(enabled_services)
+            secret_key = translation_secret_key(service.id)
+            try:
+                api_key = (await self._secrets.get_secret(secret_key)) or ""
+            except SecretStoreError as exc:
+                self._mark_cooldown(cooldown_key)
+                self._log_service_failure(service, "secret", str(exc), has_fallback=has_fallback)
+                continue
+
+            translator = self._translator_factory(session, service, config.prompt, has_fallback)
+            try:
+                raw_result = await translator.translate(request, api_key=api_key)
+            except TranslationError as exc:
+                if exc.retryable or exc.kind in {
+                    TranslationErrorKind.AUTH,
+                    TranslationErrorKind.CONFIG,
+                    TranslationErrorKind.UNSUPPORTED_LANGUAGE,
+                }:
+                    self._mark_cooldown(cooldown_key)
+                self._log_service_failure(service, exc.kind.value, str(exc), has_fallback=has_fallback)
+                continue
+
+            try:
+                aligned = reconstruct_lines(raw_result.translations, mapping)
+            except ValueError as exc:
+                self._log_service_failure(service, "alignment", str(exc), has_fallback=has_fallback)
+                continue
+
+            result = TranslationResult(
+                translations=aligned,
+                provider=raw_result.provider,
+                model=raw_result.model,
+                from_cache=False,
+            )
+            if config.cache_enabled:
+                try:
+                    await self._cache.store(
+                        digest,
+                        config.target_language,
+                        result,
+                        source_lines=texts,
+                        timestamps=tuple(line.start for line in document.lines),
+                        title=document.title or "",
+                        artist=document.artist or "",
+                    )
+                except TranslationCacheError as exc:
+                    logger.warning("Translation cache write failed: %s", exc)
+            return result
+
+        return None
+
+    def _mark_cooldown(self, key: _CooldownKey) -> None:
+        if self._negative_ttl_s > 0.0:
+            self._service_cooldown_until[key] = self._clock() + self._negative_ttl_s
+
+    @staticmethod
+    def _log_service_failure(
+        service: TranslationServiceConfig,
+        category: str,
+        detail: str,
+        *,
+        has_fallback: bool,
+    ) -> None:
+        suffix = "; falling back to next service" if has_fallback else ""
+        logger.warning(
+            "Lyrics translation failed for %r (%s/%s): %s%s",
+            service.id,
+            service.provider.value,
+            category,
+            detail,
+            suffix,
+        )
 
     async def _cancel_inflight(self) -> bool:
         tasks = tuple(self._inflight.values())
