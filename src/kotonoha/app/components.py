@@ -6,7 +6,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from ..config import Config
+from ..config import Config, TranslationProvider
 from ..display.models import DisplayOptions, LyricsDisplayStatus
 from ..display.offsets import TrackOffsetKey, TrackOffsetSnapshot
 from ..lyrics.artifact import LyricsArtifact
@@ -20,7 +20,10 @@ from .settings_port import (
     CacheManagementDialogFactory,
     LyricsSearchDialogFactory,
     SettingsDialogFactory,
+    TranslationCacheDialogFactory,
 )
+from .translation_cache_management import TranslationCacheManagementPort
+from .translation_coordinator import TranslationSecretSnapshot
 
 
 class ApplicationQuitPort(Protocol):
@@ -239,6 +242,38 @@ class TrackOffsetPort(Protocol):
         ...
 
 
+class TranslationCoordinatorPort(Protocol):
+    """Lifecycle and command boundary for optional lyrics API translation."""
+
+    async def start(self) -> None:
+        """Start the translation service and secret worker."""
+        ...
+
+    async def stop(self) -> None:
+        """Cancel in-flight translations and release owned resources."""
+        ...
+
+    async def secret_snapshot(self) -> TranslationSecretSnapshot:
+        """Return keyring availability and saved-key status for Settings."""
+        ...
+
+    def save_api_key(self, provider: TranslationProvider, api_key: str) -> None:
+        """Persist one provider API key in the system keyring."""
+        ...
+
+    def delete_api_key(self, provider: TranslationProvider) -> None:
+        """Remove one provider API key from the system keyring."""
+        ...
+
+    def clear_cache(self) -> None:
+        """Delete persisted translation cache rows."""
+        ...
+
+    def refresh_active_document(self) -> None:
+        """Re-apply cached translations to the active track after an edit."""
+        ...
+
+
 @dataclass(frozen=True, slots=True)
 class ApplicationComponents:
     """All long-lived collaborators that the application controller owns.
@@ -263,6 +298,9 @@ class ApplicationComponents:
     mpris: MprisPort
     tray: TrayPort
     runtime_config: RuntimeConfigPort
+    translation: TranslationCoordinatorPort | None = None
+    translation_cache: TranslationCacheManagementPort | None = None
+    translation_cache_factory: TranslationCacheDialogFactory | None = None
 
 
 __all__ = [
@@ -279,6 +317,7 @@ __all__ = [
     "ReceiverPort",
     "RuntimeConfigPort",
     "TrackOffsetPort",
+    "TranslationCoordinatorPort",
     "RestartLauncher",
     "SignalPort",
     "TrayPort",

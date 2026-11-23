@@ -31,6 +31,7 @@ from .components import (
     RestartLauncher,
     RuntimeConfigPort,
     TrackOffsetPort,
+    TranslationCoordinatorPort,
     TrayPort,
 )
 from .intents import (
@@ -38,16 +39,25 @@ from .intents import (
     ChangePosition,
     ChangeTrackOffset,
     ClearCache,
+    ClearTranslationCache,
     DeleteCacheEntries,
+    DeleteTranslationApiKey,
+    DeleteTranslationCacheEntries,
+    LoadTranslationCacheRecord,
     OpenCacheManagement,
+    OpenTranslationCacheManagement,
     RequestRestart,
+    SaveTranslationApiKey,
     SearchCache,
+    SearchTranslationCache,
     SettingsIntent,
+    UpdateTranslationCacheEntry,
 )
 from .lifecycle import TaskSupervisor
 from .lyrics_search import LyricsSearchController
 from .services import display_options
 from .settings_port import SettingsDialogFactory, SettingsDialogPort
+from .translation_cache_management import TranslationCacheManagementController
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +78,7 @@ class AppController:
         self._mpris: MprisPort = components.mpris
         self._tray: TrayPort = components.tray
         self._runtime_config: RuntimeConfigPort = components.runtime_config
+        self._translation: TranslationCoordinatorPort | None = components.translation
         self._settings_factory: SettingsDialogFactory = components.settings_factory
         self._lyrics_search_service: LyricsSearchPort = components.lyrics_search
         self._lyrics_search: LyricsSearchController = LyricsSearchController(
@@ -81,6 +92,15 @@ class AppController:
             components.lyrics_cache,
             components.cache_management_factory,
             status_provider=self._display.current_lyrics_status,
+        )
+        self._translation_cache_management: TranslationCacheManagementController | None = (
+            TranslationCacheManagementController(
+                components.translation_cache,
+                components.translation_cache_factory,
+                on_mutated=self._translation.refresh_active_document if self._translation is not None else None,
+            )
+            if components.translation_cache is not None and components.translation_cache_factory is not None
+            else None
         )
         self._settings_tasks: TaskSupervisor = TaskSupervisor("settings")
         self._config: Config = self._config_service.config
@@ -116,6 +136,8 @@ class AppController:
                 self._overlay.show()
                 self._tray.show()
                 await self._display.start()
+                if self._translation is not None:
+                    await self._translation.start()
                 await self._lyrics_search_service.start()
                 # The generic adapter receiver is optional: a port bind failure — a stale
                 # instance or double-launch already holding 28745 — must only disable
@@ -163,12 +185,19 @@ class AppController:
         cancellation_requested |= await self._stop_component("lyrics search", self._lyrics_search.stop)
         cancellation_requested |= await self._stop_component("lyrics search service", self._lyrics_search_service.stop)
         cancellation_requested |= await self._stop_component("lyrics cache manager", self._cache_management.stop)
+        if self._translation_cache_management is not None:
+            cancellation_requested |= await self._stop_component(
+                "translation cache manager",
+                self._translation_cache_management.stop,
+            )
         # Producers may publish their final empty frame during shutdown. Keep
         # the Qt surface alive until every publisher and the display clock have
         # stopped, then release the surface-owned platform resources.
         cancellation_requested |= await self._stop_component("MPRIS provider", self._mpris.stop)
         cancellation_requested |= await self._stop_component("Cider provider", self._cider.stop)
         cancellation_requested |= await self._stop_component("adapter receiver", self._receiver.stop)
+        if self._translation is not None:
+            cancellation_requested |= await self._stop_component("lyrics translation", self._translation.stop)
         cancellation_requested |= await self._stop_component("display coordinator", self._display.stop)
         try:
             surface_result = self._overlay.shutdown()
@@ -261,6 +290,40 @@ class AppController:
         if isinstance(intent, ClearCache):
             self._cache_management.clear()
             return
+        if isinstance(intent, ClearTranslationCache):
+            if self._translation_cache_management is not None:
+                self._translation_cache_management.clear()
+            elif self._translation is not None:
+                self._translation.clear_cache()
+            return
+        if isinstance(intent, OpenTranslationCacheManagement):
+            if self._translation_cache_management is not None:
+                self._translation_cache_management.open(self._config)
+            return
+        if isinstance(intent, SearchTranslationCache):
+            if self._translation_cache_management is not None:
+                self._translation_cache_management.search(intent.query)
+            return
+        if isinstance(intent, DeleteTranslationCacheEntries):
+            if self._translation_cache_management is not None:
+                self._translation_cache_management.delete(intent.keys)
+            return
+        if isinstance(intent, LoadTranslationCacheRecord):
+            if self._translation_cache_management is not None:
+                self._translation_cache_management.load_record(intent.key)
+            return
+        if isinstance(intent, UpdateTranslationCacheEntry):
+            if self._translation_cache_management is not None:
+                self._translation_cache_management.update_entry(intent.key, intent.translations)
+            return
+        if isinstance(intent, SaveTranslationApiKey):
+            if self._translation is not None:
+                self._translation.save_api_key(intent.provider, intent.api_key)
+            return
+        if isinstance(intent, DeleteTranslationApiKey):
+            if self._translation is not None:
+                self._translation.delete_api_key(intent.provider)
+            return
         if isinstance(intent, OpenCacheManagement):
             self._cache_management.open(self._config)
             return
@@ -325,7 +388,15 @@ class AppController:
         except (MprisSessionError, OSError, TimeoutError) as exc:
             logger.debug("MPRIS player discovery failed: %s", exc)
             players = []
-        dialog = self._settings_factory.create(self._config, players)
+        if self._translation is not None:
+            translation_secrets = await self._translation.secret_snapshot()
+            dialog = self._settings_factory.create(
+                self._config,
+                players,
+                translation_secrets=translation_secrets,
+            )
+        else:
+            dialog = self._settings_factory.create(self._config, players)
         dialog.intent_requested.connect(self._handle_intent)
         dialog.finished.connect(self._clear_dialog)
         self._settings_dialog = dialog
@@ -356,6 +427,8 @@ class AppController:
         # changed; the settings window is the only one that restyles itself.
         self._lyrics_search.retheme(self._config)
         self._cache_management.retheme(self._config)
+        if self._translation_cache_management is not None:
+            self._translation_cache_management.retheme(self._config)
 
     # --- accessors for tests ---
 

@@ -41,6 +41,28 @@ ACCENT_PRESETS: tuple[tuple[str, str, str, str], ...] = (
 )
 
 DEFAULT_ICON_NAME = "default"
+DEFAULT_TRANSLATION_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+DEFAULT_TRANSLATION_MODEL = "gemini-3.5-flash-lite"
+DEFAULT_TRANSLATION_PROMPT = (
+    "Preserve poetic tone, nuance, idioms, and natural expressions used in the target language. "
+    "Keep each translated line concise for a desktop lyrics overlay. "
+    "If a line is already in the target language or is pure vocalization/punctuation, keep it natural as-is."
+)
+
+
+class TranslationPolicy(StrEnum):
+    """When API translation is invoked for a displayed lyric document."""
+
+    OFF = "off"
+    MISSING_ONLY = "missing-only"
+    REPLACE = "replace"
+
+
+class TranslationProvider(StrEnum):
+    """Supported API translation backends."""
+
+    OPENAI_COMPATIBLE = "openai-compatible"
+    DEEPL = "deepl"
 
 
 class PanelStyle(StrEnum):
@@ -162,7 +184,12 @@ class Config:
     show_translation: bool = True    # bilingual
     context_lines: int = 1          # rows per side; 0 hides context, excess rows are clipped to the viewport
     context_blur: float = 0.0       # context defocus strength 0.0..1.0; clear text by default
-    translation_language: str = "auto"  # "auto" -> from system locale, else an Apple tag (zh-Hans/en/ja/...)
+    translation_language: str = "auto"  # "auto" -> from system locale, else a BCP-47 tag (zh-Hans/pt-PT/en/...)
+    translation_policy: TranslationPolicy = TranslationPolicy.OFF
+    translation_provider: TranslationProvider = TranslationProvider.OPENAI_COMPATIBLE
+    translation_base_url: str = DEFAULT_TRANSLATION_BASE_URL
+    translation_model: str = DEFAULT_TRANSLATION_MODEL
+    translation_prompt: str = DEFAULT_TRANSLATION_PROMPT
     lyrics_sources: list[str] = field(default_factory=lambda: list(DEFAULT_LYRICS_SOURCES))
     display_sources: list[str] = field(default_factory=lambda: list(DEFAULT_DISPLAY_SOURCES))
     # Kept out of repr output, but persisted with the rest of config.json.
@@ -228,7 +255,14 @@ class Config:
             # QSpinBox uses a signed 32-bit integer; do not impose a smaller UX cap.
             context_lines=_clamp_int(self.context_lines, 0, 2_147_483_647, 1),
             context_blur=_clamp_float(self.context_blur, 0.0, 1.0, 0.0),
-            translation_language=str(self.translation_language),
+            translation_language=_clean_translation_language(self.translation_language),
+            translation_policy=_enum_or_default(self.translation_policy, TranslationPolicy, TranslationPolicy.OFF),
+            translation_provider=_enum_or_default(
+                self.translation_provider, TranslationProvider, TranslationProvider.OPENAI_COMPATIBLE
+            ),
+            translation_base_url=_clean_string(self.translation_base_url, DEFAULT_TRANSLATION_BASE_URL),
+            translation_model=_clean_string(self.translation_model, DEFAULT_TRANSLATION_MODEL),
+            translation_prompt=_clean_nonempty_string(self.translation_prompt, DEFAULT_TRANSLATION_PROMPT),
             accent_start=str(self.accent_start),
             accent_end=str(self.accent_end),
             accent_sweep=str(self.accent_sweep),
@@ -304,6 +338,8 @@ _ENUM_FIELDS = frozenset(
         "interlude_countdown",
         "fx_transition",
         "fx_intensity",
+        "translation_policy",
+        "translation_provider",
     }
 )
 
@@ -376,6 +412,29 @@ def _clean_display_sources(value: object) -> list[str]:
 def _clean_token(value: object) -> str:
     """Normalize the in-memory token without ever treating it as config data."""
     return value.strip() if isinstance(value, str) and value.strip() else ""
+
+
+def _clean_translation_language(value: object) -> str:
+    """Preserve 'auto' or a trimmed BCP-47 language tag, falling back to 'auto'."""
+    if not isinstance(value, str):
+        return "auto"
+    cleaned = value.strip()
+    return cleaned if cleaned else "auto"
+
+
+def _clean_string(value: object, default: str) -> str:
+    """Return a trimmed string, falling back to ``default`` when absent or non-string."""
+    if not isinstance(value, str):
+        return default
+    return value.strip()
+
+
+def _clean_nonempty_string(value: object, default: str) -> str:
+    """Return a trimmed non-empty string, falling back to ``default`` when blank."""
+    if not isinstance(value, str):
+        return default
+    cleaned = value.strip()
+    return cleaned if cleaned else default
 
 
 def _clean_icon_name(value: object) -> str:

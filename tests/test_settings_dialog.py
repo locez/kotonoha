@@ -977,7 +977,7 @@ def test_every_field_the_dialog_edits_belongs_to_a_page_reset_list():
     covered = {name for page in PAGE_FIELDS for name in page}
     # Not editable here: the port is a CLI/config-file setting, and the position
     # and per-track offsets are written by dragging and by the overlay's buttons.
-    not_edited = {"port", "screen_name", "screen_width", "screen_height", "translation_language"}
+    not_edited = {"port", "screen_name", "screen_width", "screen_height"}
     missing = {f.name for f in fields(Config)} - covered - not_edited
     assert not missing, f"no page resets these: {sorted(missing)}"
 

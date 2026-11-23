@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TypeAlias
 
-from ..config import Config
+from ..config import Config, TranslationProvider
 from ..config.schema import SETTINGS_CONFIG_FIELDS
 from ..display.offsets import TrackOffsetKey
 from ..lyrics.cache import LyricsCacheKey, LyricsCacheQuery
 from ..lyrics.search import LyricsSearchQuery, LyricsSearchResult
+from ..translation import TranslationCacheKey, TranslationCacheQuery
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +29,60 @@ class ApplyConfig:
 @dataclass(frozen=True, slots=True)
 class ClearCache:
     """Remove persisted lyrics cache entries."""
+
+
+@dataclass(frozen=True, slots=True)
+class ClearTranslationCache:
+    """Remove persisted API-translated lyric entries without deleting source lyrics."""
+
+
+@dataclass(frozen=True, slots=True)
+class OpenTranslationCacheManagement:
+    """Open the standalone translation-cache management window."""
+
+
+@dataclass(frozen=True, slots=True)
+class SearchTranslationCache:
+    """Search persisted translation cache metadata using user criteria."""
+
+    query: TranslationCacheQuery
+
+
+@dataclass(frozen=True, slots=True)
+class DeleteTranslationCacheEntries:
+    """Delete the exact translation cache entries selected by the user."""
+
+    keys: tuple[TranslationCacheKey, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class LoadTranslationCacheRecord:
+    """Load one cached translation's full line list for editing."""
+
+    key: TranslationCacheKey
+
+
+@dataclass(frozen=True, slots=True)
+class UpdateTranslationCacheEntry:
+    """Persist user-edited translation lines for one cached entry."""
+
+    key: TranslationCacheKey
+    translations: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SaveTranslationApiKey:
+    """Persist one provider API key into the system keyring."""
+
+    provider: TranslationProvider
+    api_key: str = field(repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class DeleteTranslationApiKey:
+    """Remove one provider API key from the system keyring."""
+
+    provider: TranslationProvider
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +145,14 @@ class SelectLyrics:
 SettingsIntent: TypeAlias = (
     ApplyConfig
     | ClearCache
+    | ClearTranslationCache
+    | OpenTranslationCacheManagement
+    | SearchTranslationCache
+    | LoadTranslationCacheRecord
+    | UpdateTranslationCacheEntry
+    | DeleteTranslationCacheEntries
+    | SaveTranslationApiKey
+    | DeleteTranslationApiKey
     | OpenCacheManagement
     | SearchCache
     | DeleteCacheEntries
@@ -105,12 +168,20 @@ __all__ = [
     "ChangePosition",
     "ChangeTrackOffset",
     "ClearCache",
+    "ClearTranslationCache",
     "DeleteCacheEntries",
+    "DeleteTranslationApiKey",
+    "DeleteTranslationCacheEntries",
+    "LoadTranslationCacheRecord",
     "OpenCacheManagement",
+    "OpenTranslationCacheManagement",
     "RequestRestart",
+    "SaveTranslationApiKey",
     "SearchCache",
     "SearchLyrics",
+    "SearchTranslationCache",
     "SelectLyrics",
+    "UpdateTranslationCacheEntry",
     "LyricsSearchIntent",
     "SettingsIntent",
 ]

@@ -14,6 +14,7 @@ from kotonoha.app.components import ApplicationComponents
 from kotonoha.app.config_service import ConfigService
 from kotonoha.app.intents import ChangeTrackOffset, SearchCache
 from kotonoha.app.track_offset_service import TrackOffsetService
+from kotonoha.app.translation_coordinator import TranslationSecretSnapshot
 from kotonoha.async_worker import BlockingCallRunner
 from kotonoha.config import Config
 from kotonoha.display.models import DisplayOptions, LyricsDisplayStatus
@@ -418,8 +419,14 @@ class _SettingsFactory:
         self.created: list[SettingsDialog] = []
         self.created_event = asyncio.Event()
 
-    def create(self, config: Config, players: list[PlayerInfo]) -> SettingsDialog:
-        dialog = SettingsDialog(config, players=players)
+    def create(
+        self,
+        config: Config,
+        players: list[PlayerInfo],
+        *,
+        translation_secrets: TranslationSecretSnapshot | None = None,
+    ) -> SettingsDialog:
+        dialog = SettingsDialog(config, players=players, translation_secrets=translation_secrets)
         self.created.append(dialog)
         self.created_event.set()
         return dialog
@@ -898,6 +905,7 @@ def test_composition_closes_workers_when_graph_construction_fails(qapp, monkeypa
         "kotonoha-amll-catalog",
         "kotonoha-local-lyrics",
         "kotonoha-lyrics-cache",
+        "kotonoha-secrets",
         "track offsets",
     ]
 

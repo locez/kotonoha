@@ -52,6 +52,7 @@ in
     dependencies = [
       python3Packages.aiohttp
       python3Packages.dbus-fast
+      python3Packages.keyring
       python3Packages.mutagen
       python3Packages.pyqt6
       python3Packages.pyyaml

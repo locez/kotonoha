@@ -22,6 +22,7 @@ from ...strings import UI_LANGUAGES, Translator
 from .controls import OpacityKey, PanelOpacityState, SettingsWidgets
 from .icons import SettingsIconPageBuilder
 from .sources import SettingsSourcesPageBuilder
+from .translation import SettingsTranslationSectionBuilder
 from .widgets import available_font_styles, resolve_font_family
 
 if TYPE_CHECKING:
@@ -42,6 +43,9 @@ class SettingsPageBuilder:
         *,
         on_clear_cache: Callable[[], None],
         on_manage_cache: Callable[[], None],
+        on_clear_translation_key: Callable[[], None],
+        on_manage_translation_cache: Callable[[], None],
+        on_clear_translation_cache: Callable[[], None],
         translator: Translator,
     ) -> None:
         self._dialog = dialog
@@ -52,6 +56,14 @@ class SettingsPageBuilder:
             widgets,
             on_clear_cache=on_clear_cache,
             on_manage_cache=on_manage_cache,
+            translator=translator,
+        )
+        self._translation = SettingsTranslationSectionBuilder(
+            dialog,
+            widgets,
+            on_clear_translation_key=on_clear_translation_key,
+            on_manage_translation_cache=on_manage_translation_cache,
+            on_clear_translation_cache=on_clear_translation_cache,
             translator=translator,
         )
         self._icons = SettingsIconPageBuilder(dialog, widgets, translator=translator)
@@ -254,6 +266,7 @@ class SettingsPageBuilder:
         w.translation.setText(t("set.show_translation"))
         w.translation.setChecked(self._config.show_translation)
         form.addRow(w.translation)
+        self._translation.build_into(form)
         self._configure_spin(w.context_lines, 0, 2_147_483_647, self._config.context_lines, "")
         form.addRow(t("set.context_lines"), w.context_lines)
         form.addRow(self._hint(t("set.context_lines_hint")))
@@ -316,6 +329,10 @@ class SettingsPageBuilder:
     def refresh_generated_icons(self) -> None:
         """Re-render accent-dependent icon previews after Apply."""
         self._icons.refresh_generated_icons()
+
+    def refresh_translation_secret_status(self) -> None:
+        """Refresh keyring status indicators after a key save or delete."""
+        self._translation.refresh_secret_status()
 
     def set_custom_accent(self, triple: tuple[str, str, str]) -> None:
         """Show a picked accent in the reusable custom combo entry."""
