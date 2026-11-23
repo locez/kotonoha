@@ -39,8 +39,18 @@ from PyQt6.QtWidgets import (
 )
 
 from ... import leaf_icon
-from ...app.intents import ApplyConfig, ClearCache, OpenCacheManagement, RequestRestart
-from ...config import Config
+from ...app.intents import (
+    ApplyConfig,
+    ClearCache,
+    ClearTranslationCache,
+    DeleteTranslationApiKey,
+    OpenCacheManagement,
+    OpenTranslationCacheManagement,
+    RequestRestart,
+    SaveTranslationApiKey,
+)
+from ...app.translation_coordinator import TranslationSecretSnapshot
+from ...config import Config, TranslationProvider
 from ...icons import nav_icon
 from ...platform import OverlayPlatformFactory
 from ...players import PlayerInfo
@@ -79,12 +89,16 @@ class SettingsDialog(ThemedSettingsDialog):
         players: list[PlayerInfo] | None = None,
         platform_factory: OverlayPlatformFactory | None = None,
         translator: Translator | None = None,
+        translation_secrets: TranslationSecretSnapshot | None = None,
     ) -> None:
         super().__init__(config, parent, platform_factory=platform_factory)
         self._translator = translator if translator is not None else Translator(config.ui_language)
         self._form_state = SettingsFormState(config)
         self._widgets = SettingsWidgets()
         self._players = tuple(players or ())
+        self._translation_secrets = (
+            translation_secrets if translation_secrets is not None else TranslationSecretSnapshot()
+        )
         # The UI language only takes effect on restart, so remember what is in
         # effect now to decide when to offer the restart button.
         self._initial_ui_language = self.staged_config.ui_language
@@ -113,6 +127,9 @@ class SettingsDialog(ThemedSettingsDialog):
             self._widgets,
             on_clear_cache=self._request_clear_cache,
             on_manage_cache=self._request_manage_cache,
+            on_clear_translation_key=self._request_delete_translation_key,
+            on_manage_translation_cache=self._request_manage_translation_cache,
+            on_clear_translation_cache=self._request_clear_translation_cache,
             translator=self._translator,
         )
         self._page_builders = (
@@ -263,6 +280,10 @@ class SettingsDialog(ThemedSettingsDialog):
             self._widgets.accent,
             self._widgets.fx_transition,
             self._widgets.fx_intensity,
+            self._widgets.translation_language,
+            self._widgets.translation_policy,
+            self._widgets.translation_provider,
+            self._widgets.translation_preset,
             self._widgets.lyrics_script,
             self._widgets.interlude_style,
             self._widgets.interlude_countdown,
@@ -390,6 +411,11 @@ class SettingsDialog(ThemedSettingsDialog):
         """Return the controls owned by this settings form instance."""
         return self._widgets
 
+    @property
+    def translation_secrets(self) -> TranslationSecretSnapshot:
+        """Return the current keyring availability and saved-key status."""
+        return self._translation_secrets
+
     def _update_restart_hint(self) -> None:
         """Show restart when the staged UI language differs from the active one."""
         self._widgets.restart_button.setVisible(
@@ -408,6 +434,25 @@ class SettingsDialog(ThemedSettingsDialog):
     def _request_manage_cache(self) -> None:
         """Submit the request to open the independent cache-management window."""
         self.intent_requested.emit(OpenCacheManagement())
+
+    def _request_manage_translation_cache(self) -> None:
+        """Submit the request to open the standalone translation-cache window."""
+        self.intent_requested.emit(OpenTranslationCacheManagement())
+
+    def _request_clear_translation_cache(self) -> None:
+        """Submit the request to clear cached API translations."""
+        self.intent_requested.emit(ClearTranslationCache())
+
+    def _request_delete_translation_key(self) -> None:
+        """Delete the saved keyring API key for the selected translation service."""
+        provider = TranslationProvider(str(self._widgets.translation_provider.currentData()))
+        self._translation_secrets = replace(
+            self._translation_secrets,
+            saved_providers=self._translation_secrets.saved_providers - {provider.value},
+        )
+        self._widgets.translation_api_key.clear()
+        self._page_builder.refresh_translation_secret_status()
+        self.intent_requested.emit(DeleteTranslationApiKey(provider))
 
     def current_config(self) -> Config:
         w = self._widgets
@@ -454,6 +499,12 @@ class SettingsDialog(ThemedSettingsDialog):
             karaoke=w.karaoke.isChecked(),
             lead_ms=w.lead.value(),
             show_translation=w.translation.isChecked(),
+            translation_language=str(w.translation_language.currentData()),
+            translation_policy=str(w.translation_policy.currentData()),
+            translation_provider=str(w.translation_provider.currentData()),
+            translation_base_url=w.translation_base_url.text().strip(),
+            translation_model=w.translation_model.text().strip(),
+            translation_prompt=w.translation_prompt.toPlainText().strip(),
             context_lines=w.context_lines.value(),
             context_blur=w.context_blur.value / 100.0,
             anchor_top=bool(w.anchor.currentData()),
@@ -523,6 +574,16 @@ class SettingsDialog(ThemedSettingsDialog):
         self.update()  # repaint the frameless background (theme / frost)
         self.applied.emit(self.staged_config)
         self.intent_requested.emit(ApplyConfig(self.staged_config, changed_fields))
+        entered_key = self._widgets.translation_api_key.text().strip()
+        if entered_key and self._translation_secrets.available:
+            provider = self.staged_config.translation_provider
+            self._translation_secrets = replace(
+                self._translation_secrets,
+                saved_providers=self._translation_secrets.saved_providers | {provider.value},
+            )
+            self._widgets.translation_api_key.clear()
+            self._page_builder.refresh_translation_secret_status()
+            self.intent_requested.emit(SaveTranslationApiKey(provider, entered_key))
         self._form_state.mark_applied()
 
     def _accept(self) -> None:

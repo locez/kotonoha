@@ -37,8 +37,10 @@ from ..providers.mpris import MprisProvider
 from ..providers.mpris_adapter import MprisPlaybackAdapter
 from ..providers.mpris_session import MprisSession
 from ..receiver import AdapterReceiver
+from ..secrets import KeyringSecretStore
 from ..state import TrackOffsetStore, TrackOffsetStoreError
 from ..strings import Translator
+from ..translation import LyricsTranslationService, TranslationCache
 from ..tray import KotonohaTray, load_icon
 from ..ui.overlay import LyricsOverlay
 from ..ui.overlay.publisher import QtDisplayPublisher
@@ -46,14 +48,25 @@ from ..ui.overlay.state import LyricsState
 from ..ui.settings.cache_dialog import LyricsCacheDialog
 from ..ui.settings.dialog import SettingsDialog
 from ..ui.settings.lyrics_search_dialog import LyricsSearchDialog
+from ..ui.settings.translation_cache_dialog import TranslationCacheDialog
 from .application_controller import AppController
 from .components import ApplicationComponents, RestartLauncher
 from .config_service import ConfigService, ConfigWriter
 from .display_coordinator import DisplayCoordinator
 from .services import RuntimeConfigApplier, display_options
-from .settings_port import CacheManagementDialogFactory, LyricsSearchDialogFactory, SettingsDialogFactory
+from .settings_port import (
+    CacheManagementDialogFactory,
+    LyricsSearchDialogFactory,
+    SettingsDialogFactory,
+    TranslationCacheDialogFactory,
+)
 from .source_gate import SourceOwnershipCoordinator
 from .track_offset_service import TrackOffsetService, TrackOffsetWriter
+from .translation_coordinator import (
+    LyricsTranslationCoordinator,
+    TranslationSecretSnapshot,
+    translation_config_from_app,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -91,12 +104,19 @@ class _QtSettingsDialogFactory:
         self._regular_window_factory = regular_window_factory
         self._translator = translator
 
-    def create(self, config: Config, players: list[PlayerInfo]) -> SettingsDialog:
+    def create(
+        self,
+        config: Config,
+        players: list[PlayerInfo],
+        *,
+        translation_secrets: TranslationSecretSnapshot | None = None,
+    ) -> SettingsDialog:
         return SettingsDialog(
             config,
             players=players,
             platform_factory=self._regular_window_factory,
             translator=self._translator,
+            translation_secrets=translation_secrets,
         )
 
 
@@ -110,6 +130,21 @@ class _QtCacheManagementDialogFactory:
     def create(self, config: Config) -> LyricsCacheDialog:
         """Create one standalone cache manager using the shared UI translator."""
         return LyricsCacheDialog(
+            config,
+            platform_factory=self._regular_window_factory,
+            translator=self._translator,
+        )
+
+
+class _QtTranslationCacheDialogFactory:
+    """Adapt the Qt translation-cache manager to its application factory port."""
+
+    def __init__(self, regular_window_factory: OverlayPlatformFactory, translator: Translator) -> None:
+        self._regular_window_factory = regular_window_factory
+        self._translator = translator
+
+    def create(self, config: Config) -> TranslationCacheDialog:
+        return TranslationCacheDialog(
             config,
             platform_factory=self._regular_window_factory,
             translator=self._translator,
@@ -210,8 +245,9 @@ class ApplicationComposition:
         local_worker = BlockingCallRunner("kotonoha-local-lyrics")
         cache_worker = BlockingCallRunner("kotonoha-lyrics-cache")
         amll_worker = BlockingCallRunner("kotonoha-amll-catalog")
+        secret_worker = BlockingCallRunner("kotonoha-secrets")
         try:
-            controller = self._build_unchecked(local_worker, cache_worker, amll_worker)
+            controller = self._build_unchecked(local_worker, cache_worker, amll_worker, secret_worker)
         except BaseException:
             # Construction happens before AppController owns the graph, so the
             # composition root must release every worker it allocated itself.
@@ -220,6 +256,7 @@ class ApplicationComposition:
             self._close_build_worker(local_worker, "local lyrics")
             self._close_build_worker(cache_worker, "lyrics cache")
             self._close_build_worker(amll_worker, "AMLL catalog")
+            self._close_build_worker(secret_worker, "secrets")
             self._close_build_worker(self._track_offset_worker, "track offsets")
             self._close_build_worker(self._config_worker, "configuration")
             raise
@@ -231,6 +268,7 @@ class ApplicationComposition:
         local_worker: BlockingWorkerPort,
         cache_worker: BlockingWorkerPort,
         amll_worker: BlockingWorkerPort,
+        secret_worker: BlockingWorkerPort,
     ) -> AppController:
         """Construct the graph while :meth:`build` owns rollback on failure."""
 
@@ -306,6 +344,25 @@ class ApplicationComposition:
             managed_sources=(amll,),
         )
         cache = LyricsCache(worker=cache_worker)
+        secrets = KeyringSecretStore(worker=secret_worker)
+        lyrics_parsers = {
+            name: source.cache_parser
+            for name, source in lyric_sources.items()
+            if source.cache_parser is not None
+        }
+        translation_cache = TranslationCache(worker=cache_worker, lyrics_parsers=lyrics_parsers)
+        translation_service = LyricsTranslationService(
+            config=translation_config_from_app(config),
+            cache=translation_cache,
+            secrets=secrets,
+            session_factory=new_lyrics_session,
+        )
+        translation = LyricsTranslationCoordinator(
+            service=translation_service,
+            secrets=secrets,
+            target=display,
+        )
+        display.set_document_listener(translation.on_source_document)
         lyrics_search: LyricsSearchService = LyricsSearchService(
             {
                 "amll": LyricsSearchProvider(amll.search_artifacts),
@@ -366,6 +423,10 @@ class ApplicationComposition:
             platform_factory.for_regular_window,
             translator,
         )
+        translation_cache_factory: TranslationCacheDialogFactory = _QtTranslationCacheDialogFactory(
+            platform_factory.for_regular_window,
+            translator,
+        )
         lyrics_search_factory: LyricsSearchDialogFactory = _QtLyricsSearchDialogFactory(
             platform_factory.for_regular_window,
             translator,
@@ -379,6 +440,7 @@ class ApplicationComposition:
             cider,
             ownership,
             track_offsets,
+            translation=translation,
         )
         components = ApplicationComponents(
             config_service=config_service,
@@ -397,6 +459,9 @@ class ApplicationComposition:
             mpris=mpris,
             tray=tray,
             runtime_config=runtime_config,
+            translation=translation,
+            translation_cache=translation_cache,
+            translation_cache_factory=translation_cache_factory,
         )
         controller = AppController(self._app, components)
         state.frame_changed.connect(controller.refresh_cache_status)

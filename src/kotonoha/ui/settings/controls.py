@@ -7,9 +7,11 @@ from typing import Literal
 
 from PyQt6.QtWidgets import (
     QCheckBox,
+    QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QPlainTextEdit,
     QPushButton,
     QSpinBox,
 )
@@ -92,6 +94,19 @@ class SettingsWidgets:
         self.karaoke = QCheckBox()
         self.lead = QSpinBox()
         self.translation = QCheckBox()
+        self.translation_language = SettingsComboBox()
+        self.translation_policy = SettingsComboBox()
+        self.translation_provider = SettingsComboBox()
+        self.translation_preset = SettingsComboBox()
+        self.translation_base_url = QLineEdit()
+        self.translation_model = QLineEdit()
+        self.translation_prompt = QPlainTextEdit()
+        self.translation_prompt_hint = QLabel()
+        self.translation_api_key = QLineEdit()
+        self.translation_key_status = QLabel()
+        self.clear_translation_key = QPushButton()
+        self.manage_translation_cache = QPushButton()
+        self.clear_translation_cache = QPushButton()
         self.context_lines: QSpinBox = QSpinBox()
         self.context_blur: PercentageControl = PercentageControl()
         self.lyrics_script = SettingsComboBox()

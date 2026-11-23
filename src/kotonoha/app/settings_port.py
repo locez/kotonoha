@@ -10,6 +10,13 @@ from ..display.models import LyricsDisplayStatus
 from ..lyrics.cache import CacheDeleteResult, CacheWriteResult, LyricsCacheEntry, LyricsCacheQuery
 from ..lyrics.search import LyricsSearchQuery, LyricsSearchResponse
 from ..players import PlayerInfo
+from ..translation import (
+    TranslationCacheDeleteResult,
+    TranslationCacheEntry,
+    TranslationCacheQuery,
+    TranslationCacheRecord,
+)
+from .translation_coordinator import TranslationSecretSnapshot
 
 
 class SignalPort(Protocol):
@@ -53,7 +60,13 @@ class SettingsDialogPort(Protocol):
 class SettingsDialogFactory(Protocol):
     """Create one presentation dialog for the current application state."""
 
-    def create(self, config: Config, players: list[PlayerInfo]) -> SettingsDialogPort:
+    def create(
+        self,
+        config: Config,
+        players: list[PlayerInfo],
+        *,
+        translation_secrets: TranslationSecretSnapshot | None = None,
+    ) -> SettingsDialogPort:
         """Create one dialog using the current config and player choices."""
         ...
 
@@ -122,6 +135,50 @@ class CacheManagementDialogFactory(Protocol):
     def create(self, config: Config) -> CacheManagementDialogPort:
         """Create a manager styled for the current application configuration."""
         ...
+
+
+class TranslationCacheDialogPort(Protocol):
+    """Presentation boundary for the independently opened translation-cache manager."""
+
+    @property
+    def intent_requested(self) -> SignalPort: ...
+
+    @property
+    def finished(self) -> SignalPort: ...
+
+    def retheme(self, config: Config) -> None: ...
+
+    def show(self) -> None: ...
+
+    def close(self) -> object: ...
+
+    def raise_(self) -> object: ...
+
+    def activateWindow(self) -> object: ...
+
+    def set_entries(
+        self,
+        query: TranslationCacheQuery,
+        entries: tuple[TranslationCacheEntry, ...],
+    ) -> None: ...
+
+    def set_busy(self, busy: bool) -> None: ...
+
+    def show_error(self, message: str) -> None: ...
+
+    def show_delete_result(self, results: tuple[TranslationCacheDeleteResult, ...]) -> None: ...
+
+    def show_clear_result(self) -> None: ...
+
+    def open_editor(self, record: TranslationCacheRecord) -> None: ...
+
+    def show_save_result(self, updated: bool) -> None: ...
+
+
+class TranslationCacheDialogFactory(Protocol):
+    """Create one independently owned translation-cache management window."""
+
+    def create(self, config: Config) -> TranslationCacheDialogPort: ...
 
 
 class LyricsSearchDialogPort(Protocol):
@@ -199,4 +256,6 @@ __all__ = [
     "SettingsDialogFactory",
     "SettingsDialogPort",
     "SignalPort",
+    "TranslationCacheDialogFactory",
+    "TranslationCacheDialogPort",
 ]

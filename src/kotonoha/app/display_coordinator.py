@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 
 from ..async_task import create_owned_task, wait_for_owned
 from ..display.contracts import DisplayPublisher
@@ -44,7 +45,9 @@ class DisplayCoordinator:
         self._presenter = presenter
         self._publisher = publisher
         self._timeline = timeline
+        self._source_document: LyricsDocument | None = None
         self._document: LyricsDocument | None = None
+        self._document_listener: Callable[[LyricsDocument | None], None] | None = None
         self._resolution = ResolutionState.NO_TRACK
         self._manual_document: LyricsDocument | None = None
         self._manual_track: TrackIdentity | None = None
@@ -129,13 +132,53 @@ class DisplayCoordinator:
         """Publish a playback/document pair with explicit source resolution."""
         self._clear_manual_override_if_track_changed(playback.track)
         manual_document = self._manual_document
-        self._document = manual_document if manual_document is not None else document
+        next_source = manual_document if manual_document is not None else document
+        source_changed = next_source != self._source_document
+        if source_changed:
+            self._source_document = next_source
+            self._document = next_source
         self._resolution = ResolutionState.AVAILABLE if manual_document is not None else resolution
         playback = self._timeline.set_observation(playback)
         frame = self._project_observation(playback)
         self.publish_frame(frame)
         self._wake()
+        if source_changed:
+            self._notify_document_listener(next_source)
         return frame
+
+    def set_document_listener(
+        self,
+        listener: Callable[[LyricsDocument | None], None] | None,
+    ) -> None:
+        """Attach an optional observer notified when the active source document changes."""
+        self._document_listener = listener
+
+    def current_source_document(self) -> LyricsDocument | None:
+        """Return the untranslated source document currently backing the display."""
+        return self._source_document
+
+    def apply_translated_document(
+        self,
+        source: LyricsDocument,
+        translated: LyricsDocument,
+    ) -> bool:
+        """Replace the active display document if ``source`` is still current."""
+        if self._source_document != source:
+            return False
+        self._document = translated
+        playback = self._timeline.advance()
+        if playback is not None:
+            self.publish_frame(self._project_observation(playback))
+        return True
+
+    def reset_translated_document(self) -> None:
+        """Restore the active source document when translation settings change."""
+        if self._document == self._source_document:
+            return
+        self._document = self._source_document
+        playback = self._timeline.advance()
+        if playback is not None:
+            self.publish_frame(self._project_observation(playback))
 
     def apply_manual_artifact(self, artifact: LyricsArtifact, expected_track: TrackMetadata) -> bool:
         """Replace the active document immediately while the expected track remains active."""
@@ -179,13 +222,24 @@ class DisplayCoordinator:
     def publish_frame(self, frame: DisplayFrame) -> bool:
         """Publish an already projected frame through the sole Qt bridge."""
         self._log_display_source(frame)
+        cleared_source = False
         if frame.state is DisplayState.NO_TRACK and frame.track is None:
+            cleared_source = self._source_document is not None
+            self._source_document = None
             self._document = None
             self._resolution = ResolutionState.NO_TRACK
             self._manual_document = None
             self._manual_track = None
             self._timeline.reset()
-        return self._publisher.publish(frame)
+        published = self._publisher.publish(frame)
+        if cleared_source:
+            self._notify_document_listener(None)
+        return published
+
+    def _notify_document_listener(self, document: LyricsDocument | None) -> None:
+        listener = self._document_listener
+        if listener is not None:
+            listener(document)
 
     def tick(self, position_s: float | None, status: PlaybackStatus) -> None:
         """Apply a clock calibration and publish the resulting display frame."""

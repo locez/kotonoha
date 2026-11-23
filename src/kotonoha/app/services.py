@@ -84,6 +84,14 @@ class TrackOffsetSnapshotPort(Protocol):
         ...
 
 
+class TranslationRuntimePort(Protocol):
+    """Live configuration update boundary for optional lyrics API translation."""
+
+    def apply_config(self, config: Config) -> None:
+        """Update translation settings and re-evaluate active lyrics."""
+        ...
+
+
 class RuntimeConfigApplier:
     """Apply one validated config to all already-composed runtime collaborators."""
 
@@ -97,6 +105,7 @@ class RuntimeConfigApplier:
         cider: CiderRuntimePort,
         ownership: SourceRuntimePort,
         track_offsets: TrackOffsetSnapshotPort,
+        translation: TranslationRuntimePort | None = None,
     ) -> None:
         self._ui = ui
         self._display = display
@@ -106,6 +115,7 @@ class RuntimeConfigApplier:
         self._cider = cider
         self._ownership = ownership
         self._track_offsets = track_offsets
+        self._translation = translation
 
     def apply(self, previous: Config, current: Config) -> None:
         """Refresh runtime collaborators from the latest validated config."""
@@ -129,6 +139,8 @@ class RuntimeConfigApplier:
         current_language = resolve_translation_language(current.translation_language)
         if current_language != previous_language:
             self._cider.set_translation_language(current_language)
+        if self._translation is not None:
+            self._translation.apply_config(current)
 def display_options(config: Config, track_offsets: TrackOffsetSnapshot) -> DisplayOptions:
     """Build immutable display options from settings and runtime offset state."""
     return DisplayOptions(
@@ -148,6 +160,7 @@ __all__ = [
     "RuntimeConfigApplier",
     "SourceRuntimePort",
     "TrackOffsetSnapshotPort",
+    "TranslationRuntimePort",
     "TrayRuntimePort",
     "UiRuntimePort",
     "display_options",

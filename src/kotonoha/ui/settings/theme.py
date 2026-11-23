@@ -106,9 +106,20 @@ QSpinBox, QComboBox, QFontComboBox, QLineEdit {
     min-height: 24px;
     max-height: 24px;  /* combos and spin boxes end up exactly the same height (~34px) */
 }
-QSpinBox:hover, QComboBox:hover, QFontComboBox:hover, QLineEdit:hover { border-color: %FIELD_BORDER_HOVER%; }
+QSpinBox:hover, QComboBox:hover, QFontComboBox:hover, QLineEdit:hover, QPlainTextEdit:hover {
+    border-color: %FIELD_BORDER_HOVER%;
+}
 /* Accent focus ring — clear interactive feedback on the control you're editing. */
-QSpinBox:focus, QComboBox:focus, QFontComboBox:focus, QLineEdit:focus { border: 1px solid %ACCENT%; }
+QSpinBox:focus, QComboBox:focus, QFontComboBox:focus, QLineEdit:focus, QPlainTextEdit:focus {
+    border: 1px solid %ACCENT%;
+}
+QPlainTextEdit {
+    background: %FIELD_BG%;
+    border: 1px solid %FIELD_BORDER%;
+    border-radius: 7px;
+    padding: 6px 9px;
+    color: %TEXT%;
+}
 QSpinBox:disabled, QComboBox:disabled { color: %TEXT_DIM%; }
 QSlider:horizontal { min-height: 32px; background: transparent; }
 QSlider::groove:horizontal {

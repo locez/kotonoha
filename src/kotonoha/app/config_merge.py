@@ -101,6 +101,36 @@ def merge_settings(
             if "show_translation" in changed_fields
             else current.show_translation
         ),
+        translation_language=(
+            submitted.translation_language
+            if "translation_language" in changed_fields
+            else current.translation_language
+        ),
+        translation_policy=(
+            submitted.translation_policy
+            if "translation_policy" in changed_fields
+            else current.translation_policy
+        ),
+        translation_provider=(
+            submitted.translation_provider
+            if "translation_provider" in changed_fields
+            else current.translation_provider
+        ),
+        translation_base_url=(
+            submitted.translation_base_url
+            if "translation_base_url" in changed_fields
+            else current.translation_base_url
+        ),
+        translation_model=(
+            submitted.translation_model
+            if "translation_model" in changed_fields
+            else current.translation_model
+        ),
+        translation_prompt=(
+            submitted.translation_prompt
+            if "translation_prompt" in changed_fields
+            else current.translation_prompt
+        ),
         context_lines=submitted.context_lines if "context_lines" in changed_fields else current.context_lines,
         context_blur=submitted.context_blur if "context_blur" in changed_fields else current.context_blur,
         lyrics_script=(
