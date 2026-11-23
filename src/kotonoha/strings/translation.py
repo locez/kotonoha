@@ -1,4 +1,4 @@
-"""Localized labels for lyrics API translation settings and keyring status."""
+"""Localized labels for lyrics API translation settings, services, and cache manager."""
 
 from typing import Final
 
@@ -39,17 +39,95 @@ TRANSLATION_STRINGS: Final[dict[str, dict[str, str]]] = {
         "zh-Hant": "始終翻譯為目標語言",
         "ja": "常に翻訳先の言語へ翻訳",
     },
-    "set.translation_provider": {
-        "en": "Translation service",
-        "zh-Hans": "翻译服务",
-        "zh-Hant": "翻譯服務",
-        "ja": "翻訳サービス",
+    "set.translation_services": {
+        "en": "Translation services",
+        "zh-Hans": "翻译服务（按优先级）",
+        "zh-Hant": "翻譯服務（依優先順序）",
+        "ja": "翻訳サービス（優先順）",
     },
-    "transprovider.openai": {
-        "en": "OpenAI-compatible API (Gemini / DeepSeek / Ollama…)",
-        "zh-Hans": "OpenAI 兼容接口（Gemini / DeepSeek / Ollama…）",
-        "zh-Hant": "OpenAI 相容介面（Gemini / DeepSeek / Ollama…）",
-        "ja": "OpenAI 互換 API（Gemini / DeepSeek / Ollama…）",
+    "set.translation_services_hint": {
+        "en": (
+            "Checked services run from top to bottom. Drag items to reorder priority; "
+            "if one fails, the next enabled service takes over automatically."
+        ),
+        "zh-Hans": "勾选的服务会按从上到下的顺序尝试，拖拽条目可调整优先级；前面失败时自动回退到下一个服务。",
+        "zh-Hant": "勾選的服務會由上而下依序嘗試，拖曳項目可調整優先順序；前者失敗時自動退回下一個服務。",
+        "ja": (
+            "チェックされたサービスを上から順に試行します。"
+            "ドラッグで優先順を変更でき、失敗時は次のサービスへ自動で切り替わります。"
+        ),
+    },
+    "btn.add_translation_service": {
+        "en": "Add",
+        "zh-Hans": "添加",
+        "zh-Hant": "新增",
+        "ja": "追加",
+    },
+    "btn.edit_translation_service": {
+        "en": "Edit",
+        "zh-Hans": "编辑",
+        "zh-Hant": "編輯",
+        "ja": "編集",
+    },
+    "btn.remove_translation_service": {
+        "en": "Remove",
+        "zh-Hans": "删除",
+        "zh-Hant": "刪除",
+        "ja": "削除",
+    },
+    "tservice.add_title": {
+        "en": "Add translation service",
+        "zh-Hans": "添加翻译服务",
+        "zh-Hant": "新增翻譯服務",
+        "ja": "翻訳サービスを追加",
+    },
+    "tservice.edit_title": {
+        "en": "Edit translation service",
+        "zh-Hans": "编辑翻译服务",
+        "zh-Hant": "編輯翻譯服務",
+        "ja": "翻訳サービスを編集",
+    },
+    "tservice.name": {
+        "en": "Display name",
+        "zh-Hans": "显示名称",
+        "zh-Hant": "顯示名稱",
+        "ja": "表示名",
+    },
+    "tservice.name_placeholder": {
+        "en": "e.g. Gemini Primary, My Custom API",
+        "zh-Hans": "例如：Gemini 主力、自定义接口 2",
+        "zh-Hant": "例如：Gemini 主力、自訂介面 2",
+        "ja": "例：Gemini メイン、カスタム API",
+    },
+    "tservice.badge.key_saved": {
+        "en": "Key saved",
+        "zh-Hans": "已配密钥",
+        "zh-Hant": "已設定金鑰",
+        "ja": "キー保存済み",
+    },
+    "tservice.badge.key_pending": {
+        "en": "Key pending apply",
+        "zh-Hans": "待应用保存",
+        "zh-Hant": "待套用儲存",
+        "ja": "適用待ち",
+    },
+    "tservice.badge.key_missing": {
+        "en": "No key",
+        "zh-Hans": "未配密钥",
+        "zh-Hant": "未設定金鑰",
+        "ja": "キー未設定",
+    },
+    "tservice.badge.key_not_needed": {
+        "en": "Local · no key",
+        "zh-Hans": "本地 · 免密钥",
+        "zh-Hant": "本機 · 免金鑰",
+        "ja": "ローカル・キー不要",
+    },
+    "tservice.error.missing_model": {
+        "en": "Please enter a model name.",
+        "zh-Hans": "请填写模型名称。",
+        "zh-Hant": "請填寫模型名稱。",
+        "ja": "モデル名を入力してください。",
     },
     "transprovider.deepl": {
         "en": "DeepL API (Free 500k/mo & Pro)",
@@ -58,10 +136,10 @@ TRANSLATION_STRINGS: Final[dict[str, dict[str, str]]] = {
         "ja": "DeepL 公式 API（無料 月50万文字 & Pro）",
     },
     "set.translation_preset": {
-        "en": "API preset",
-        "zh-Hans": "接口预设",
-        "zh-Hant": "介面預設",
-        "ja": "API プリセット",
+        "en": "Service preset",
+        "zh-Hans": "服务预设",
+        "zh-Hant": "服務預設",
+        "ja": "サービスプリセット",
     },
     "transpreset.gemini": {
         "en": "Google Gemini (AI Studio)",
@@ -88,10 +166,10 @@ TRANSLATION_STRINGS: Final[dict[str, dict[str, str]]] = {
         "ja": "Ollama（ローカル）",
     },
     "transpreset.custom": {
-        "en": "Custom endpoint",
-        "zh-Hans": "自定义接口",
-        "zh-Hant": "自訂介面",
-        "ja": "カスタムエンドポイント",
+        "en": "Custom OpenAI-compatible endpoint",
+        "zh-Hans": "自定义 OpenAI 兼容接口",
+        "zh-Hant": "自訂 OpenAI 相容介面",
+        "ja": "カスタム OpenAI 互換エンドポイント",
     },
     "set.translation_base_url": {
         "en": "API base URL",
@@ -113,12 +191,12 @@ TRANSLATION_STRINGS: Final[dict[str, dict[str, str]]] = {
     },
     "set.translation_prompt_hint": {
         "en": (
-            "Customize translation style and tone (e.g. poetic, concise, regional idioms). "
+            "Shared style prompt for OpenAI-compatible services (e.g. poetic, concise, regional idioms). "
             "JSON line alignment is enforced automatically."
         ),
-        "zh-Hans": "可自定义翻译风格与语气（如诗意、直白、口语化等）；逐行 JSON 对齐格式会自动附加，无需手写。",
-        "zh-Hant": "可自訂翻譯風格與語氣（如詩意、直白、口語化等）；逐行 JSON 對齊格式會自動附加，無需手寫。",
-        "ja": "翻訳スタイルやトーンを自由に調整できます（行単位の JSON 整列形式は自動で付与されます）。",
+        "zh-Hans": "供所有 OpenAI 兼容服务共用的翻译风格提示词（如诗意、直白、口语化等）；逐行 JSON 对齐会自动附加。",
+        "zh-Hant": "供所有 OpenAI 相容服務共用的翻譯風格提示詞（如詩意、直白、口語化等）；逐行 JSON 對齊會自動附加。",
+        "ja": "OpenAI 互換サービス共通の翻訳スタイル指示です（行単位の JSON 整列形式は自動で付与されます）。",
     },
     "set.translation_api_key": {
         "en": "API key",
@@ -139,10 +217,10 @@ TRANSLATION_STRINGS: Final[dict[str, dict[str, str]]] = {
         "ja": "キーリングに保存済み — 新しいキーを入力して上書き",
     },
     "set.translation_key.saved": {
-        "en": "API key is stored securely in your system keyring. Translations are cached locally in SQLite.",
-        "zh-Hans": "API 密钥已安全保存在系统密钥环中；翻译结果会按歌词内容缓存在本地 SQLite。",
-        "zh-Hant": "API 金鑰已安全儲存在系統金鑰圈中；翻譯結果會依歌詞內容快取於本機 SQLite。",
-        "ja": "API キーはシステムキーリングに安全に保存されています。翻訳結果はローカル SQLite にキャッシュされます。",
+        "en": "This service's API key is saved in your system keyring.",
+        "zh-Hans": "该服务的 API 密钥已安全保存在系统密钥环中。",
+        "zh-Hant": "該服務的 API 金鑰已安全儲存在系統金鑰圈中。",
+        "ja": "このサービスの API キーはシステムキーリングに保存されています。",
     },
     "set.translation_key.not_saved.deepl": {
         "en": (
@@ -157,21 +235,21 @@ TRANSLATION_STRINGS: Final[dict[str, dict[str, str]]] = {
         ),
     },
     "set.translation_key.not_saved.openai": {
-        "en": "No API key saved yet. Enter a key and click Apply to store it in your system keyring.",
-        "zh-Hans": "尚未保存 API 密钥。输入密钥后点击「应用」即可保存到系统密钥环。",
-        "zh-Hant": "尚未儲存 API 金鑰。輸入金鑰後點擊「套用」即可儲存至系統金鑰圈。",
-        "ja": "API キーは未保存です。キーを入力して「適用」を押すとシステムキーリングに保存されます。",
+        "en": "No API key saved yet. Enter a key and click Apply in Settings to store it in your system keyring.",
+        "zh-Hans": "尚未保存 API 密钥。输入密钥并在主设置页点击「应用」即可保存到系统密钥环。",
+        "zh-Hant": "尚未儲存 API 金鑰。輸入金鑰並在主設定頁點擊「套用」即可儲存至系統金鑰圈。",
+        "ja": "API キーは未保存です。キーを入力して設定で「適用」を押すとキーリングに保存されます。",
     },
     "set.translation_key.ollama": {
-        "en": "Local Ollama endpoints do not require an API key. Translations are cached locally in SQLite.",
-        "zh-Hans": "本地 Ollama 无需填写 API 密钥；翻译结果会按歌词内容缓存在本地 SQLite。",
-        "zh-Hant": "本機 Ollama 無需填寫 API 金鑰；翻譯結果會依歌詞內容快取於本機 SQLite。",
-        "ja": "ローカルの Ollama は API キー不要です。翻訳結果はローカル SQLite にキャッシュされます。",
+        "en": "Local Ollama endpoints do not require an API key.",
+        "zh-Hans": "本地 Ollama 无需填写 API 密钥。",
+        "zh-Hant": "本機 Ollama 無需填寫 API 金鑰。",
+        "ja": "ローカルの Ollama は API キー不要です。",
     },
     "set.translation_key.unavailable": {
         "en": (
             "System keyring is unavailable ({reason}). "
-            "Set KOTONOHA_TRANSLATION_API_KEY (or provider-specific env var) instead."
+            "Set KOTONOHA_TRANSLATION_API_KEY (or service-specific env var) instead."
         ),
         "zh-Hans": (
             "系统密钥环不可用（{reason}）。"

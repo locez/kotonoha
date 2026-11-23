@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Mapping, Sequence
 
@@ -10,14 +11,18 @@ from ..i18n import language_prompt_label
 from ..lyrics.http import LyricsHttpError, LyricsSession
 from ..lyrics.payload import MAX_RESPONSE_BYTES, read_json_capped
 from .models import (
+    DEFAULT_TRANSIENT_RETRY_DELAY_S,
     TranslationError,
     TranslationErrorKind,
     TranslationRequest,
     TranslationResult,
+    format_http_error,
+    read_error_summary,
 )
 from .presets import is_loopback_url, validate_base_url
 
-DEFAULT_OPENAI_TIMEOUT_S = 30.0
+DEFAULT_OPENAI_TIMEOUT_S = 25.0
+FALLBACK_OPENAI_TIMEOUT_S = 15.0
 _MAX_CHUNK_LINES = 80
 
 
@@ -40,12 +45,19 @@ class OpenAICompatibleTranslator:
         model: str,
         style_prompt: str = "",
         timeout_s: float = DEFAULT_OPENAI_TIMEOUT_S,
+        transient_retry_delay_s: float = DEFAULT_TRANSIENT_RETRY_DELAY_S,
     ) -> None:
         self._session = session
         self._base_url = base_url
         self._model = model.strip()
         self._style_prompt = style_prompt.strip()
         self._timeout_s = timeout_s
+        self._transient_retry_delay_s = max(0.0, transient_retry_delay_s)
+
+    @property
+    def timeout_s(self) -> float:
+        """Return the per-request total HTTP timeout in seconds."""
+        return self._timeout_s
 
     async def translate(
         self,
@@ -116,7 +128,13 @@ class OpenAICompatibleTranslator:
             "response_format": {"type": "json_object"},
             "messages": messages,
         }
-        payload = await self._post_chat(endpoint, headers, body, allow_retry_without_format=True)
+        payload = await self._post_chat(
+            endpoint,
+            headers,
+            body,
+            allow_retry_without_format=True,
+            retries_on_503=1,
+        )
         content = _extract_message_content(payload)
         return _parse_aligned_translations(content, expected_count=len(lines))
 
@@ -127,7 +145,10 @@ class OpenAICompatibleTranslator:
         body: dict[str, object],
         *,
         allow_retry_without_format: bool,
+        retries_on_503: int = 0,
     ) -> object:
+        should_retry_503 = False
+        fallback_body: dict[str, object] | None = None
         try:
             async with self._session.post(
                 endpoint,
@@ -137,34 +158,38 @@ class OpenAICompatibleTranslator:
             ) as response:
                 status = response.status
                 if status in (401, 403):
-                    raise TranslationError("Translation API rejected the API key", kind=TranslationErrorKind.AUTH)
-                if status == 429:
+                    detail = await read_error_summary(response)
                     raise TranslationError(
-                        "Translation API rate limit exceeded",
+                        format_http_error("Translation API rejected the API key", status, detail),
+                        kind=TranslationErrorKind.AUTH,
+                    )
+                if status == 429:
+                    detail = await read_error_summary(response)
+                    raise TranslationError(
+                        format_http_error("Translation API rate limit exceeded", status, detail),
                         kind=TranslationErrorKind.RATE_LIMIT,
                         retryable=True,
                     )
                 if status == 400 and allow_retry_without_format and "response_format" in body:
                     fallback_body = dict(body)
                     fallback_body.pop("response_format", None)
-                    return await self._post_chat(
-                        endpoint,
-                        headers,
-                        fallback_body,
-                        allow_retry_without_format=False,
-                    )
-                if status >= 500:
+                elif status == 503 and retries_on_503 > 0:
+                    should_retry_503 = True
+                elif status >= 500:
+                    detail = await read_error_summary(response)
                     raise TranslationError(
-                        f"Translation API server error (HTTP {status})",
+                        format_http_error("Translation API server error", status, detail),
                         kind=TranslationErrorKind.NETWORK,
                         retryable=True,
                     )
-                if status >= 400:
+                elif status >= 400:
+                    detail = await read_error_summary(response)
                     raise TranslationError(
-                        f"Translation API request failed (HTTP {status})",
+                        format_http_error("Translation API request failed", status, detail),
                         kind=TranslationErrorKind.INVALID_RESPONSE,
                     )
-                return await read_json_capped(response, "OpenAI-compatible API", max_bytes=MAX_RESPONSE_BYTES)
+                else:
+                    return await read_json_capped(response, "OpenAI-compatible API", max_bytes=MAX_RESPONSE_BYTES)
         except LyricsHttpError as exc:
             raise TranslationError(
                 f"Translation HTTP request failed: {exc}",
@@ -182,6 +207,26 @@ class OpenAICompatibleTranslator:
                 f"Translation API returned invalid JSON: {exc}",
                 kind=TranslationErrorKind.INVALID_RESPONSE,
             ) from exc
+
+        if fallback_body is not None:
+            return await self._post_chat(
+                endpoint,
+                headers,
+                fallback_body,
+                allow_retry_without_format=False,
+                retries_on_503=retries_on_503,
+            )
+        if should_retry_503:
+            if self._transient_retry_delay_s > 0:
+                await asyncio.sleep(self._transient_retry_delay_s)
+            return await self._post_chat(
+                endpoint,
+                headers,
+                body,
+                allow_retry_without_format=allow_retry_without_format,
+                retries_on_503=retries_on_503 - 1,
+            )
+        raise TranslationError("Translation API request did not complete", kind=TranslationErrorKind.NETWORK)
 
 
 def _build_messages(
@@ -297,6 +342,8 @@ def _parse_aligned_translations(raw_content: str, *, expected_count: int) -> lis
 
 __all__ = [
     "DEFAULT_OPENAI_TIMEOUT_S",
+    "DEFAULT_TRANSIENT_RETRY_DELAY_S",
+    "FALLBACK_OPENAI_TIMEOUT_S",
     "OpenAICompatibleTranslator",
     "chat_completions_endpoint",
 ]

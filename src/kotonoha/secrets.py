@@ -8,6 +8,7 @@ D-Bus or wallet prompts never stall the Qt/asyncio event loop.
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Protocol
@@ -20,14 +21,8 @@ from keyring.errors import KeyringError, PasswordDeleteError
 from .async_worker import BlockingWorkerPort
 
 KEYRING_SERVICE_NAME = "kotonoha"
-
-_ENV_FALLBACKS: dict[str, tuple[str, ...]] = {
-    "translation_api_key.deepl": ("KOTONOHA_DEEPL_API_KEY", "KOTONOHA_TRANSLATION_API_KEY"),
-    "translation_api_key.openai-compatible": (
-        "KOTONOHA_OPENAI_API_KEY",
-        "KOTONOHA_TRANSLATION_API_KEY",
-    ),
-}
+_TRANSLATION_KEY_PREFIX = "translation_api_key."
+_ENV_TOKEN_RE = re.compile(r"[^A-Z0-9]+")
 
 
 class SecretStoreError(RuntimeError):
@@ -182,11 +177,32 @@ class KeyringSecretStore:
 
     def _env_override(self, key: str) -> str | None:
         env = os.environ if self._environ is None else self._environ
-        for name in _ENV_FALLBACKS.get(key, ()):
+        for name in _env_candidates_for_key(key):
             value = env.get(name)
             if value is not None and value.strip():
                 return value.strip()
         return None
+
+
+def _env_candidates_for_key(key: str) -> tuple[str, ...]:
+    """Derive ordered environment variable fallbacks for one translation secret key."""
+    if not key.startswith(_TRANSLATION_KEY_PREFIX):
+        return ()
+    service_id = key[len(_TRANSLATION_KEY_PREFIX) :].strip()
+    if not service_id:
+        return ()
+    token = _ENV_TOKEN_RE.sub("_", service_id.upper()).strip("_")
+    candidates: list[str] = []
+    if token:
+        candidates.append(f"KOTONOHA_{token}_API_KEY")
+    if service_id.lower() == "deepl" or service_id.lower().startswith("deepl-"):
+        if "KOTONOHA_DEEPL_API_KEY" not in candidates:
+            candidates.append("KOTONOHA_DEEPL_API_KEY")
+    else:
+        if "KOTONOHA_OPENAI_API_KEY" not in candidates:
+            candidates.append("KOTONOHA_OPENAI_API_KEY")
+    candidates.append("KOTONOHA_TRANSLATION_API_KEY")
+    return tuple(candidates)
 
 
 def _validate_key(key: str) -> None:

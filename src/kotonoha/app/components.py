@@ -6,7 +6,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from ..config import Config, TranslationProvider
+from ..config import Config
 from ..display.models import DisplayOptions, LyricsDisplayStatus
 from ..display.offsets import TrackOffsetKey, TrackOffsetSnapshot
 from ..lyrics.artifact import LyricsArtifact
@@ -257,12 +257,12 @@ class TranslationCoordinatorPort(Protocol):
         """Return keyring availability and saved-key status for Settings."""
         ...
 
-    def save_api_key(self, provider: TranslationProvider, api_key: str) -> None:
-        """Persist one provider API key in the system keyring."""
+    def save_api_key(self, service_id: str, api_key: str) -> None:
+        """Persist one translation service API key in the system keyring."""
         ...
 
-    def delete_api_key(self, provider: TranslationProvider) -> None:
-        """Remove one provider API key from the system keyring."""
+    def delete_api_key(self, service_id: str) -> None:
+        """Remove one translation service API key from the system keyring."""
         ...
 
     def clear_cache(self) -> None:

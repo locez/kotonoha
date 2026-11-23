@@ -2,22 +2,26 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping, Sequence
 
 from ..i18n import normalize_translation_language
 from ..lyrics.http import LyricsHttpError, LyricsSession
 from ..lyrics.payload import MAX_RESPONSE_BYTES, read_json_capped
 from .models import (
+    DEFAULT_TRANSIENT_RETRY_DELAY_S,
     TranslationError,
     TranslationErrorKind,
     TranslationRequest,
     TranslationResult,
+    format_http_error,
+    read_error_summary,
 )
 
 DEEPL_FREE_URL = "https://api-free.deepl.com/v2/translate"
 DEEPL_PRO_URL = "https://api.deepl.com/v2/translate"
 DEEPL_MAX_TEXTS_PER_REQUEST = 50
-DEFAULT_DEEPL_TIMEOUT_S = 25.0
+DEFAULT_DEEPL_TIMEOUT_S = 15.0
 
 _DEEPL_TARGET_MAP: dict[str, str] = {
     "ar": "AR",
@@ -94,9 +98,16 @@ class DeepLTranslator:
         session: LyricsSession,
         *,
         timeout_s: float = DEFAULT_DEEPL_TIMEOUT_S,
+        transient_retry_delay_s: float = DEFAULT_TRANSIENT_RETRY_DELAY_S,
     ) -> None:
         self._session = session
         self._timeout_s = timeout_s
+        self._transient_retry_delay_s = max(0.0, transient_retry_delay_s)
+
+    @property
+    def timeout_s(self) -> float:
+        """Return the per-request total HTTP timeout in seconds."""
+        return self._timeout_s
 
     async def translate(
         self,
@@ -143,7 +154,9 @@ class DeepLTranslator:
         body: Mapping[str, object],
         *,
         expected_count: int,
+        retries_on_503: int = 1,
     ) -> list[str]:
+        should_retry_503 = False
         try:
             async with self._session.post(
                 endpoint,
@@ -153,25 +166,36 @@ class DeepLTranslator:
             ) as response:
                 status = response.status
                 if status in (401, 403):
-                    raise TranslationError("DeepL rejected the API key", kind=TranslationErrorKind.AUTH)
-                if status in (429, 456):
+                    detail = await read_error_summary(response)
                     raise TranslationError(
-                        "DeepL rate limit or monthly character quota exceeded",
+                        format_http_error("DeepL rejected the API key", status, detail),
+                        kind=TranslationErrorKind.AUTH,
+                    )
+                if status in (429, 456):
+                    detail = await read_error_summary(response)
+                    raise TranslationError(
+                        format_http_error("DeepL rate limit or monthly character quota exceeded", status, detail),
                         kind=TranslationErrorKind.RATE_LIMIT,
                         retryable=True,
                     )
-                if status >= 500:
+                if status == 503 and retries_on_503 > 0:
+                    should_retry_503 = True
+                elif status >= 500:
+                    detail = await read_error_summary(response)
                     raise TranslationError(
-                        f"DeepL service error (HTTP {status})",
+                        format_http_error("DeepL service error", status, detail),
                         kind=TranslationErrorKind.NETWORK,
                         retryable=True,
                     )
-                if status >= 400:
+                elif status >= 400:
+                    detail = await read_error_summary(response)
                     raise TranslationError(
-                        f"DeepL request failed (HTTP {status})",
+                        format_http_error("DeepL request failed", status, detail),
                         kind=TranslationErrorKind.INVALID_RESPONSE,
                     )
-                payload = await read_json_capped(response, "DeepL API", max_bytes=MAX_RESPONSE_BYTES)
+                else:
+                    payload = await read_json_capped(response, "DeepL API", max_bytes=MAX_RESPONSE_BYTES)
+                    return _parse_deepl_response(payload, expected_count=expected_count)
         except LyricsHttpError as exc:
             raise TranslationError(
                 f"DeepL HTTP request failed: {exc}",
@@ -190,7 +214,17 @@ class DeepLTranslator:
                 kind=TranslationErrorKind.INVALID_RESPONSE,
             ) from exc
 
-        return _parse_deepl_response(payload, expected_count=expected_count)
+        if should_retry_503:
+            if self._transient_retry_delay_s > 0:
+                await asyncio.sleep(self._transient_retry_delay_s)
+            return await self._translate_batch(
+                endpoint,
+                headers,
+                body,
+                expected_count=expected_count,
+                retries_on_503=retries_on_503 - 1,
+            )
+        raise TranslationError("DeepL translation request did not complete", kind=TranslationErrorKind.NETWORK)
 
 
 def _deepl_plan_label(api_key: str) -> str:

@@ -318,11 +318,11 @@ class AppController:
             return
         if isinstance(intent, SaveTranslationApiKey):
             if self._translation is not None:
-                self._translation.save_api_key(intent.provider, intent.api_key)
+                self._translation.save_api_key(intent.service_id, intent.api_key)
             return
         if isinstance(intent, DeleteTranslationApiKey):
             if self._translation is not None:
-                self._translation.delete_api_key(intent.provider)
+                self._translation.delete_api_key(intent.service_id)
             return
         if isinstance(intent, OpenCacheManagement):
             self._cache_management.open(self._config)

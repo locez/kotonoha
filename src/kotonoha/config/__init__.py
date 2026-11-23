@@ -5,9 +5,6 @@ from .models import (
     DEFAULT_DISPLAY_SOURCES,
     DEFAULT_ICON_NAME,
     DEFAULT_LYRICS_SOURCES,
-    DEFAULT_TRANSLATION_BASE_URL,
-    DEFAULT_TRANSLATION_MODEL,
-    DEFAULT_TRANSLATION_PROMPT,
     LEAD_MS_LIMIT,
     VALID_DISPLAY_SOURCES,
     VALID_LYRICS_SOURCES,
@@ -21,8 +18,6 @@ from .models import (
     PanelStyle,
     PanelWidthMode,
     ThemeMode,
-    TranslationPolicy,
-    TranslationProvider,
     UiLanguage,
     clamp_port,
 )
@@ -37,6 +32,13 @@ from .store import (
     load_config,
     save_config,
 )
+from .translation import (
+    DEFAULT_TRANSLATION_PROMPT,
+    DEFAULT_TRANSLATION_SERVICES,
+    TranslationPolicy,
+    TranslationProvider,
+    TranslationServiceConfig,
+)
 
 __all__ = [
     "ACCENT_PRESETS",
@@ -47,9 +49,8 @@ __all__ = [
     "DEFAULT_DISPLAY_SOURCES",
     "DEFAULT_ICON_NAME",
     "DEFAULT_LYRICS_SOURCES",
-    "DEFAULT_TRANSLATION_BASE_URL",
-    "DEFAULT_TRANSLATION_MODEL",
     "DEFAULT_TRANSLATION_PROMPT",
+    "DEFAULT_TRANSLATION_SERVICES",
     "FxIntensity",
     "FxTransition",
     "InterludeCountdown",
@@ -65,6 +66,7 @@ __all__ = [
     "ThemeMode",
     "TranslationPolicy",
     "TranslationProvider",
+    "TranslationServiceConfig",
     "UiLanguage",
     "VALID_DISPLAY_SOURCES",
     "VALID_LYRICS_SOURCES",

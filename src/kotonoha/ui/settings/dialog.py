@@ -50,7 +50,7 @@ from ...app.intents import (
     SaveTranslationApiKey,
 )
 from ...app.translation_coordinator import TranslationSecretSnapshot
-from ...config import Config, TranslationProvider
+from ...config import Config
 from ...icons import nav_icon
 from ...platform import OverlayPlatformFactory
 from ...players import PlayerInfo
@@ -127,7 +127,6 @@ class SettingsDialog(ThemedSettingsDialog):
             self._widgets,
             on_clear_cache=self._request_clear_cache,
             on_manage_cache=self._request_manage_cache,
-            on_clear_translation_key=self._request_delete_translation_key,
             on_manage_translation_cache=self._request_manage_translation_cache,
             on_clear_translation_cache=self._request_clear_translation_cache,
             translator=self._translator,
@@ -282,8 +281,6 @@ class SettingsDialog(ThemedSettingsDialog):
             self._widgets.fx_intensity,
             self._widgets.translation_language,
             self._widgets.translation_policy,
-            self._widgets.translation_provider,
-            self._widgets.translation_preset,
             self._widgets.lyrics_script,
             self._widgets.interlude_style,
             self._widgets.interlude_countdown,
@@ -443,16 +440,10 @@ class SettingsDialog(ThemedSettingsDialog):
         """Submit the request to clear cached API translations."""
         self.intent_requested.emit(ClearTranslationCache())
 
-    def _request_delete_translation_key(self) -> None:
-        """Delete the saved keyring API key for the selected translation service."""
-        provider = TranslationProvider(str(self._widgets.translation_provider.currentData()))
-        self._translation_secrets = replace(
-            self._translation_secrets,
-            saved_providers=self._translation_secrets.saved_providers - {provider.value},
-        )
-        self._widgets.translation_api_key.clear()
-        self._page_builder.refresh_translation_secret_status()
-        self.intent_requested.emit(DeleteTranslationApiKey(provider))
+    def done(self, a0: int) -> None:
+        """Close child translation editors before tearing down the settings dialog."""
+        self._page_builder.close_translation_editor()
+        super().done(a0)
 
     def current_config(self) -> Config:
         w = self._widgets
@@ -501,9 +492,7 @@ class SettingsDialog(ThemedSettingsDialog):
             show_translation=w.translation.isChecked(),
             translation_language=str(w.translation_language.currentData()),
             translation_policy=str(w.translation_policy.currentData()),
-            translation_provider=str(w.translation_provider.currentData()),
-            translation_base_url=w.translation_base_url.text().strip(),
-            translation_model=w.translation_model.text().strip(),
+            translation_services=self._page_builder.translation_services(),
             translation_prompt=w.translation_prompt.toPlainText().strip(),
             context_lines=w.context_lines.value(),
             context_blur=w.context_blur.value / 100.0,
@@ -572,18 +561,24 @@ class SettingsDialog(ThemedSettingsDialog):
         self._update_logo_badge()  # re-tint the leaf logo to the new accent
         self._page_builder.refresh_generated_icons()  # re-tint the accent/tile icon previews
         self.update()  # repaint the frameless background (theme / frost)
+        self._page_builder.retheme_translation_editor(self.staged_config)
         self.applied.emit(self.staged_config)
         self.intent_requested.emit(ApplyConfig(self.staged_config, changed_fields))
-        entered_key = self._widgets.translation_api_key.text().strip()
-        if entered_key and self._translation_secrets.available:
-            provider = self.staged_config.translation_provider
+        saves, deletes = self._page_builder.take_pending_translation_secret_changes()
+        if saves or deletes:
+            updated_saved = set(self._translation_secrets.saved_services)
+            for service_id in sorted(deletes):
+                updated_saved.discard(service_id)
+                self.intent_requested.emit(DeleteTranslationApiKey(service_id))
+            if self._translation_secrets.available:
+                for service_id, api_key in saves.items():
+                    updated_saved.add(service_id)
+                    self.intent_requested.emit(SaveTranslationApiKey(service_id, api_key))
             self._translation_secrets = replace(
                 self._translation_secrets,
-                saved_providers=self._translation_secrets.saved_providers | {provider.value},
+                saved_services=frozenset(updated_saved),
             )
-            self._widgets.translation_api_key.clear()
             self._page_builder.refresh_translation_secret_status()
-            self.intent_requested.emit(SaveTranslationApiKey(provider, entered_key))
         self._form_state.mark_applied()
 
     def _accept(self) -> None:
