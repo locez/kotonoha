@@ -52,6 +52,11 @@ class OverlaySurfaceController:
         self._passthrough = config.passthrough
         # Avoid retrying a rejected size through resize events or progress frames.
         self._rejected_content_size: tuple[int, int] | None = None
+        # Hold the top edge stationary while the pointer hovers over controls,
+        # remembering the pre-hover bottom edge so bottom-anchored overlays can
+        # restore alignment once interaction ends.
+        self._pin_top_edge = False
+        self._pinned_bottom_y: int | None = None
         # Smooth display frames change lyric progress, not the visible pill
         # geometry. Keep the last successful region at this platform boundary so
         # those frames do not become repeated native commits.
@@ -154,8 +159,24 @@ class OverlaySurfaceController:
         """Use the current placement and platform settings for later operations."""
         self._config = config
         self._rejected_content_size = None
+        self._pin_top_edge = False
+        self._pinned_bottom_y = None
         self._geometry.update_config(config)
         self._position.update_config(config)
+
+    def set_top_edge_pinned(self, pinned: bool) -> None:
+        """Keep the top edge stationary during hover; restore bottom anchor on release."""
+        if pinned == self._pin_top_edge:
+            return
+        self._pin_top_edge = pinned
+        if pinned:
+            self._pinned_bottom_y = (
+                self._position.layer_pos.y() + self._widget.height()
+                if not self._config.anchor_top
+                else None
+            )
+        else:
+            self._rejected_content_size = None
 
     def prepare(self) -> SurfaceResult:
         """Prepare the platform surface and report the real operation result."""
@@ -300,6 +321,7 @@ class OverlaySurfaceController:
         self._widget.setFixedSize(width, height)
         self.bind_widget_screen(screen)
         if reset_position:
+            self._pinned_bottom_y = None
             self._position.layer_pos = self.compute_layer_pos(width, height, screen)
 
     def resize_content(self, screens: Sequence[ScreenLike]) -> None:
@@ -311,19 +333,23 @@ class OverlaySurfaceController:
         if screen is None:
             return
         width, height = self.window_size(screen)
-        if (width, height) == self._rejected_content_size:
+        old_size = self._widget.size()
+        position, restoring_bottom = self._content_resize_position(old_size.height(), height)
+        size_changed = (width, height) != (self._widget.width(), self._widget.height())
+        position_changed = position != self._position.layer_pos
+        if not size_changed and not position_changed:
+            if restoring_bottom:
+                self._pinned_bottom_y = None
+            return
+        if size_changed and (width, height) == self._rejected_content_size:
             return
         self._rejected_content_size = None
-        if (width, height) == (self._widget.width(), self._widget.height()):
-            return
-        old_size = self._widget.size()
-        old_height = old_size.height()
-        position = QPoint(self._position.layer_pos)
-        if not self._config.anchor_top:
-            position.setY(position.y() + old_height - height)
-        self._widget.setFixedSize(width, height)
+        if size_changed:
+            self._widget.setFixedSize(width, height)
         placement = self._platform.placement
         if placement is None:
+            if restoring_bottom:
+                self._pinned_bottom_y = None
             return
         geometry = screen.geometry()
         target = (
@@ -334,9 +360,22 @@ class OverlaySurfaceController:
         self._log_result("content resize placement", result)
         if result.succeeded:
             self._position.layer_pos = position
-        else:
+            if restoring_bottom:
+                self._pinned_bottom_y = None
+        elif size_changed:
             self._rejected_content_size = (width, height)
             self._widget.setFixedSize(old_size)
+
+    def _content_resize_position(self, old_height: int, height: int) -> tuple[QPoint, bool]:
+        """Compute target position for a content resize and whether it restores a pinned bottom edge."""
+        position = QPoint(self._position.layer_pos)
+        if self._config.anchor_top or self._pin_top_edge:
+            return position, False
+        if self._pinned_bottom_y is not None:
+            position.setY(self._pinned_bottom_y - height)
+            return position, True
+        position.setY(position.y() + old_height - height)
+        return position, False
 
     def bind_widget_screen(self, screen: ScreenLike | None) -> None:
         """Bind both Qt window objects to the selected screen when possible."""
@@ -443,6 +482,7 @@ class OverlaySurfaceController:
 
     def begin_drag(self, local: QPoint, global_position: QPoint) -> DragMode:
         """Start a manual or compositor-owned drag through the selected port."""
+        self._pinned_bottom_y = None
         return self._position.begin_drag(
             local,
             global_position,
@@ -503,6 +543,7 @@ class OverlaySurfaceController:
         # if the requested region is unchanged, it must be submitted to the new
         # native surface after activation.
         self._input_region_applied = False
+        self._pinned_bottom_y = None
         screens = QApplication.screens()
         screen = next((candidate for candidate in screens if candidate.name() == output.name), None)
         if screen is None or self.usable_screen(screen) is None:

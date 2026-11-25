@@ -15,6 +15,8 @@ if TYPE_CHECKING:
     from .window import LyricsOverlay
 
 CONTROL_ICON_COLOR = "#9AA0A6"
+OFFSET_REPEAT_DELAY_MS = 350
+OFFSET_REPEAT_INTERVAL_MS = 80
 CONTROL_BUTTON_STYLE = """
 QToolButton {
     background: rgba(255, 255, 255, 28);
@@ -141,6 +143,9 @@ class OverlayChromeController:
         button.setCursor(Qt.CursorShape.PointingHandCursor)
         button.setStyleSheet(CONTROL_BUTTON_STYLE)
         button.setToolTip(self._translator.text(tooltip_key))
+        button.setAutoRepeat(True)
+        button.setAutoRepeatDelay(OFFSET_REPEAT_DELAY_MS)
+        button.setAutoRepeatInterval(OFFSET_REPEAT_INTERVAL_MS)
         return button
 
 

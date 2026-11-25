@@ -48,10 +48,13 @@ class OverlayPresentationController:
         self._screen_height: Callable[[], int] = screen_height
         self._appearance = OverlayAppearance()
         self._lyric_pair: LyricPair = lyric_pair
+        # Temporary FIT-mode pill width locked while the pointer interacts with controls.
+        self._frozen_width: int | None = None
 
     def apply_config(self, config: Config) -> None:
         """Apply appearance, typography, sizing, and visibility settings."""
         self._config = config
+        self._frozen_width = None
         available_width = self._configure_panel_width()
         families = self.font_families()
         base, shadow, context_css = self.text_colors()
@@ -131,11 +134,22 @@ class OverlayPresentationController:
             and self._config.panel_overflow_mode is PanelOverflowMode.WRAP
         )
 
+    def set_frozen_width(self, width: int | None) -> None:
+        """Temporarily lock FIT-mode pill width while the user interacts with controls."""
+        normalized = width if width is not None and width > 0 else None
+        if normalized == self._frozen_width:
+            return
+        self._frozen_width = normalized
+        self.refresh_width()
+        self._container.updateGeometry()
+
     def refresh_width(self) -> None:
         """Resolve output-dependent content width before measuring wrapped height."""
         available = self._configure_panel_width()
         self._current.set_max_width(available)
         self._translation.set_max_width(available)
+        for label in (self._previous, self._feedback, self._next):
+            label.setMaximumWidth(available)
         self._configure_context_height()
 
     def _configure_context_height(self) -> None:
@@ -186,6 +200,10 @@ class OverlayPresentationController:
             pill_width = max(240, min(self._config.panel_width, window_width - 8))
             self._container.setFixedWidth(pill_width)
             return max(120, pill_width - 44)
+        if self._frozen_width is not None:
+            pill_width = min(self._frozen_width, max(1, window_width - 8))
+            self._container.setFixedWidth(pill_width)
+            return max(1, pill_width - 44)
         self._container.setMinimumWidth(0)
         self._container.setMaximumWidth(16_777_215)
         return _FONT_FIT_POLICY.content_width(window_width)

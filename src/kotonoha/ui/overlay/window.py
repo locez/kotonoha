@@ -39,6 +39,7 @@ from ...platform.overlay_contracts import DragMode, SurfacePort, SurfaceResult, 
 from ...strings import Translator
 from .chrome import OverlayChromeController
 from .content import OverlayContentController
+from .freeze import OverlayInteractionFreezeController
 from .geometry import ScreenLike
 from .presentation import OverlayPresentationController
 from .state import LyricsState
@@ -73,6 +74,7 @@ class LyricsOverlay(QWidget):
     _quit_btn: QToolButton
     _chrome: OverlayChromeController
     _content: OverlayContentController
+    _freeze: OverlayInteractionFreezeController
     _presentation: OverlayPresentationController
     _activation_timer: QTimer
     _activation_retry_timer: QTimer
@@ -122,6 +124,10 @@ class LyricsOverlay(QWidget):
         self._control_click_timer = QTimer(self)
         self._control_click_timer.setSingleShot(True)
         self._control_click_timer.timeout.connect(self._clear_control_click_suppression)
+        self._freeze = OverlayInteractionFreezeController(
+            self,
+            on_state_changed=self._on_freeze_changed,
+        )
         self._surface = OverlaySurfaceController(
             self,
             config,
@@ -225,6 +231,7 @@ class LyricsOverlay(QWidget):
         self._blur_timer.stop()
         self._geometry_timer.stop()
         self._control_click_timer.stop()
+        self._freeze.stop()
         self._content.stop()
         result = self._surface.close()
         if result.succeeded:
@@ -293,6 +300,7 @@ class LyricsOverlay(QWidget):
         """Apply configuration to the surface, presentation, and overlay chrome."""
         if self._closed or self._closing:
             return
+        self._freeze.stop()
         self._config = config
         self._surface.update_config(config)
         self._content.update_config(config)
@@ -306,7 +314,7 @@ class LyricsOverlay(QWidget):
         self._surface.set_active_screen(screen)
         self._update_lock_icon()
         self._presentation.apply_config(config)
-        self._align_wrapped_panel()
+        self._align_panel_vertically()
 
         # Opacity is the panel's own fill translucency (see the presentation owner),
         # so the window itself stays fully opaque — the lyric text is always crisp and
@@ -375,13 +383,38 @@ class LyricsOverlay(QWidget):
         if not self._closed and not self._closing:
             self._geometry_timer.start(0)
 
-    def _align_wrapped_panel(self) -> None:
-        """Keep the visible panel at the configured edge within its surface."""
+    def _align_panel_vertically(self) -> None:
+        """Keep the visible panel pinned at the top during hover, or at its configured edge."""
         layout = self.layout()
         if isinstance(layout, QVBoxLayout):
+            if self._freeze.active:
+                layout.setStretch(0, 0)
+                layout.setStretch(2, 1)
+                return
             wrapping = self._presentation.wrapping
             layout.setStretch(0, 0 if wrapping and self._config.anchor_top else 1)
             layout.setStretch(2, 0 if wrapping and not self._config.anchor_top else 1)
+
+    def _current_container_width(self) -> int:
+        """Return the pill's current rendered width, or its size hint before show."""
+        width = self._container.width()
+        if self._container.isVisible() and width > 0:
+            return width
+        return self._container.sizeHint().width()
+
+    def _on_freeze_changed(self, active: bool, frozen_width: int | None) -> None:
+        """Apply or release temporary hover geometry freezing."""
+        if self._closed or self._closing:
+            return
+        self._surface.set_top_edge_pinned(active)
+        self._presentation.set_frozen_width(frozen_width)
+        self._align_panel_vertically()
+        if active:
+            self._schedule_input_region()
+            self._schedule_blur()
+            self.update()
+        else:
+            self._refresh_content_geometry()
 
     def _refresh_content_geometry(self) -> None:
         """Coalesce content changes into one edge-preserving surface resize."""
@@ -443,6 +476,7 @@ class LyricsOverlay(QWidget):
         self._surface.set_input_mode(enabled)
         self._update_lock_icon()
         self._update_chrome()
+        self._freeze.clear()
         # Chrome visibility just changed the pill size; lay out, then set the region.
         self._schedule_input_region()
 
@@ -477,11 +511,13 @@ class LyricsOverlay(QWidget):
     def _on_earlier_clicked(self) -> None:
         """Suppress an offset click retargeted from a completed window drag."""
         if not self._finish_control_drag_if_needed():
+            self._freeze.keep_alive(self._current_container_width())
             self._nudge_earlier()
 
     def _on_later_clicked(self) -> None:
         """Suppress an offset click retargeted from a completed window drag."""
         if not self._finish_control_drag_if_needed():
+            self._freeze.keep_alive(self._current_container_width())
             self._nudge_later()
 
     def _on_settings_clicked(self) -> None:
@@ -523,12 +559,18 @@ class LyricsOverlay(QWidget):
         # region matched to it. This fixes the initially oversized region before
         # the first frame shrinks the pill to its real size.
         if a0 is self._container and a1 is not None:
-            if a1.type() in {QEvent.Type.Move, QEvent.Type.Resize}:
+            event_type = a1.type()
+            if not self._closed and not self._closing:
+                if event_type == QEvent.Type.Enter:
+                    self._freeze.enter(self._current_container_width())
+                elif event_type == QEvent.Type.Leave:
+                    self._freeze.leave()
+            if event_type in {QEvent.Type.Move, QEvent.Type.Resize}:
                 # The rounded panel antialiases one pixel beyond the container's
                 # geometry. Repaint the full translucent surface so an old edge
                 # cannot survive a layout-driven move or resize.
                 self.update()
-            if a1.type() == QEvent.Type.Resize:
+            if event_type == QEvent.Type.Resize:
                 self._refresh_input_region()
                 self._schedule_blur()  # keep the blur region on the pill
                 self._geometry_timer.start(0)
@@ -566,6 +608,7 @@ class LyricsOverlay(QWidget):
             if mode is not DragMode.MANUAL:
                 super().mousePressEvent(a0)
                 return
+            self._freeze.begin_drag()
             a0.accept()
         else:
             super().mousePressEvent(a0)
@@ -605,6 +648,7 @@ class LyricsOverlay(QWidget):
     def _finish_drag(self, cursor_local: QPoint | None) -> None:
         """End, persist, and restore native state for one manual drag."""
         release = self._surface.end_drag()
+        self._freeze.end_drag()
         if release.should_commit:
             self._commit_drag_position(cursor_local)
         elif release.moved:
