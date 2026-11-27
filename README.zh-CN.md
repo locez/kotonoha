@@ -52,12 +52,12 @@ DEB 会保持未完成配置状态，修复构建错误后运行 `sudo dpkg --co
 RPM 的安装后脚本失败不会回滚已安装的软件包或 Qt 更新；请修复错误后运行上面的重建命令。
 编译输出直接显示在包管理器终端中。重建成功后请重启 Kotonoha。
 
-Gentoo 用户可以启用 [gentoo-zh overlay](https://github.com/gentoo-zh/overlay)：
+Gentoo 用户可以添加 [locez-overlay](https://github.com/locez/locez-overlay)：
 
 ```bash
-sudo eselect repository enable gentoo-zh
-sudo emaint sync
-sudo emerge --ask media-plugins/kotonoha::gentoo-zh
+sudo eselect repository add locez git https://github.com/locez/locez-overlay.git
+sudo emaint sync -r locez
+sudo emerge --ask media-plugins/kotonoha::locez
 ```
 
 NixOS 用户可以在 flake 配置中添加：

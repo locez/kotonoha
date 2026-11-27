@@ -57,12 +57,12 @@ failure does not roll back the installed package or Qt update: fix the error and
 retry the rebuild command above. Compiler output appears in the package manager's
 terminal. Restart Kotonoha after a successful rebuild.
 
-For Gentoo, enable the [gentoo-zh overlay](https://github.com/gentoo-zh/overlay):
+For Gentoo, add the [locez-overlay](https://github.com/locez/locez-overlay):
 
 ```bash
-sudo eselect repository enable gentoo-zh
-sudo emaint sync
-sudo emerge --ask media-plugins/kotonoha::gentoo-zh
+sudo eselect repository add locez git https://github.com/locez/locez-overlay.git
+sudo emaint sync -r locez
+sudo emerge --ask media-plugins/kotonoha::locez
 ```
 
 NixOS users can add the package to a flake configuration:
