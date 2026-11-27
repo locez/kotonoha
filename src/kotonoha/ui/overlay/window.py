@@ -314,6 +314,8 @@ class LyricsOverlay(QWidget):
         self._surface.set_active_screen(screen)
         self._update_lock_icon()
         self._presentation.apply_config(config)
+        self._content.reapply_frame()
+        self._presentation.refresh_width()
         self._align_panel_vertically()
 
         # Opacity is the panel's own fill translucency (see the presentation owner),

@@ -100,6 +100,19 @@ class LyricsScript(StrEnum):
     ZH_HANT = "zh-Hant"
 
 
+class LyricsDisplayMode(StrEnum):
+    """Which lyric tracks (original and/or translation) the overlay displays."""
+
+    BOTH = "both"
+    ORIGINAL_ONLY = "original-only"
+    TRANSLATION_ONLY = "translation-only"
+
+    @property
+    def shows_translation(self) -> bool:
+        """Return whether translated lyric lines are requested."""
+        return self is not LyricsDisplayMode.ORIGINAL_ONLY
+
+
 class InterludeStyle(StrEnum):
     """Marker used while a lyric document is between sung lines."""
 
@@ -167,7 +180,7 @@ class Config:
     passthrough: bool = False        # start unlocked (interactive) so first-run positioning is easy
     karaoke: bool = True             # per-word sweep when timing == "Word"
     lead_ms: int = 120               # advance the sweep by this many ms (compensate pipeline latency)
-    show_translation: bool = True    # bilingual
+    lyrics_display_mode: LyricsDisplayMode = LyricsDisplayMode.BOTH
     context_lines: int = 1          # rows per side; 0 hides context, excess rows are clipped to the viewport
     context_blur: float = 0.0       # context defocus strength 0.0..1.0; clear text by default
     translation_language: str = "auto"  # "auto" -> from system locale, else a BCP-47 tag (zh-Hans/pt-PT/en/...)
@@ -235,7 +248,9 @@ class Config:
             passthrough=_clean_bool(self.passthrough, False),
             karaoke=_clean_bool(self.karaoke, True),
             lead_ms=_clamp_int(self.lead_ms, -LEAD_MS_LIMIT, LEAD_MS_LIMIT, 120),
-            show_translation=_clean_bool(self.show_translation, True),
+            lyrics_display_mode=_enum_or_default(
+                self.lyrics_display_mode, LyricsDisplayMode, LyricsDisplayMode.BOTH
+            ),
             # QSpinBox uses a signed 32-bit integer; do not impose a smaller UX cap.
             context_lines=_clamp_int(self.context_lines, 0, 2_147_483_647, 1),
             context_blur=_clamp_float(self.context_blur, 0.0, 1.0, 0.0),
@@ -300,6 +315,16 @@ class Config:
         # TODO: Remove when configurations predating context_lines=0 are no longer supported.
         if _clean_bool(data.get("current_line_only"), False):
             filtered["context_lines"] = 0
+        # Old files stored a boolean ``show_translation`` toggle before display
+        # modes supported hiding the original line. Preserve that choice once,
+        # then write only ``lyrics_display_mode``.
+        # TODO: Remove when configurations predating lyrics_display_mode are no longer supported.
+        if "lyrics_display_mode" not in filtered and "show_translation" in data:
+            filtered["lyrics_display_mode"] = (
+                LyricsDisplayMode.BOTH
+                if _clean_bool(data.get("show_translation"), True)
+                else LyricsDisplayMode.ORIGINAL_ONLY
+            )
         migrated_services = migrate_legacy_translation_services(data)
         if migrated_services is not None:
             filtered["translation_services"] = migrated_services
@@ -317,6 +342,7 @@ _ENUM_FIELDS = frozenset(
         "panel_overflow_mode",
         "ui_language",
         "theme",
+        "lyrics_display_mode",
         "lyrics_script",
         "interlude_style",
         "interlude_countdown",

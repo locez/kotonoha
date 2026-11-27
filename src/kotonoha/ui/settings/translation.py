@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
 from ...config import (
     DEFAULT_TRANSLATION_PROMPT,
     Config,
+    LyricsDisplayMode,
     TranslationPolicy,
     TranslationProvider,
     TranslationServiceConfig,
@@ -66,7 +67,7 @@ class SettingsTranslationSectionBuilder:
     def _connect_signals(self) -> None:
         """Connect translation controls once so page resets never duplicate callbacks."""
         w = self._widgets
-        w.translation.toggled.connect(self._on_visibility_changed)
+        w.lyrics_display_mode.currentIndexChanged.connect(self._on_visibility_changed)
         w.translation_policy.currentIndexChanged.connect(self._on_visibility_changed)
         w.translation_services_list.currentRowChanged.connect(self._update_service_buttons)
         w.translation_services_list.itemChanged.connect(self._on_service_item_changed)
@@ -259,9 +260,9 @@ class SettingsTranslationSectionBuilder:
         self.update_controls_visibility()
 
     def update_controls_visibility(self) -> None:
-        """Show only rows belonging to the active display toggle and policy."""
+        """Show only rows belonging to the active lyrics display mode and policy."""
         w = self._widgets
-        show_translation = w.translation.isChecked()
+        show_translation = str(w.lyrics_display_mode.currentData()) != LyricsDisplayMode.ORIGINAL_ONLY.value
         enabled = show_translation and str(w.translation_policy.currentData()) != TranslationPolicy.OFF.value
         has_openai = any(
             service.provider is TranslationProvider.OPENAI_COMPATIBLE

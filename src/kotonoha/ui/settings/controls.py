@@ -93,7 +93,7 @@ class SettingsWidgets:
 
         self.karaoke = QCheckBox()
         self.lead = QSpinBox()
-        self.translation = QCheckBox()
+        self.lyrics_display_mode = SettingsComboBox()
         self.translation_language = SettingsComboBox()
         self.translation_policy = SettingsComboBox()
         self.translation_services_list = QListWidget()

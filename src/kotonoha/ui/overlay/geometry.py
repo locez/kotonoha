@@ -7,7 +7,7 @@ from typing import Protocol
 
 from PyQt6.QtCore import QPoint, QRect
 
-from ...config import Config
+from ...config import Config, LyricsDisplayMode
 from ...display.layout import FontFitPolicy
 from ...platform.overlay_contracts import Output, WindowRectangle
 
@@ -138,8 +138,17 @@ class OverlayGeometry:
             pill = max(240, min(self._config.panel_width, int(screen_width * 0.98)))
             width = min(int(screen_width * 0.98), pill + 48)
         else:
-            width = self._fit_policy.window_width(screen_width, self._config.font_size)
+            width = self._fit_policy.window_width(screen_width, self._fit_font_size())
         return width, self._band_height()
+
+    def _fit_font_size(self) -> int:
+        """Return the largest configured font size among active lyric tracks."""
+        size = self._config.font_size
+        if self._config.lyrics_display_mode is LyricsDisplayMode.BOTH:
+            size = max(size, self._config.translation_font_size)
+        if self._config.context_lines > 0:
+            size = max(size, self._config.context_font_size)
+        return size
 
     def compute_layer_pos(
         self,

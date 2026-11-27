@@ -7,7 +7,7 @@ import pytest
 from overlay_helpers import LayerShellStub, UnavailableController, build_overlay
 from PyQt6.QtGui import QFont
 
-from kotonoha.config import Config, PanelOverflowMode, PanelWidthMode
+from kotonoha.config import Config, LyricsDisplayMode, PanelOverflowMode, PanelWidthMode
 from kotonoha.display.models import LineProgress, WordProgress
 from kotonoha.lyrics.models import LyricLine, LyricWord
 from kotonoha.platform.overlay_contracts import SurfaceResult
@@ -185,7 +185,7 @@ def test_translation_visibility_and_fit_mode_release_wrapped_height(_session_qap
     _session_qapp.processEvents()
     tall = overlay.height()
     assert overlay._translation.sizeHint().height() > 40
-    overlay.apply_config(replace(config, show_translation=False))
+    overlay.apply_config(replace(config, lyrics_display_mode=LyricsDisplayMode.ORIGINAL_ONLY))
     _session_qapp.processEvents()
     assert overlay.height() < tall
     overlay.apply_config(replace(config, panel_width_mode=PanelWidthMode.FIT))

@@ -14,6 +14,7 @@ from ..display.models import (
     DisplayState,
     LyricsDisplayStatus,
     ResolutionState,
+    TranslationDisplayState,
 )
 from ..display.presentation import DisplayEngine
 from ..display.timeline import TimelineEngine
@@ -47,6 +48,8 @@ class DisplayCoordinator:
         self._timeline = timeline
         self._source_document: LyricsDocument | None = None
         self._document: LyricsDocument | None = None
+        self._translation_status: TranslationDisplayState = TranslationDisplayState.IDLE
+        self._suppress_publish: bool = False
         self._document_listener: Callable[[LyricsDocument | None], None] | None = None
         self._resolution = ResolutionState.NO_TRACK
         self._manual_document: LyricsDocument | None = None
@@ -137,13 +140,18 @@ class DisplayCoordinator:
         if source_changed:
             self._source_document = next_source
             self._document = next_source
+            self._translation_status = TranslationDisplayState.IDLE
         self._resolution = ResolutionState.AVAILABLE if manual_document is not None else resolution
         playback = self._timeline.set_observation(playback)
+        if source_changed:
+            self._suppress_publish = True
+            try:
+                self._notify_document_listener(next_source)
+            finally:
+                self._suppress_publish = False
         frame = self._project_observation(playback)
         self.publish_frame(frame)
         self._wake()
-        if source_changed:
-            self._notify_document_listener(next_source)
         return frame
 
     def set_document_listener(
@@ -166,16 +174,38 @@ class DisplayCoordinator:
         if self._source_document != source:
             return False
         self._document = translated
-        playback = self._timeline.advance()
-        if playback is not None:
-            self.publish_frame(self._project_observation(playback))
+        self._translation_status = TranslationDisplayState.READY
+        self._republish_current_frame()
+        return True
+
+    def set_translation_status(
+        self,
+        source: LyricsDocument,
+        status: TranslationDisplayState,
+    ) -> bool:
+        """Update translation status when ``source`` is still the active document."""
+        if self._source_document != source:
+            return False
+        next_document = self._document if status is TranslationDisplayState.READY else self._source_document
+        if self._translation_status is status and self._document == next_document:
+            return True
+        self._document = next_document
+        self._translation_status = status
+        self._republish_current_frame()
         return True
 
     def reset_translated_document(self) -> None:
         """Restore the active source document when translation settings change."""
-        if self._document == self._source_document:
+        if self._document == self._source_document and self._translation_status is TranslationDisplayState.IDLE:
             return
         self._document = self._source_document
+        self._translation_status = TranslationDisplayState.IDLE
+        self._republish_current_frame()
+
+    def _republish_current_frame(self) -> None:
+        """Reproject the active frame unless batched inside ``publish_resolution``."""
+        if self._suppress_publish:
+            return
         playback = self._timeline.advance()
         if playback is not None:
             self.publish_frame(self._project_observation(playback))
@@ -227,6 +257,7 @@ class DisplayCoordinator:
             cleared_source = self._source_document is not None
             self._source_document = None
             self._document = None
+            self._translation_status = TranslationDisplayState.IDLE
             self._resolution = ResolutionState.NO_TRACK
             self._manual_document = None
             self._manual_track = None
@@ -250,7 +281,12 @@ class DisplayCoordinator:
         self._wake()
 
     def _project_observation(self, playback: PlaybackObservation) -> DisplayFrame:
-        return self._presenter.project_observation(playback, self._document, self._resolution)
+        return self._presenter.project_observation(
+            playback,
+            self._document,
+            self._resolution,
+            translation_status=self._translation_status,
+        )
 
     def _clear_manual_override_if_track_changed(self, track: TrackIdentity | None) -> None:
         """Drop the manual document when a publication belongs to another track."""

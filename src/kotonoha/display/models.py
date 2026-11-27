@@ -88,6 +88,17 @@ class InterludeCountdown(StrEnum):
     SECONDS = "seconds"
 
 
+class TranslationDisplayState(StrEnum):
+    """User-visible status of lyrics translation for the active document."""
+
+    IDLE = "idle"
+    TRANSLATING = "translating"
+    READY = "ready"
+    FAILED = "failed"
+    UNAVAILABLE = "unavailable"
+    SKIPPED = "skipped"
+
+
 @dataclass(frozen=True)
 class DisplayOptions:
     """Pure presentation options injected into the display projection."""
@@ -122,6 +133,7 @@ class DisplayInput:
     document: LyricsDocument | None
     resolution: ResolutionState
     options: DisplayOptions
+    translation_status: TranslationDisplayState = TranslationDisplayState.IDLE
 
     def __post_init__(self) -> None:
         """Reject source facts that cannot describe one coherent display input."""
@@ -215,6 +227,7 @@ class DisplayFrame:
     word_progress: WordProgress | None = None
     diagnostic: DisplayDiagnostic | None = None
     track_offset_key: TrackOffsetKey | None = None
+    translation_status: TranslationDisplayState = TranslationDisplayState.IDLE
 
 EMPTY_FRAME = DisplayFrame(state=DisplayState.NO_TRACK)
 

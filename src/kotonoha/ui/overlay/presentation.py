@@ -111,7 +111,6 @@ class OverlayPresentationController:
         )
         self._translation.set_overflow_mode(mode)
         self._translation.set_max_width(available_width)
-        self._translation.setVisible(config.show_translation)
         self._lyric_pair.configure(config.font_size, config.translation_font_size)
         self._update_context_visibility()
         self._configure_context_height()

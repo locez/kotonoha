@@ -20,6 +20,7 @@ from .models import (
     TranslationConfig,
     TranslationError,
     TranslationErrorKind,
+    TranslationPlan,
     TranslationRequest,
     TranslationResult,
     TranslatorPort,
@@ -125,15 +126,24 @@ class LyricsTranslationService:
             if key[0] == service_id:
                 self._service_cooldown_until.pop(key, None)
 
-    def should_translate(self, document: LyricsDocument) -> bool:
-        """Decide whether ``document`` qualifies for API translation under active policy."""
+    def plan_document(self, document: LyricsDocument) -> TranslationPlan:
+        """Evaluate whether ``document`` needs API translation and explain any skip."""
         config = self._config
         if config.policy is TranslationPolicy.OFF:
-            return False
-        if not any(service.enabled for service in config.services):
-            return False
+            return TranslationPlan.SKIP_DISABLED
         if not document.lines:
-            return False
+            return TranslationPlan.SKIP_EMPTY
+        texts = tuple(line.text for line in document.lines)
+        if not any(text.strip() for text in texts):
+            return TranslationPlan.SKIP_EMPTY
+        if looks_like_target_language(texts, config.target_language, document_language=document.language):
+            logger.debug(
+                "Skipping lyrics translation: track=%r detected=%s matches target=%s",
+                document.title,
+                detect_primary_language(texts),
+                config.target_language,
+            )
+            return TranslationPlan.SKIP_ALREADY_TARGET
         if config.policy is TranslationPolicy.MISSING_ONLY:
             existing_translations = tuple(
                 line.translation.strip() for line in document.lines if line.translation.strip()
@@ -147,19 +157,14 @@ class LyricsTranslationService:
                     document.title,
                     config.target_language,
                 )
-                return False
-        texts = tuple(line.text for line in document.lines)
-        if not any(text.strip() for text in texts):
-            return False
-        if looks_like_target_language(texts, config.target_language, document_language=document.language):
-            logger.debug(
-                "Skipping lyrics translation: track=%r detected=%s matches target=%s",
-                document.title,
-                detect_primary_language(texts),
-                config.target_language,
-            )
-            return False
-        return True
+                return TranslationPlan.SKIP_EXISTING_MATCH
+        if not any(service.enabled for service in config.services):
+            return TranslationPlan.NO_SERVICE_ENABLED
+        return TranslationPlan.TRANSLATE
+
+    def should_translate(self, document: LyricsDocument) -> bool:
+        """Decide whether ``document`` qualifies for API translation under active policy."""
+        return self.plan_document(document) is TranslationPlan.TRANSLATE
 
     async def translate_document(self, document: LyricsDocument) -> LyricsDocument | None:
         """Return an enriched copy of ``document``, or ``None`` when skipped/failed."""

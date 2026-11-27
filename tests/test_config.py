@@ -12,6 +12,7 @@ from kotonoha.config import (
     Config,
     FxIntensity,
     FxTransition,
+    LyricsDisplayMode,
     LyricsScript,
     PanelStyle,
     PanelWidthMode,
@@ -31,13 +32,50 @@ def test_settings_schema_has_one_ordered_field_contract() -> None:
 
 def test_roundtrip(tmp_path):
     path = tmp_path / "config.json"
-    cfg = Config(port=30000, anchor_top=False, font_size=40, show_translation=False)
+    cfg = Config(
+        port=30000,
+        anchor_top=False,
+        font_size=40,
+        lyrics_display_mode=LyricsDisplayMode.ORIGINAL_ONLY,
+    )
     save_config(cfg, path)
     loaded = load_config(path)
     assert loaded.port == 30000
     assert loaded.anchor_top is False
     assert loaded.font_size == 40
-    assert loaded.show_translation is False
+    assert loaded.lyrics_display_mode is LyricsDisplayMode.ORIGINAL_ONLY
+
+
+@pytest.mark.parametrize(
+    ("legacy_value", "expected"),
+    [
+        (False, LyricsDisplayMode.ORIGINAL_ONLY),
+        (0, LyricsDisplayMode.ORIGINAL_ONLY),
+        (True, LyricsDisplayMode.BOTH),
+        (1, LyricsDisplayMode.BOTH),
+    ],
+)
+def test_legacy_show_translation_migrates_once_to_display_mode(
+    tmp_path: Path, legacy_value: object, expected: LyricsDisplayMode,
+) -> None:
+    """Old show_translation booleans map cleanly to lyrics_display_mode without persisting both."""
+    path = tmp_path / "c.json"
+    migrated = Config.from_dict({"show_translation": legacy_value})
+    assert migrated.lyrics_display_mode is expected
+    save_config(migrated, path)
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    assert "show_translation" not in raw
+    assert raw["lyrics_display_mode"] == expected.value
+    assert load_config(path).lyrics_display_mode is expected
+
+
+def test_lyrics_display_mode_precedence_and_validation() -> None:
+    """Explicit lyrics_display_mode overrides legacy show_translation; invalid values fall back."""
+    assert (
+        Config.from_dict({"lyrics_display_mode": "translation-only", "show_translation": False}).lyrics_display_mode
+        is LyricsDisplayMode.TRANSLATION_ONLY
+    )
+    assert Config.from_dict({"lyrics_display_mode": "bogus"}).lyrics_display_mode is LyricsDisplayMode.BOTH
 
 
 def test_qqmusic_is_known_but_not_default():
