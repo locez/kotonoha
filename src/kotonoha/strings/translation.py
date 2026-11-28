@@ -411,6 +411,24 @@ TRANSLATION_STRINGS: Final[dict[str, dict[str, str]]] = {
         "zh-Hant": "該翻譯快取項目已不存在",
         "ja": "このキャッシュ項目はすでにありません",
     },
+    "overlay.translation.translating": {
+        "en": "Translating…",
+        "zh-Hans": "正在翻译…",
+        "zh-Hant": "正在翻譯…",
+        "ja": "翻訳中…",
+    },
+    "overlay.translation.failed": {
+        "en": "Translation failed",
+        "zh-Hans": "翻译失败",
+        "zh-Hant": "翻譯失敗",
+        "ja": "翻訳に失敗しました",
+    },
+    "overlay.translation.unavailable": {
+        "en": "No translation available",
+        "zh-Hans": "暂无翻译",
+        "zh-Hant": "暫無翻譯",
+        "ja": "翻訳はありません",
+    },
 }
 
 __all__ = ["TRANSLATION_STRINGS"]

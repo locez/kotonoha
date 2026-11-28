@@ -1,4 +1,5 @@
 import os
+from dataclasses import replace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -11,7 +12,7 @@ from PyQt6.QtGui import QMouseEvent
 
 from kotonoha.app.display_coordinator import DisplayCoordinator
 from kotonoha.app.intents import ChangeTrackOffset
-from kotonoha.config import Config, FxIntensity, PanelStyle, PanelWidthMode, UiLanguage
+from kotonoha.config import Config, FxIntensity, LyricsDisplayMode, PanelStyle, PanelWidthMode, UiLanguage
 from kotonoha.display.models import (
     EMPTY_FRAME,
     DisplayFrame,
@@ -21,6 +22,7 @@ from kotonoha.display.models import (
     Interlude,
     LineProgress,
     ResolutionState,
+    TranslationDisplayState,
     WordProgress,
 )
 from kotonoha.display.offsets import TrackOffsetKey, track_offset_key
@@ -652,3 +654,185 @@ def test_fit_mode_gives_a_large_font_room_for_a_whole_line(qapp, monkeypatch):
     assert widths(20) == 1100, "the default font size lost its established width"
     assert widths(80) - 56 >= 2023, "a 2023px line still does not fit at font_size 80"
     qapp.processEvents()
+
+
+def test_fit_mode_adapts_window_width_to_large_translation_font(qapp, monkeypatch):
+    """Setting a small main font and large translation font must still expand fit-mode width."""
+
+    class WideScreen:
+        def name(self) -> str:
+            return "DP-1"
+
+        def geometry(self) -> QRect:
+            return QRect(0, 0, 2560, 1440)
+
+    overlay = LyricsOverlay(
+        LyricsState(),
+        Config(
+            panel_width_mode=PanelWidthMode.FIT,
+            font_size=12,
+            translation_font_size=60,
+            lyrics_display_mode=LyricsDisplayMode.BOTH,
+        ),
+        UnavailableController(),
+    )
+    monkeypatch.setattr(overlay, "_target_screen", lambda: WideScreen())
+    try:
+        both_width = overlay._window_size()[0]
+        assert both_width == 60 * 28
+
+        # Translation-only renders on the primary line, so width follows main font_size identically to Original-only.
+        overlay.apply_config(
+            Config(
+                panel_width_mode=PanelWidthMode.FIT,
+                font_size=60,
+                translation_font_size=13,
+                lyrics_display_mode=LyricsDisplayMode.TRANSLATION_ONLY,
+            )
+        )
+        assert overlay._window_size()[0] == 60 * 28
+
+        overlay.apply_config(
+            Config(
+                panel_width_mode=PanelWidthMode.FIT,
+                font_size=12,
+                translation_font_size=60,
+                lyrics_display_mode=LyricsDisplayMode.ORIGINAL_ONLY,
+            )
+        )
+        assert overlay._window_size()[0] == 1100
+    finally:
+        overlay.deleteLater()
+        qapp.processEvents()
+
+
+def test_translation_only_mode_matches_original_only_layout_and_falls_back_with_status(qapp):
+    """Translation-only uses the primary line style/spacing when ready, and falls back to original + status."""
+    prev_line = LyricLine(0, "p", 0.0, 2.0, "Previous original", "Linha anterior", ())
+    curr_line = LyricLine(1, "c", 2.0, 4.0, "Current original", "Linha atual", ())
+    next_line = LyricLine(2, "n", 4.0, 6.0, "Next original", "Próxima linha", ())
+    translated_frame = display_frame(
+        has_lyrics=True,
+        previous=prev_line,
+        current=curr_line,
+        next=next_line,
+        current_time=2.5,
+        is_playing=True,
+    )
+
+    translation_only = LyricsOverlay(
+        LyricsState(),
+        Config(
+            lyrics_display_mode=LyricsDisplayMode.TRANSLATION_ONLY,
+            font_size=24,
+            translation_font_size=13,
+            fx_glow=True,
+            ui_language=UiLanguage.EN,
+            fx_animate=False,
+        ),
+        UnavailableController(),
+    )
+    original_only = LyricsOverlay(
+        LyricsState(),
+        Config(
+            lyrics_display_mode=LyricsDisplayMode.ORIGINAL_ONLY,
+            font_size=24,
+            translation_font_size=13,
+            fx_glow=True,
+            ui_language=UiLanguage.EN,
+            fx_animate=False,
+        ),
+        UnavailableController(),
+    )
+    try:
+        translation_only._on_frame(translated_frame)
+        original_only._on_frame(translated_frame)
+        translation_only.show()
+        original_only.show()
+        qapp.processEvents()
+
+        # Ready translation renders on the primary label with identical style, glow, and vertical spacing.
+        assert translation_only._current.isHidden() is False
+        assert translation_only._current.text == "Linha atual"
+        assert translation_only._translation.isHidden() is True
+        assert translation_only._prev_label.text() == "Linha anterior"
+        assert translation_only._next_label.text() == "Próxima linha"
+        assert translation_only._current._font == original_only._current._font
+        assert translation_only._current._glow == original_only._current._glow is True
+        assert translation_only._band_height() == original_only._band_height()
+        assert translation_only._current.geometry().y() == original_only._current.geometry().y()
+        assert (
+            translation_only._presentation._lyric_pair.sizeHint().height()
+            == original_only._presentation._lyric_pair.sizeHint().height()
+        )
+
+        # Pending translation: temporarily show original + Translating status, context reverts to original.
+        translating_frame = replace(
+            translated_frame,
+            translation=None,
+            translation_status=TranslationDisplayState.TRANSLATING,
+        )
+        translation_only._on_frame(translating_frame)
+        assert translation_only._current.isHidden() is False
+        assert translation_only._current.text == "Current original"
+        assert translation_only._translation.isHidden() is False
+        assert translation_only._translation.text == "Translating…"
+        assert translation_only._prev_label.text() == "Previous original"
+
+        # Failed translation: temporarily show original + Translation failed status.
+        failed_frame = replace(
+            translated_frame,
+            translation=None,
+            translation_status=TranslationDisplayState.FAILED,
+        )
+        translation_only._on_frame(failed_frame)
+        assert translation_only._current.isHidden() is False
+        assert translation_only._current.text == "Current original"
+        assert translation_only._translation.text == "Translation failed"
+
+        # BOTH mode also shows Translation failed; ORIGINAL_ONLY hides the status row immediately.
+        translation_only.apply_config(
+            Config(lyrics_display_mode=LyricsDisplayMode.BOTH, ui_language=UiLanguage.EN, fx_animate=False)
+        )
+        assert translation_only._current.isHidden() is False
+        assert translation_only._translation.isHidden() is False
+        assert translation_only._translation.text == "Translation failed"
+
+        translation_only.apply_config(
+            Config(lyrics_display_mode=LyricsDisplayMode.ORIGINAL_ONLY, ui_language=UiLanguage.EN, fx_animate=False)
+        )
+        assert translation_only._current.isHidden() is False
+        assert translation_only._translation.isHidden() is True
+
+        translation_only.apply_config(
+            Config(
+                lyrics_display_mode=LyricsDisplayMode.TRANSLATION_ONLY,
+                ui_language=UiLanguage.EN,
+                fx_animate=False,
+            )
+        )
+
+        # Already in target language (SKIPPED): show original cleanly without status notice.
+        skipped_frame = replace(
+            translated_frame,
+            translation=None,
+            translation_status=TranslationDisplayState.SKIPPED,
+        )
+        translation_only._on_frame(skipped_frame)
+        assert translation_only._current.isHidden() is False
+        assert translation_only._current.text == "Current original"
+        assert translation_only._translation.isHidden() is True
+
+        # Source document with no translations at all (IDLE): show original + unavailable notice.
+        untranslated = LyricLine(0, "u", 0.0, 4.0, "Untranslated line", "", ())
+        translation_only._on_frame(
+            display_frame(has_lyrics=True, current=untranslated, current_time=1.0, is_playing=True)
+        )
+        assert translation_only._current.isHidden() is False
+        assert translation_only._current.text == "Untranslated line"
+        assert translation_only._translation.isHidden() is False
+        assert translation_only._translation.text == "No translation available"
+    finally:
+        translation_only.deleteLater()
+        original_only.deleteLater()
+        qapp.processEvents()

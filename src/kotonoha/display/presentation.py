@@ -22,11 +22,21 @@ from .models import (
     Interlude,
     LineProgress,
     ResolutionState,
+    TranslationDisplayState,
     WordProgress,
 )
 from .offsets import TrackOffsetKey, TrackOffsetKeyResolver
 from .rules import find_current_index, in_interlude, interlude_at, sweep_end, typical_span
 from .text import DisplayTextTransformer, ScriptTextTransformer
+
+_SUPPRESSED_TRANSLATION_STATES = frozenset(
+    {
+        TranslationDisplayState.TRANSLATING,
+        TranslationDisplayState.FAILED,
+        TranslationDisplayState.UNAVAILABLE,
+        TranslationDisplayState.SKIPPED,
+    }
+)
 
 
 class DisplayEngine:
@@ -97,9 +107,11 @@ class DisplayEngine:
         line_result: LineProgress | None = None
         word_result: WordProgress | None = None
         translation: LyricLine | None = None
+        translation_status = display_input.translation_status
+        suppress_translation = translation_status in _SUPPRESSED_TRANSLATION_STATES
         if current is not None:
             line_result = LineProgress(current.id, self._line_fraction(current, position, lines))
-            if current.translation:
+            if current.translation and not suppress_translation:
                 translation = replace(current, text=current.translation, translation="", words=())
             if current.has_word_timing:
                 word_result = WordProgress(
@@ -127,6 +139,7 @@ class DisplayEngine:
             line_progress=line_result,
             word_progress=word_result,
             track_offset_key=offset_key,
+            translation_status=translation_status,
         )
 
     def project_observation(
@@ -134,9 +147,13 @@ class DisplayEngine:
         playback: PlaybackObservation,
         document: LyricsDocument | None,
         resolution: ResolutionState,
+        *,
+        translation_status: TranslationDisplayState = TranslationDisplayState.IDLE,
     ) -> DisplayFrame:
         """Project normalized playback, document, and explicit resolution facts."""
-        return self.project_input(DisplayInput(playback, document, resolution, self._options))
+        return self.project_input(
+            DisplayInput(playback, document, resolution, self._options, translation_status)
+        )
 
     def _display_document(
         self,

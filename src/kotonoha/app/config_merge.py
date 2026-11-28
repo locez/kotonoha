@@ -96,10 +96,10 @@ def merge_settings(
         ),
         karaoke=submitted.karaoke if "karaoke" in changed_fields else current.karaoke,
         lead_ms=submitted.lead_ms if "lead_ms" in changed_fields else current.lead_ms,
-        show_translation=(
-            submitted.show_translation
-            if "show_translation" in changed_fields
-            else current.show_translation
+        lyrics_display_mode=(
+            submitted.lyrics_display_mode
+            if "lyrics_display_mode" in changed_fields
+            else current.lyrics_display_mode
         ),
         translation_language=(
             submitted.translation_language

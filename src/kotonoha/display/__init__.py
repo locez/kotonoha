@@ -15,6 +15,7 @@ from .models import (
     LineProgress,
     LyricsDisplayStatus,
     ResolutionState,
+    TranslationDisplayState,
     WordProgress,
 )
 
@@ -34,5 +35,6 @@ __all__ = [
     "LyricsDisplayStatus",
     "ResolutionState",
     "TextFitDecision",
+    "TranslationDisplayState",
     "WordProgress",
 ]

@@ -7,7 +7,8 @@ import logging
 from dataclasses import dataclass
 from typing import Protocol
 
-from ..config import Config
+from ..config import Config, TranslationPolicy
+from ..display.models import TranslationDisplayState
 from ..i18n import resolve_lyrics_translation_language
 from ..lyrics.models import LyricsDocument
 from ..secrets import SecretStore, SecretStoreError, translation_secret_key
@@ -15,10 +16,19 @@ from ..translation import (
     LyricsTranslationService,
     TranslationCacheError,
     TranslationConfig,
+    TranslationPlan,
 )
 from .lifecycle import TaskSupervisor
 
 logger = logging.getLogger(__name__)
+
+_NON_TRANSLATING_STATUS: dict[TranslationPlan, TranslationDisplayState] = {
+    TranslationPlan.SKIP_DISABLED: TranslationDisplayState.IDLE,
+    TranslationPlan.SKIP_EMPTY: TranslationDisplayState.IDLE,
+    TranslationPlan.SKIP_EXISTING_MATCH: TranslationDisplayState.IDLE,
+    TranslationPlan.SKIP_ALREADY_TARGET: TranslationDisplayState.SKIPPED,
+    TranslationPlan.NO_SERVICE_ENABLED: TranslationDisplayState.UNAVAILABLE,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +59,14 @@ class TranslationDocumentTarget(Protocol):
         """Replace the active display document when ``source`` is still current."""
         ...
 
+    def set_translation_status(
+        self,
+        source: LyricsDocument,
+        status: TranslationDisplayState,
+    ) -> bool:
+        """Update user-visible translation status when ``source`` is still current."""
+        ...
+
     def reset_translated_document(self) -> None:
         """Drop any active translated overlay and restore the source document."""
         ...
@@ -56,8 +74,13 @@ class TranslationDocumentTarget(Protocol):
 
 def translation_config_from_app(config: Config) -> TranslationConfig:
     """Project validated application config into immutable translation settings."""
+    policy = (
+        config.translation_policy
+        if config.lyrics_display_mode.shows_translation
+        else TranslationPolicy.OFF
+    )
     return TranslationConfig(
-        policy=config.translation_policy,
+        policy=policy,
         target_language=resolve_lyrics_translation_language(config.translation_language),
         services=tuple(config.translation_services),
         prompt=config.translation_prompt,
@@ -125,10 +148,13 @@ class LyricsTranslationCoordinator:
         self._cancel_active()
         if self._closed or not self._started or document is None:
             return
-        if not self._service.should_translate(document):
+        plan = self._service.plan_document(document)
+        if plan is not TranslationPlan.TRANSLATE:
+            self._target.set_translation_status(document, _NON_TRANSLATING_STATUS[plan])
             return
         self._generation += 1
         generation = self._generation
+        self._target.set_translation_status(document, TranslationDisplayState.TRANSLATING)
         task = self._tasks.create(
             self._translate_async(generation, document),
             name=f"kotonoha-translate-doc-{generation}",
@@ -201,8 +227,16 @@ class LyricsTranslationCoordinator:
             task.cancel()
 
     async def _translate_async(self, generation: int, document: LyricsDocument) -> None:
-        translated = await self._service.translate_document(document)
-        if translated is None or generation != self._generation:
+        try:
+            translated = await self._service.translate_document(document)
+        except (OSError, RuntimeError, TimeoutError, TranslationCacheError):
+            if generation == self._generation:
+                self._target.set_translation_status(document, TranslationDisplayState.FAILED)
+            raise
+        if generation != self._generation:
+            return
+        if translated is None:
+            self._target.set_translation_status(document, TranslationDisplayState.FAILED)
             return
         self._target.apply_translated_document(document, translated)
 

@@ -38,6 +38,17 @@ class TranslationErrorKind(StrEnum):
     UNSUPPORTED_LANGUAGE = "unsupported-language"
 
 
+class TranslationPlan(StrEnum):
+    """Policy decision describing whether and why a document should be translated."""
+
+    SKIP_DISABLED = "skip-disabled"
+    SKIP_EMPTY = "skip-empty"
+    SKIP_ALREADY_TARGET = "skip-already-target"
+    SKIP_EXISTING_MATCH = "skip-existing-match"
+    NO_SERVICE_ENABLED = "no-service-enabled"
+    TRANSLATE = "translate"
+
+
 class TranslationError(RuntimeError):
     """A provider or configuration error normalized at the translation boundary."""
 
@@ -260,6 +271,7 @@ __all__ = [
     "TranslationConfig",
     "TranslationError",
     "TranslationErrorKind",
+    "TranslationPlan",
     "TranslationRequest",
     "TranslationResult",
     "TranslatorPort",

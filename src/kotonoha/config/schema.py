@@ -25,7 +25,7 @@ SETTINGS_PAGE_FIELDS: tuple[tuple[str, ...], ...] = (
     (
         "karaoke",
         "lead_ms",
-        "show_translation",
+        "lyrics_display_mode",
         "translation_language",
         "translation_policy",
         "translation_services",

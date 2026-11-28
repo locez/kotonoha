@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ...config import ACCENT_PRESETS, LEAD_MS_LIMIT, Config, TranslationServiceConfig
+from ...config import ACCENT_PRESETS, LEAD_MS_LIMIT, Config, LyricsDisplayMode, TranslationServiceConfig
 from ...strings import UI_LANGUAGES, Translator
 from .controls import OpacityKey, PanelOpacityState, SettingsWidgets
 from .icons import SettingsIconPageBuilder
@@ -261,9 +261,18 @@ class SettingsPageBuilder:
         w.lead.setSingleStep(20)
         w.lead.setToolTip(t("set.lead.tip"))
         form.addRow(t("set.lead"), w.lead)
-        w.translation.setText(t("set.show_translation"))
-        w.translation.setChecked(self._config.show_translation)
-        form.addRow(w.translation)
+        w.lyrics_display_mode.blockSignals(True)
+        w.lyrics_display_mode.clear()
+        for value, key in (
+            (LyricsDisplayMode.BOTH.value, "displaymode.both"),
+            (LyricsDisplayMode.ORIGINAL_ONLY.value, "displaymode.original"),
+            (LyricsDisplayMode.TRANSLATION_ONLY.value, "displaymode.translation"),
+        ):
+            w.lyrics_display_mode.addItem(t(key), value)
+        mode_idx = w.lyrics_display_mode.findData(self._config.lyrics_display_mode.value)
+        w.lyrics_display_mode.setCurrentIndex(mode_idx if mode_idx >= 0 else 0)
+        w.lyrics_display_mode.blockSignals(False)
+        form.addRow(t("set.lyrics_display_mode"), w.lyrics_display_mode)
         self._translation.build_into(form)
         self._configure_spin(w.context_lines, 0, 2_147_483_647, self._config.context_lines, "")
         form.addRow(t("set.context_lines"), w.context_lines)

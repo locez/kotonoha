@@ -10,7 +10,7 @@ from PyQt6.QtCore import QPoint
 from PyQt6.QtWidgets import QApplication
 from test_overlay import display_frame
 
-from kotonoha.config import Config, PanelWidthMode
+from kotonoha.config import Config, LyricsDisplayMode, PanelWidthMode
 from kotonoha.display.models import LineProgress
 from kotonoha.lyrics.models import LyricLine
 from kotonoha.ui.overlay.karaoke_label import KaraokeLabel
@@ -63,7 +63,7 @@ def test_hiding_translation_collapses_lyric_pair_to_current_line_height(qapp: QA
     config = Config(
         font_size=24,
         translation_font_size=13,
-        show_translation=True,
+        lyrics_display_mode=LyricsDisplayMode.BOTH,
         fx_animate=False,
         panel_width_mode=PanelWidthMode.FIXED,
         panel_width=600,
@@ -80,7 +80,7 @@ def test_hiding_translation_collapses_lyric_pair_to_current_line_height(qapp: QA
         qapp.processEvents()
         with_translation_height = overlay._presentation._lyric_pair.sizeHint().height()
 
-        overlay.apply_config(replace(config, show_translation=False))
+        overlay.apply_config(replace(config, lyrics_display_mode=LyricsDisplayMode.ORIGINAL_ONLY))
         qapp.processEvents()
         without_translation_height = overlay._presentation._lyric_pair.sizeHint().height()
 

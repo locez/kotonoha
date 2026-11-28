@@ -100,7 +100,7 @@ def _reset_page_values(current: Config, defaults: Config, index: int) -> Config:
             current,
             karaoke=defaults.karaoke,
             lead_ms=defaults.lead_ms,
-            show_translation=defaults.show_translation,
+            lyrics_display_mode=defaults.lyrics_display_mode,
             translation_language=defaults.translation_language,
             translation_policy=defaults.translation_policy,
             translation_services=defaults.translation_services,
