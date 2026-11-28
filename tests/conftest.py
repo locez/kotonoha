@@ -36,6 +36,13 @@ if not LIVE_SESSION:
     os.environ["QT_QPA_PLATFORM"] = "offscreen"
     os.environ.pop("WAYLAND_DISPLAY", None)
 
+# Keep Qt's system locale deterministic across developer machines and CI containers
+# so UI tests using default Config(ui_language="auto") do not depend on host LANG.
+# Dedicated i18n tests pass explicit locale_name / ui_language values.
+os.environ["LC_ALL"] = "C"
+os.environ["LANG"] = "C"
+os.environ.pop("LANGUAGE", None)
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _session_qapp():

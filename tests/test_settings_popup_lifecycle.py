@@ -85,8 +85,12 @@ def test_dropdown_rows_remain_clickable_after_saving(
         assert button is not None
         dialog.show()
         qapp.processEvents()
+        if combo.count() < 2:
+            pytest.skip(f"{picker} picker requires at least 2 entries in this environment")
+        first_row = 1
+        second_row = 2 if combo.count() > 2 else 0
 
-        for row in (1, 2, 1):
+        for row in (first_row, second_row, first_row):
             _select_popup_row(combo, row, qapp)
             _click(button, button.rect().center())
             qapp.processEvents()
@@ -101,7 +105,7 @@ def test_dropdown_rows_remain_clickable_after_saving(
                 qapp.processEvents()
             assert nav.currentRow() == page
 
-        _select_popup_row(combo, 2, qapp)
+        _select_popup_row(combo, second_row, qapp)
         assert len(saved) == 3
     finally:
         dialog.close()

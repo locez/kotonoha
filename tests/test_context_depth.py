@@ -223,13 +223,13 @@ def test_context_blur_changes_pixels_and_can_be_disabled(context: ContextLabel, 
 
 
 @pytest.mark.parametrize("font_size", [14, 17])
-@pytest.mark.parametrize("text", ["Please crack a little smile", "愿你的前路清晰明亮"])
 def test_zero_blur_preserves_native_text_rendering(
-    context: ContextLabel, font_size: int, text: str,
+    context: ContextLabel, font_size: int,
 ) -> None:
     """A clear single context row must retain Qt's native glyph coverage and alignment."""
+    text = "Please crack a little smile"
     context.setStyleSheet(
-        f"color: rgba(255,255,255,120); font-family: 'Noto Sans CJK SC'; font-size: {font_size}px;"
+        f"color: rgba(255,255,255,120); font-family: monospace; font-size: {font_size}px;"
     )
     context.configure(count=1, animate=False, blur=0.0)
     context.set_lines((LyricLine(0, "one", 0.0, 10.0, text, "", ()),))

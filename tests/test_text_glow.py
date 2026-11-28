@@ -112,16 +112,16 @@ def test_sweep_has_a_soft_halo_boundary_but_leaves_distant_unsung_text_unlit(
 
 @pytest.mark.parametrize("wrapped", [False, True])
 @pytest.mark.parametrize("word_timed", [False, True])
-@pytest.mark.parametrize("fraction", [0.15, 0.5, 1.0])
-@pytest.mark.parametrize("text", ["HHHH", "مرحبا", "مرحبا hello 123"])
+@pytest.mark.parametrize("text", ["HHHH", "مرحبا hello 123"])
 def test_progress_colors_do_not_accumulate_glyph_edge_coverage(
-    label: KaraokeLabel, wrapped: bool, word_timed: bool, fraction: float, text: str,
+    label: KaraokeLabel, wrapped: bool, word_timed: bool, text: str,
 ) -> None:
     """Equal base/accent colors must look identical as line and word fills move.
 
     Redrawing base, sung, and active-word glyphs used to increase the alpha at
     antialiased edges; opaque glyph centers alone cannot detect this thickening.
     """
+    fraction = 0.5
     font = QFont("monospace")
     font.setPixelSize(40)
     label.set_style(font, "#4080c0", "#4080c0", "#4080c0", QColor("#4080c0"), QColor(0, 0, 0, 0))

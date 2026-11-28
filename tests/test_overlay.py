@@ -11,7 +11,7 @@ from PyQt6.QtGui import QMouseEvent
 
 from kotonoha.app.display_coordinator import DisplayCoordinator
 from kotonoha.app.intents import ChangeTrackOffset
-from kotonoha.config import Config, FxIntensity, PanelStyle, PanelWidthMode
+from kotonoha.config import Config, FxIntensity, PanelStyle, PanelWidthMode, UiLanguage
 from kotonoha.display.models import (
     EMPTY_FRAME,
     DisplayFrame,
@@ -498,7 +498,7 @@ def test_click_without_motion_does_not_persist_a_new_horizontal_offset(qapp):
 def test_offset_buttons_shift_sweep_and_hide_with_lock(qapp):
     offsets = _MutableTrackOffsets()
     overlay = LyricsOverlay(
-        LyricsState(), Config(), UnavailableController(), track_offsets=offsets
+        LyricsState(), Config(ui_language=UiLanguage.EN), UnavailableController(), track_offsets=offsets
     )
     snapshot = display_frame(
         has_lyrics=True, title="Song", artist="Artist", duration_s=180.0,
@@ -534,7 +534,7 @@ def test_offset_buttons_shift_sweep_and_hide_with_lock(qapp):
 def test_offset_feedback_preserves_paused_current_line_and_progress(qapp):
     offsets = _MutableTrackOffsets()
     state = LyricsState()
-    overlay = LyricsOverlay(state, Config(), UnavailableController(), track_offsets=offsets)
+    overlay = LyricsOverlay(state, Config(ui_language=UiLanguage.EN), UnavailableController(), track_offsets=offsets)
     track = TrackIdentity("test", "player", stable_id="song", title="Song", artist="Artist")
     playback = PlaybackObservation("test", "player", track, PlaybackStatus.PAUSED, 0.98, 2.0, 100.0)
     first = LyricLine(

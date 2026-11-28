@@ -109,3 +109,30 @@ def test_invalid_or_hostile_lyricsfile_is_rejected_and_lrc_still_works(document:
     fallback = lrclib.parse_payload({"lyricsfile": document, "syncedLyrics": "[00:01.00]fallback"})
     assert len(fallback) == 1
     assert fallback[0].text == "fallback"
+
+
+def test_lrclib_lyricsfile_projects_word_progress_through_display_engine() -> None:
+    """Word-timed Arabic lyricsfile lines advance word-by-word through DisplayEngine."""
+    from kotonoha.display.models import ResolutionState
+    from kotonoha.display.presentation import DisplayEngine
+    from kotonoha.lyrics.adapter import LyricsDocumentAdapter
+    from kotonoha.playback.models import PlaybackObservation, PlaybackStatus, TrackIdentity
+
+    lines = lrclib.parse_payload({"lyricsfile": SAMPLE_PATH.read_text(encoding="utf-8")})
+    document = LyricsDocumentAdapter().adapt(
+        lines, source_id="lrclib", title="Ana Indi Haneen", artist="Fairuz", album="Wahdon",
+        language="ar", duration_s=356.0,
+    )
+    track = TrackIdentity("test", "player", title="Ana Indi Haneen", artist="Fairuz")
+    engine = DisplayEngine()
+    for line in document.lines:
+        for word_index, word in enumerate(line.words):
+            assert word.start is not None and word.end is not None
+            midpoint = (word.start + word.end) / 2
+            playback = PlaybackObservation("test", "player", track, PlaybackStatus.PLAYING, midpoint, 356.0, 0.0)
+            frame = engine.project_observation(playback, document, ResolutionState.AVAILABLE)
+            assert frame.current == line
+            assert frame.word_progress is not None
+            assert frame.word_progress.active_index == word_index
+            expected = (1.0,) * word_index + (0.5,) + (0.0,) * (len(line.words) - word_index - 1)
+            assert frame.word_progress.fractions == pytest.approx(expected)

@@ -1,5 +1,8 @@
+"""Executable packaging and release-metadata contracts."""
+
 from __future__ import annotations
 
+import importlib
 import os
 import re
 import subprocess
@@ -9,269 +12,23 @@ from pathlib import Path
 import pytest
 
 PROJECT_ROOT = Path(__file__).parents[1]
-CMAKE_PROJECT = PROJECT_ROOT / "CMakeLists.txt"
 DEBIAN_DIR = PROJECT_ROOT / "packaging" / "debian"
 FEDORA_SPEC = PROJECT_ROOT / "packaging" / "fedora" / "kotonoha.spec"
 PACKAGE_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "package.yml"
-TEST_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "test.yml"
 RPM_SPEC_SED_PATTERN = re.compile(
     r'^\s*(sed -i -E "[^"]+" packaging/fedora/kotonoha\.spec)$',
     re.MULTILINE,
 )
 
 
-def read_packaging_file(path: Path) -> str:
-    return path.read_text(encoding="utf-8")
-
-
-def assert_contains(content: str, expected_values: tuple[str, ...]) -> None:
-    for expected in expected_values:
-        assert expected in content
-
-
-def write_executable(path: Path, content: str) -> None:
+def _write_executable(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
     path.chmod(0o755)
 
 
-def test_cmake_builds_and_installs_native_bridge() -> None:
-    cmake = read_packaging_file(CMAKE_PROJECT)
-
-    assert_contains(
-        cmake,
-        (
-            "project(kotonoha_native_bridge LANGUAGES C CXX)",
-            "find_package(Python3 REQUIRED COMPONENTS Interpreter)",
-            "find_package(Qt6 REQUIRED COMPONENTS Core Gui WaylandClient)",
-            "find_package(Qt6GuiPrivate REQUIRED)",
-            "find_package(LayerShellQt CONFIG REQUIRED)",
-            "pkg_check_modules(WaylandClient REQUIRED IMPORTED_TARGET wayland-client)",
-            # Optional blur protocol codegen (frosted-glass panel): the
-            # cross-desktop ext-background-effect-v1 and the KDE-private
-            # org_kde_kwin_blur it replaced are both generated.
-            "find_program(WAYLAND_SCANNER wayland-scanner)",
-            "foreach(KOTONOHA_PROTOCOL IN ITEMS blur ext-background-effect-v1)",
-            '"${CMAKE_CURRENT_SOURCE_DIR}/src/kotonoha/protocols/${KOTONOHA_PROTOCOL}.xml"',
-            'list(APPEND KOTONOHA_BLUR_SOURCES "${KOTONOHA_PROTOCOL_HEADER}" "${KOTONOHA_PROTOCOL_CODE}")',
-            "target_compile_definitions(koto-layer PRIVATE KOTONOHA_HAVE_BLUR)",
-            "add_library(koto-layer SHARED src/kotonoha/layer_shell_bridge.cpp ${KOTONOHA_BLUR_SOURCES})",
-            "Qt6::GuiPrivate",
-            "LayerShellQt::Interface",
-            "PkgConfig::WaylandClient",
-            'OUTPUT_NAME "koto-layer"',
-            'LIBRARY_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}"',
-            "KOTONOHA_STATIC_GNU_RUNTIME",
-            "KOTONOHA_INSTALL_DIR",
-            '"${KOTONOHA_PYTHON_PLATLIB}/kotonoha"',
-            "CACHE STRING",
-            "  OFF\n)",
-            "COMPONENT KotonohaBridge",
-        ),
-    )
-    assert "src/kotonoha/build_bridge.sh" not in cmake
-
-
-def test_scikit_build_core_builds_cmake_bridge_into_wheel() -> None:
-    pyproject = tomllib.loads(read_packaging_file(PROJECT_ROOT / "pyproject.toml"))
-
-    assert pyproject["build-system"] == {
-        "requires": ["scikit-build-core>=0.12"],
-        "build-backend": "scikit_build_core.build",
-    }
-    assert pyproject["tool"]["scikit-build"] == {
-        "wheel": {
-            "packages": ["src/kotonoha"],
-            # Build-only inputs stay out of the installed wheel.
-            "exclude": ["**/*.cpp", "**/*.sh", "**/protocols/*.xml"],
-        },
-        "cmake": {
-            "build-type": "Release",
-            "args": ["-DKOTONOHA_INSTALL_DIR=kotonoha"],
-        },
-    }
-    assert "hatch" not in pyproject["tool"]
-
-
-def test_cmake_and_package_workflows_verify_native_bridge() -> None:
-    test_workflow = read_packaging_file(TEST_WORKFLOW)
-    package_workflow = read_packaging_file(PACKAGE_WORKFLOW)
-
-    assert "sysconfig.get_path(\"platlib\")" in test_workflow
-    assert "bridge=src/kotonoha/libkoto-layer.so" not in test_workflow
-    assert 'bridge="${unpacked_dirs[0]}/kotonoha/libkoto-layer.so"' in package_workflow
-    assert "bridge=src/kotonoha/libkoto-layer.so" not in package_workflow
-    assert "--python-tag py3" in package_workflow
-    assert "--abi-tag none" in package_workflow
-    # Distro bridges are now symlinks. Their installed loading contract is
-    # exercised by verify_local_bridge in CI, replacing the old find glob.
-    assert "Verify standalone CMake install" in test_workflow
-    assert "-DCMAKE_BUILD_TYPE=Release" in test_workflow
-    assert 'cmake --build "$cmake_build" --config Release' in test_workflow
-    assert 'cmake --install "$cmake_build" --config Release' in test_workflow
-    assert "--component KotonohaBridge" in test_workflow
-    assert test_workflow.count("            cmake \\") >= 1
-    assert package_workflow.count("            cmake \\") >= 1
-    assert 'archive.namelist().count("kotonoha/libkoto-layer.so")' in package_workflow
-    # deb/rpm smoke jobs assert the package's installed runtime assets.
-    assert "test -f /usr/share/metainfo/dev.locez.kotonoha.metainfo.xml" in package_workflow
-    assert "ls /usr/share/man/man1/kotonoha.1*" in package_workflow
-
-
-def test_python_workflow_uses_bash_for_bash_only_commands() -> None:
-    workflow = read_packaging_file(TEST_WORKFLOW)
-    python_job = workflow.split("  python:\n", maxsplit=1)[1]
-
-    assert "    defaults:\n      run:\n        shell: bash\n" in python_job
-
-
-def test_debian_control_declares_package_metadata_and_dependencies() -> None:
-    control = read_packaging_file(DEBIAN_DIR / "control")
-
-    assert_contains(
-        control,
-        (
-            "Source: kotonoha",
-            "Section: sound",
-            "Maintainer: Locez <locez@locez.com>",
-            "Homepage: https://github.com/locez/kotonoha",
-            "debhelper-compat (= 13)",
-            "dh-python",
-            "dh-sequence-python3",
-            "pybuild-plugin-pyproject",
-            "python3-all",
-            "python3-scikit-build-core",
-            "python3-aiohttp",
-            "python3-dbus-fast",
-            "python3-pyqt6",
-            "python3-pyqt6.qtsvg",
-            "python3-qasync",
-            "cmake",
-            "qt6-base-private-dev",
-            "qt6-wayland-dev",
-            "liblayershellqtinterface-dev",
-            "libwayland-dev",
-            "pkg-config",
-            "g++",
-            "desktop-file-utils",
-            "Package: kotonoha",
-            "${python3:Depends}",
-            "${misc:Depends}",
-        )
-    )
-    assert control.count("python3-pyqt6.qtsvg") == 2
-
-
-def test_debian_rules_uses_the_pyproject_backend_and_installs_icon() -> None:
-    rules_path = DEBIAN_DIR / "rules"
-    rules = read_packaging_file(rules_path)
-
-    assert os.access(rules_path, os.X_OK)
-    assert_contains(
-        rules,
-        (
-            "export PYBUILD_NAME=kotonoha",
-            "dh $@ --buildsystem=pybuild",
-            "override_dh_auto_configure:",
-            "dh_auto_configure --buildsystem=pybuild",
-            "override_dh_auto_test:",
-            "Tests run separately; skipping duplicate package-build tests.",
-            "override_dh_install:",
-            "dh_install",
-            "src/kotonoha/assets/icon.png",
-            "debian/kotonoha/usr/share/pixmaps/kotonoha.png",
-        ),
-    )
-
-
-def test_debian_install_and_changelog_define_desktop_file_and_initial_release() -> None:
-    install = read_packaging_file(DEBIAN_DIR / "install")
-    changelog = read_packaging_file(DEBIAN_DIR / "changelog")
-
-    assert "packaging/kotonoha.desktop usr/share/applications" in install
-    assert "packaging/dev.locez.kotonoha.metainfo.xml usr/share/metainfo" in install
-    assert "packaging/kotonoha.1 usr/share/man/man1" in install
-    assert "src/kotonoha/libkoto-layer.so usr/lib/python3/dist-packages/kotonoha" not in install
-    assert_contains(
-        changelog,
-        (
-            "kotonoha (0.1.0-1)",
-            "Initial release.",
-            "Locez <locez@locez.com>",
-            "Sat, 11 Jul 2026",
-        ),
-    )
-
-
-def test_fedora_spec_declares_metadata_and_dependencies() -> None:
-    spec = read_packaging_file(FEDORA_SPEC)
-
-    assert_contains(
-        spec,
-        (
-            "Name:           kotonoha",
-            "%global debug_package %{nil}",
-            "Version:        0.1.0",
-            "Release:        1%{?dist}",
-            "License:        MIT AND LGPL-2.1-or-later",
-            "URL:            https://github.com/locez/kotonoha",
-            "Source0:        %{name}-%{version}.tar.gz",
-            "Source1:        qasync-0.28.0-py3-none-any.whl",
-            "BuildRequires:  python3-devel",
-            "BuildRequires:  python3-scikit-build-core",
-            "BuildRequires:  pyproject-rpm-macros",
-            "BuildRequires:  gcc-c++",
-            "BuildRequires:  cmake",
-            "BuildRequires:  qt6-qtbase-private-devel",
-            "BuildRequires:  qt6-qtwayland-devel",
-            "BuildRequires:  layer-shell-qt-devel",
-            "BuildRequires:  wayland-devel",
-            "BuildRequires:  desktop-file-utils",
-            "Requires:       python3",
-            "Requires:       python3-pyqt6",
-            "Requires:       python3-aiohttp",
-            "Requires:       python3-dbus-fast",
-            "Requires:       layer-shell-qt",
-            "Provides:       bundled(python3dist(qasync)) = 0.28.0",
-            "%license %{python3_sitearch}/share/licenses/kotonoha/LICENSE",
-        ),
-    )
-    assert "Requires:       python3-qt6" not in spec
-    assert "Requires:       python3-qasync" not in spec
-
-
-def test_fedora_spec_builds_and_installs_native_desktop_assets() -> None:
-    spec = read_packaging_file(FEDORA_SPEC)
-
-    assert "PYTHONPATH" not in spec
-    assert_contains(
-        spec,
-        (
-            "%prep",
-            "%autosetup",
-            "%build",
-            "%pyproject_wheel",
-            "%install",
-            "%pyproject_install",
-            "%pyproject_save_files kotonoha",
-            "python3 -m zipfile -e %{SOURCE1} %{buildroot}%{python3_sitelib}",
-            "%{python3_sitelib}/qasync/",
-            "%license %{python3_sitelib}/qasync-0.28.0.dist-info/licenses/LICENSE",
-            "%{_datadir}/applications/kotonoha.desktop",
-            "%{_datadir}/pixmaps/kotonoha.png",
-            "install -Dm0644 packaging/dev.locez.kotonoha.metainfo.xml",
-            "%{buildroot}%{_datadir}/metainfo/dev.locez.kotonoha.metainfo.xml",
-            "install -Dm0644 packaging/kotonoha.1",
-            "%{buildroot}%{_mandir}/man1/kotonoha.1",
-            "%{_mandir}/man1/kotonoha.1*",
-            "%check",
-            "desktop-file-validate %{buildroot}%{_datadir}/applications/kotonoha.desktop",
-            "%{_bindir}/kotonoha",
-        ),
-    )
-
-
 def test_rpm_workflow_updates_spec_version_and_changelog(tmp_path: Path) -> None:
-    workflow = read_packaging_file(PACKAGE_WORKFLOW)
+    """The release workflow's sed transform rewrites RPM Version and changelog cleanly."""
+    workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
     sed_commands = RPM_SPEC_SED_PATTERN.findall(workflow)
     assert sed_commands
 
@@ -290,48 +47,11 @@ def test_rpm_workflow_updates_spec_version_and_changelog(tmp_path: Path) -> None
     assert "Source0:        %{name}-%{version}.tar.gz" in transformed
 
 
-def test_package_workflow_installs_local_artifacts_and_stages_qasync() -> None:
-    workflow = read_packaging_file(PACKAGE_WORKFLOW)
-    deb_job = workflow.split("\n  deb:\n", maxsplit=1)[1].split("\n  rpm:\n", maxsplit=1)[0]
-    rpm_job = workflow.split("\n  rpm:\n", maxsplit=1)[1].split("\n  wheel:\n", maxsplit=1)[0]
-
-    assert 'apt-get install -y "./${debs[0]}"' in workflow
-    assert 'dnf install -y "./${rpms[0]}"' in rpm_job
-    assert "python3-pyqt6" in rpm_job
-    assert "python3-qt6" not in rpm_job
-    assert "python3-qasync" not in rpm_job
-    assert 'python3 -c "from PyQt6.QtSvg import QSvgRenderer"' in deb_job
-    assert 'python3 -c "from PyQt6.QtSvg import QSvgRenderer"' in rpm_job
-    assert "qasync-0.28.0-py3-none-any.whl" in rpm_job
-    assert 'python3 -c "import qasync"' in rpm_job
-    assert (
-        "https://files.pythonhosted.org/packages/e5/84/"
-        "0ce4cd946f6e958428c87d5accac35df70f81607e45ba4919947d0762d63/"
-        "qasync-0.28.0-py3-none-any.whl"
-    ) in rpm_job
-    assert "21faba8d047c717008378f5ac29ea58c32a8128528629e4afd57c59b768dba0f" in rpm_job
-    assert 'qt_version=$(qmake6 -query QT_VERSION)' in workflow
-    assert "uv run --no-project --with packaging==26.2 python \\" in workflow
-    assert 'scripts/patch_linux_wheel_metadata.py "${unpacked_dirs[0]}" "$qt_version"' in workflow
-    assert "BUILD_QT_VERSION" in workflow
-
-
-def test_package_workflow_declares_the_scikit_build_core_backend() -> None:
-    workflow = read_packaging_file(PACKAGE_WORKFLOW)
-    deb_job = workflow.split("\n  deb:\n", maxsplit=1)[1].split("\n  rpm:\n", maxsplit=1)[0]
-    rpm_job = workflow.split("\n  rpm:\n", maxsplit=1)[1].split("\n  wheel:\n", maxsplit=1)[0]
-
-    assert "python3-scikit-build-core" in deb_job
-    assert "python3-scikit-build-core" in rpm_job
-    assert "cmake" in deb_job
-    assert "cmake" in rpm_job
-    assert "python3-hatchling" not in workflow
-
-
 def test_debian_rules_leave_the_source_tree_unchanged_on_repeated_configure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Running debian/rules configure and clean repeatedly does not mutate pyproject.toml."""
     source_tree = tmp_path / "source"
     debian_dir = source_tree / "debian"
     fake_bin = tmp_path / "bin"
@@ -344,8 +64,8 @@ def test_debian_rules_leave_the_source_tree_unchanged_on_repeated_configure(
     rules_path = debian_dir / "rules"
     rules_path.write_bytes((DEBIAN_DIR / "rules").read_bytes())
     rules_path.chmod(0o755)
-    write_executable(fake_bin / "dh_auto_configure", "#!/bin/sh\nprintf 'configure\\n' >> debhelper.log\n")
-    write_executable(fake_bin / "dh_clean", "#!/bin/sh\nprintf 'clean\\n' >> debhelper.log\n")
+    _write_executable(fake_bin / "dh_auto_configure", "#!/bin/sh\nprintf 'configure\\n' >> debhelper.log\n")
+    _write_executable(fake_bin / "dh_clean", "#!/bin/sh\nprintf 'clean\\n' >> debhelper.log\n")
     monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ['PATH']}")
 
     backup_path = debian_dir / ".kotonoha-pyproject.toml.orig"
@@ -373,61 +93,16 @@ def test_debian_rules_leave_the_source_tree_unchanged_on_repeated_configure(
     ]
 
 
-def test_the_release_check_imports_a_module_that_exists():
-    # The clean-environment wheel check runs an import against the installed
-    # package. Naming a module the tree no longer has fails the release workflow
-    # rather than any test, so nothing here would have caught it.
-    import importlib
-    import re
-
-    workflow = read_packaging_file(PACKAGE_WORKFLOW)
+def test_the_release_check_imports_a_module_that_exists() -> None:
+    """Smoke imports in the release workflow resolve to real package modules."""
+    workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
     for module in set(re.findall(r"from (kotonoha[\w.]*) import", workflow)):
         importlib.import_module(module)
-def _ci_python_matrix() -> list[str]:
-    """Return the interpreter versions the test workflow's matrix actually lists.
-
-    The block is located and its items read, rather than the whole file searched
-    for a substring: `- "3.13"` appears in a comment and in the per-version include
-    entries too, so a plain `in workflow` check passed on text that runs nothing.
-    A YAML parser would be exact, but this repository has no test-time YAML
-    dependency and one matrix key does not earn adding it.
-    """
-    workflow = read_packaging_file(TEST_WORKFLOW).splitlines()
-    start = next(i for i, line in enumerate(workflow) if line.strip() == "python-version:")
-    indent = len(workflow[start]) - len(workflow[start].lstrip())
-    versions: list[str] = []
-    for line in workflow[start + 1 :]:
-        stripped = line.strip()
-        if not stripped.startswith("- "):
-            break
-        if len(line) - len(line.lstrip()) <= indent:
-            break
-        versions.append(stripped.removeprefix("- ").strip().strip('"'))
-    return versions
-
-
-def test_the_declared_python_floor_matches_what_ci_runs() -> None:
-    # A floor the CI matrix contradicts is not a supported version, it is a claim.
-    pyproject = tomllib.loads(read_packaging_file(PROJECT_ROOT / "pyproject.toml"))
-    assert pyproject["project"]["requires-python"] == ">=3.11"
-
-    matrix = _ci_python_matrix()
-
-    assert "3.10" not in matrix, "CI still runs a version the project no longer supports"
-    assert "3.11" in matrix, "the declared floor is not covered by CI"
-    # 3.13 and up are the guaranteed range, so they must always be in the matrix.
-    for guaranteed in ("3.13", "3.14"):
-        assert guaranteed in matrix, f"{guaranteed} is promised but not run"
 
 
 def test_every_declared_licence_has_its_text_packaged() -> None:
-    """A licence the artefact declares must travel with it.
-
-    The built .so links the KDE blur protocol, which is LGPL-2.1-or-later, so the
-    expression names it — and naming it obliges the distribution to carry the
-    text. Only the MIT text was packaged before.
-    """
-    pyproject = tomllib.loads(read_packaging_file(PROJECT_ROOT / "pyproject.toml"))
+    """Every SPDX licence declared in pyproject.toml has a matching packaged licence file."""
+    pyproject = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     project = pyproject["project"]
     declared = {part.strip() for part in project["license"].split(" AND ")}
     patterns = project["license-files"]

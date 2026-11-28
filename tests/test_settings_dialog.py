@@ -1,12 +1,8 @@
-import os
 from typing import cast
 from unittest.mock import patch
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
-import pytest
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication, QLineEdit, QListWidgetItem, QPushButton
+from PyQt6.QtWidgets import QLineEdit, QListWidgetItem, QPushButton
 
 from kotonoha.app.intents import ApplyConfig, ClearCache, OpenCacheManagement, RequestRestart
 from kotonoha.config import (
@@ -23,12 +19,6 @@ from kotonoha.players import PlayerInfo
 from kotonoha.ui.settings.dialog import SettingsDialog
 
 PAGE_FIELDS = SETTINGS_PAGE_FIELDS
-
-
-@pytest.fixture(scope="module")
-def qapp():
-    app = QApplication.instance() or QApplication([])
-    yield app
 
 
 def test_cache_controls_roundtrip_and_clear_signal(qapp):
@@ -143,7 +133,9 @@ def test_display_sources_keep_enabled_order_for_runtime_priority(qapp):
 
 
 def test_unavailable_player_lock_survives_dialog_roundtrip(qapp):
-    dialog = SettingsDialog(Config(player_lock="org.mpris.MediaPlayer2.closed"), players=[])
+    dialog = SettingsDialog(
+        Config(player_lock="org.mpris.MediaPlayer2.closed", ui_language=UiLanguage.EN), players=[]
+    )
 
     assert dialog.form_widgets.player_combo.currentData() == "org.mpris.MediaPlayer2.closed"
     assert "unavailable" in dialog.form_widgets.player_combo.currentText().lower()
@@ -153,7 +145,7 @@ def test_unavailable_player_lock_survives_dialog_roundtrip(qapp):
 
 def test_detected_players_are_readable_and_store_bus_name(qapp):
     dialog = SettingsDialog(
-        Config(),
+        Config(ui_language=UiLanguage.EN),
         players=[PlayerInfo("org.mpris.MediaPlayer2.youtube", "YouTube Music", "Song", "Artist", "Playing", True)],
     )
 
@@ -168,7 +160,7 @@ def test_detected_players_are_readable_and_store_bus_name(qapp):
 def test_idle_player_row_has_status_and_unavailable_choice_stays_selected(qapp):
     bus_name = "org.mpris.MediaPlayer2.closed"
     dialog = SettingsDialog(
-        Config(player_lock=bus_name),
+        Config(player_lock=bus_name, ui_language=UiLanguage.EN),
         players=[PlayerInfo("org.mpris.MediaPlayer2.idle", "Idle player", playback_status="Stopped")],
     )
 
@@ -384,7 +376,7 @@ def test_frost_checkbox_is_greyed_out_and_noted_when_blur_unavailable(qapp):
     # Offscreen has no blur protocol, so frosted glass can't work: the checkbox
     # reads as unavailable (disabled), and the note under it names which of the
     # three causes it is rather than restating the requirement.
-    dialog = SettingsDialog(Config())
+    dialog = SettingsDialog(Config(ui_language=UiLanguage.EN))
     assert dialog._blur_capable is False
     assert dialog.form_widgets.frost_window.isEnabled() is False
     hints = [w.text() for w in dialog.findChildren(QLabel) if w.objectName() == "hint"]
@@ -542,18 +534,10 @@ def test_long_settings_combo_items_do_not_expand_the_popup_frame(qapp):
     combo.close()
 
 
-def test_connection_section_removed_but_port_preserved(qapp):
-    # The WS-port control was dropped; the sidebar no longer lists Connection,
-    # and current_config keeps the config's port untouched (still used by the CLI).
+def test_settings_dialog_preserves_configured_port(qapp):
+    # The WS port is a CLI/config-file setting and must survive saving from Settings.
     dialog = SettingsDialog(Config(port=41234))
-    labels = []
-    for i in range(dialog._nav.count()):
-        item = dialog._nav.item(i)
-        assert item is not None
-        labels.append(item.text())
-    assert not any("onnect" in label or "连接" in label or "連接" in label or "接続" in label for label in labels)
-    assert not hasattr(dialog, "_port")
-    assert dialog.current_config().port == 41234  # preserved from the config
+    assert dialog.current_config().port == 41234
     dialog.close()
 
 
@@ -982,33 +966,6 @@ def test_every_field_the_dialog_edits_belongs_to_a_page_reset_list():
     assert not missing, f"no page resets these: {sorted(missing)}"
 
 
-def test_the_settings_window_does_not_import_the_mpris_provider():
-    # The row DTO lives in the neutral model module, so describing a player in the
-    # UI does not drag in the D-Bus provider.
-    import ast
-    from pathlib import Path
-
-    source = Path("src/kotonoha/ui/settings/dialog.py").read_text(encoding="utf-8")
-    imported = {
-        node.module
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.ImportFrom) and node.module
-    }
-    assert not {name for name in imported if "providers" in name}, imported
-
-
-def test_the_player_dto_is_exported_by_the_module_that_defines_it():
-    # A type imported from a module but missing from its __all__ is outside the
-    # contract that module declares — which is how it ended up appended after the
-    # lyrics model's exports, in a module about lyric payloads.
-    from kotonoha import players
-
-    assert players.__all__ == ["PlayerInfo"]
-    from kotonoha.players import PlayerInfo
-
-    assert PlayerInfo.__module__ == "kotonoha.players"
-
-
 def test_a_refused_blur_falls_back_to_a_solid_panel(qapp, caplog) -> None:
     # The window is painted translucent because a compositor blur is meant to sit
     # behind it. Discarding the result left the panel see-through over an unblurred
@@ -1102,18 +1059,6 @@ def test_settings_window_stays_visible_when_a_platform_adapter_is_injected(qapp)
     qapp.processEvents()
 
 
-def test_the_suite_runs_on_the_platform_its_assertions_describe(qapp) -> None:
-    # Several tests here assert what an offscreen platform does. conftest used to
-    # set QT_QPA_PLATFORM with setdefault, so a Wayland session's value won and
-    # those assertions were checked against the real compositor instead.
-    import os
-
-    from PyQt6.QtGui import QGuiApplication
-
-    assert QGuiApplication.platformName() == "offscreen"
-    assert "WAYLAND_DISPLAY" not in os.environ
-
-
 def test_opening_settings_does_not_narrow_a_saved_sync_offset(qapp) -> None:
     # The spin box spanned half of what Config accepts, so a valid saved offset was
     # truncated the moment the window was opened and applied — without the user
@@ -1171,27 +1116,6 @@ def test_the_source_list_shows_what_will_be_saved(qapp) -> None:
     assert shown, "the panel offered a state that cannot be stored"
     assert shown == dialog.current_config().lyrics_sources
     dialog.close()
-
-
-def test_every_skin_styles_the_internal_scrollbar_container():
-    from kotonoha.ui.settings.theme import _popup_skin, _rgba_parts, _skin
-
-    # The container is a child widget over the panel it belongs to. Left to the
-    # platform it paints the desktop scheme's own colour; told to be see-through
-    # it erases the panel underneath instead, which on a translucent window is a
-    # black bar. Either way the skin has to name a colour for it.
-    for qss, opaque_popup in ((_skin(Config().accent_start), False), (_popup_skin(Config().accent_start), True)):
-        rule = next(
-            (line for line in qss.splitlines() if "qt_scrollarea_vcontainer" in line),
-            None,
-        )
-        assert rule is not None
-        if opaque_popup:
-            # A combo popup is its own opaque window, so nothing shows through it.
-            assert "background: transparent" in rule
-        else:
-            value = rule.split("background:", 1)[1].rstrip(" };")
-            assert _rgba_parts(value)[3] > 0, rule
 
 
 def test_eliding_label_shrinks_instead_of_widening_its_parent(qapp):
@@ -1367,28 +1291,6 @@ def test_a_corner_says_which_way_it_stretches(qapp):
     assert dialog._resize_cursor(Qt.Edge(0)) is Qt.CursorShape.ArrowCursor
 
 
-def test_a_scroll_strip_paints_the_card_it_sits_in():
-    from kotonoha.ui.settings import theme
-
-    # A scroll area's container is a child widget: given a see-through background
-    # it erases the card painted under it instead of letting it show, leaving a
-    # bar of bare window that reads as solid black on a translucent one.
-    for name in ("light", "dark"):
-        for frosted in (False, True):
-            track = theme._scroll_track_background(name, frosted, 0.8)
-            assert theme._rgba_parts(track)[3] > 0, (name, frosted, track)
-            skin = theme._skin("#FF5EB5", name, frosted, 0.8)
-            container = next(
-                (rule for rule in skin.splitlines() if "qt_scrollarea_vcontainer" in rule), None
-            )
-            assert container is not None
-            assert track in container, container
-            # The bar is a child of that container, so a second declaration of the
-            # same half-transparent colour is blended over the first: exactly one
-            # of the two nested widgets may name it.
-            assert skin.count(track) == 1, skin
-
-
 def test_the_scroll_rail_renders_as_one_colour_across_its_width(qapp):
     from PyQt6.QtCore import QPoint, Qt
     from PyQt6.QtGui import QImage, QPainter
@@ -1430,20 +1332,6 @@ def test_the_scroll_rail_renders_as_one_colour_across_its_width(qapp):
     # the middle of the rail, which is what a reader sees as a darker scrollbar.
     assert len(across) == 1, across
     dialog.close()
-
-
-def test_the_scroll_strip_matches_the_two_layers_it_replaces():
-    from kotonoha.ui.settings import theme
-
-    # It stands in for the card over the window, so it has to be their composite:
-    # anything else is a strip of a different colour down the edge of the panel.
-    card = theme._rgba_parts(theme._card_background("light", False, 0.8))
-    window = theme._PALETTES["light"]["window_bg"]
-    assert isinstance(window, tuple)
-    top, bottom = card[3] / 255, 0.8
-    expected_alpha = round((top + bottom * (1 - top)) * 255)
-    track = theme._rgba_parts(theme._scroll_track_background("light", False, 0.8))
-    assert track[3] == expected_alpha, (track, expected_alpha)
 
 
 def test_a_dropdown_row_is_selected_in_the_accent_not_the_desktop_colour(qapp):

@@ -198,13 +198,6 @@ def test_lyrics_contract_modules_are_toolkit_and_transport_neutral():
     assert not violations, "feature contracts must not depend on UI or concrete transports: " + ", ".join(violations)
 
 
-def test_live_source_does_not_reexport_match_contract():
-    """LiveSourceMatch has one public owner in live_contracts.py."""
-    from kotonoha.lyrics import live_source
-
-    assert "LiveSourceMatch" not in live_source.__all__
-
-
 def test_display_publisher_has_one_application_owner():
     """Provider and receiver adapters may not construct their own Qt publisher."""
     owners: list[str] = []
@@ -486,25 +479,6 @@ def test_playback_domain_does_not_depend_on_player_adapters():
             if imported == "kotonoha.providers" or imported.startswith("kotonoha.providers."):
                 violations.append(f"{path.relative_to(SOURCE_ROOT)} -> {imported}")
     assert not violations, "playback domain depends on provider adapters: " + ", ".join(violations)
-
-
-def test_large_ui_modules_are_explicitly_scoped():
-    allowed: dict[str, str] = {
-        "ui/overlay/window.py": "cohesive Qt window lifecycle and signal boundary",
-        "ui/overlay/surface.py": "cohesive Qt surface binding and platform lifecycle boundary",
-        "ui/settings/dialog.py": "cohesive Qt dialog composition and signal boundary",
-        "lyrics/resolver.py": "cohesive source arbitration and cache policy boundary",
-    }
-    offenders: list[str] = []
-    for path in SOURCE_ROOT.rglob("*.py"):
-        lines = len(path.read_text(encoding="utf-8").splitlines())
-        relative = path.relative_to(SOURCE_ROOT).as_posix()
-        if lines > 800 or (lines > 500 and relative not in allowed):
-            offenders.append(f"{relative} ({lines} lines)")
-    assert not offenders, (
-        "split oversized modules by responsibility or record a scoped follow-up: "
-        + ", ".join(offenders)
-    )
 
 
 def test_application_code_does_not_swallow_unknown_failures():

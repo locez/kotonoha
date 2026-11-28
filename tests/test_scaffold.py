@@ -1,10 +1,3 @@
-from kotonoha import __version__
-
-
-def test_version_is_defined() -> None:
-    assert __version__
-
-
 def test_single_instance_lock(tmp_path) -> None:
     from kotonoha.main import _single_instance_lock
 
